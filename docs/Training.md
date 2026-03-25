@@ -1,125 +1,203 @@
 # Training Guide
 
-This document defines the supported training and NCNN export workflow for AimBuddy.
+How to train a YOLOv26n model and export it for AimBuddy runtime using the bundled training pipeline.
 
-The model contract is based on `yolo26n.pt` with a single class (`enemy`, class id `0`).
+## Model Contract
+
+AimBuddy expects a single-class YOLOv26n model (class 0 = enemy). The NCNN runtime loads two files from `app/src/main/assets/models/`:
+
+| File | Purpose |
+|------|---------|
+| `yolo26n-opt.param` | NCNN model graph definition |
+| `yolo26n-opt.bin` | NCNN model weights |
 
 ## Environment Requirements
 
-- Python 3.10 to 3.12
-- Dependencies from `training/requirements.txt`
-- Optional NVIDIA GPU for faster training
-
-Practical hardware guidance:
-
 | Item | Minimum | Recommended |
-| --- | --- | --- |
-| CPU | 4 cores | 8 or more cores |
-| RAM | 8 GB | 16 GB or higher |
-| Free disk | 15 GB | 30 GB or higher |
+|------|---------|-------------|
+| OS | Windows 10 or 11 (64-bit) | Windows 11 |
+| Python | 3.10 to 3.12 | 3.11 |
+| CPU | 4 cores | 8+ cores |
+| RAM | 8 GB | 16 GB+ |
+| Free disk | 15 GB | 30 GB+ |
 | GPU | CPU-only supported | NVIDIA GPU with CUDA 12.1 |
 
-## Standard Pipeline
+## Pipeline Overview
 
-1. Setup environment and dependencies.
-2. Validate machine and dataset preflight conditions.
-3. Train model (adaptive or manual mode).
-4. Export trained weights to NCNN.
-5. Deploy exported artifacts to Android app assets.
+```mermaid
+flowchart LR
+    A[Setup Environment] --> B[Validate Dataset]
+    B --> C[Train Model]
+    C --> D[Export to NCNN]
+    D --> E[Deploy to App Assets]
+```
 
-One-command path:
+### One-Command Run
 
 ```powershell
 cd training
 scripts\07_run_full_pipeline.bat
 ```
 
-## Script Reference
+This runs all steps in sequence: environment setup, preflight checks, dataset validation, training, and NCNN export.
 
-Run from `training/`:
+## Step-by-Step Scripts
 
-```powershell
-scripts\01_setup_environment.bat
-scripts\02_extract_frames.bat
-scripts\03_validate_dataset.bat
-scripts\04_train_adaptive.bat
-scripts\05_train_manual.bat
-scripts\06_export_ncnn.bat
-scripts\07_run_full_pipeline.bat
+Run from the `training/` directory:
+
+| Script | Purpose |
+|--------|---------|
+| `scripts\01_setup_environment.bat` | Create virtual environment, install dependencies |
+| `scripts\02_extract_frames.bat` | Extract video frames for labeling (optional) |
+| `scripts\03_validate_dataset.bat` | Verify dataset structure and label format |
+| `scripts\04_train_adaptive.bat` | Train with auto-selected hyperparameters |
+| `scripts\05_train_manual.bat` | Train with explicit config from `training/config/config.ini` |
+| `scripts\06_export_ncnn.bat` | Convert trained weights to NCNN format |
+| `scripts\07_run_full_pipeline.bat` | Run all steps end-to-end |
+
+## Dataset Structure
+
+Required layout:
+
+```
+training/dataset/
+    data.yaml
+    train/
+        images/
+        labels/
+    valid/
+        images/
+        labels/
+    test/
+        images/
+        labels/
 ```
 
-## Dataset Contract
+### Label Format
 
-Required structure:
+YOLO format, one `.txt` file per image:
 
-- `training/dataset/data.yaml`
-- `training/dataset/train/images` and `training/dataset/train/labels`
-- `training/dataset/valid/images` and `training/dataset/valid/labels`
-- `training/dataset/test/images` and `training/dataset/test/labels`
-
-YOLO label row format:
-
-```text
+```
 class_id x_center y_center width height
 ```
 
-Requirements:
+Rules:
+- All coordinates normalized to [0, 1].
+- Class ID must be `0` (single class: enemy).
+- No data leakage between train, valid, and test splits.
+- Include background-only images (empty label files) to reduce false positives.
 
-- all coordinates normalized to `[0,1]`
-- class id must be `0`
-- no data leakage across train, valid, and test
-- include background samples to reduce false positives
+### data.yaml Example
 
-## Adaptive and Manual Training
+```yaml
+train: train/images
+val: valid/images
+test: test/images
+nc: 1
+names: ['enemy']
+```
 
-- Adaptive mode: auto-selects safer values by dataset size.
-- Manual mode: uses explicit values from `training/config/config.ini`.
+## Training Modes
 
-Commands:
+### Adaptive Training
+
+Auto-selects hyperparameters based on dataset size:
 
 ```powershell
 scripts\04_train_adaptive.bat
+```
+
+Good for first-time training or when unsure about settings.
+
+### Manual Training
+
+Uses explicit values from `training/config/config.ini`:
+
+```powershell
 scripts\05_train_manual.bat
 ```
 
-Resolved configuration is written to:
+Use this when you need specific epoch counts, batch sizes, or augmentation settings.
 
-- `training/outputs/reports/selected_training_config.json`
+### Resolved Configuration
 
-## Output and Deployment Contract
+The final configuration used for training is saved to:
 
-Generated outputs:
+```
+training/outputs/reports/selected_training_config.json
+```
 
-- reports: `training/outputs/reports`
-- weights: `training/outputs/runs/detect/train/weights`
-- NCNN export: `training/outputs/export`
+## NCNN Export
 
-Deployment target for app runtime:
+```powershell
+scripts\06_export_ncnn.bat
+```
 
-- `app/src/main/assets/models`
+Export flow:
 
-Exported NCNN files must match runtime loader expectations in native detector code.
+```mermaid
+flowchart LR
+    A["YOLOv26n (.pt)"] --> B["ONNX export"]
+    B --> C["ONNX simplify"]
+    C --> D["NCNN convert"]
+    D --> E["yolo26n-opt.param + .bin"]
+```
 
-## Preflight and Reporting
+The exported NCNN files must be copied to:
 
-Preflight validates:
+```
+app/src/main/assets/models/
+```
 
-- Python version compatibility (3.10 to 3.12)
-- CPU core count
-- memory and disk thresholds
-- CUDA availability (warning if unavailable)
+File names must match the constants in `settings.h`:
+- `MODEL_PARAM_FILE = "models/yolo26n-opt.param"`
+- `MODEL_BIN_FILE = "models/yolo26n-opt.bin"`
 
-Report files:
+## Output Locations
 
-- `training/outputs/reports/preflight_report.json`
-- `training/outputs/reports/dataset_report.json`
-- `training/outputs/reports/pipeline_last_run.json`
-- `training/outputs/reports/pipeline_last_run.log`
+| Output | Path |
+|--------|------|
+| Training reports | `training/outputs/reports/` |
+| Trained weights | `training/outputs/runs/detect/train/weights/` |
+| NCNN export | `training/outputs/export/` |
+| Deployment target | `app/src/main/assets/models/` |
 
-## Troubleshooting Quick Notes
+## Preflight Checks
 
-- If NVIDIA GPU is detected but CUDA is unavailable in torch, confirm Python 3.10 to 3.12 and reinstall CUDA-enabled torch wheel.
-- If dataset validation fails, fix labels first before increasing dataset size.
-- If export succeeds but app cannot infer, verify files are present in `app/src/main/assets/models`.
+The preflight script validates:
+
+- Python version (3.10 to 3.12)
+- CPU core count and available memory
+- Disk space
+- CUDA availability (warning if not found, training proceeds on CPU)
+
+Results saved to: `training/outputs/reports/preflight_report.json`
+
+## Report Files
+
+| File | Contents |
+|------|----------|
+| `preflight_report.json` | Environment validation results |
+| `dataset_report.json` | Dataset statistics and validation |
+| `selected_training_config.json` | Resolved training hyperparameters |
+| `pipeline_last_run.json` | Pipeline step status and timings |
+| `pipeline_last_run.log` | Full pipeline stdout/stderr |
+
+## Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| CUDA not detected by torch | Install CUDA 12.1, reinstall torch with CUDA wheel |
+| Dataset validation fails | Fix label format, check normalized coordinates |
+| Export succeeds but app does not detect | Copy NCNN files to `app/src/main/assets/models/`, rebuild |
+| Training is very slow | Use NVIDIA GPU, or reduce dataset size for faster iterations |
+| Out of memory during training | Reduce batch size in `config.ini`, or use adaptive mode |
 
 For script-level folder details, see [training/README.md](../training/README.md).
+
+## Related Documentation
+
+- [Architecture](Architecture.md)
+- [Settings Guide](SettingsGuide.md)
+- [Performance](Performance.md)
+- [Troubleshooting](Troubleshooting.md)
