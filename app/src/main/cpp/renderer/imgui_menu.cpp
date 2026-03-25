@@ -57,10 +57,25 @@ static double g_settingsDirtyAt = 0.0;
 static constexpr double SETTINGS_SAVE_DELAY_SEC = 0.35;
 static std::chrono::steady_clock::time_point g_lastOverlayTickTime{};
 static float g_measuredOverlayFps = 0.0f;
+static float g_measuredInferenceMs = 0.0f;
+static ImVec2 g_menuSize = ImVec2(0.0f, 0.0f);
+static bool g_menuWasVisible = false;
 
 static float QuantizeStep(float value, float step) {
     if (step <= 0.0f) return value;
     return std::round(value / step) * step;
+}
+
+static void ShowSettingHelp(const char* description) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+        ImGui::TextUnformatted(description);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
 }
 
 static void ApplyRenderConfigToUnifiedSettings(const ESP::RenderConfig& settings) {
@@ -138,6 +153,7 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeInit(JNIEnv* env, jclass /* this */, jobj
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr; // No ini file
     io.ConfigFlags |= ImGuiConfigFlags_IsTouchScreen;
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
     io.DisplaySize = ImVec2(static_cast<float>(g_screenWidth), static_cast<float>(g_screenHeight));
     
     // Dark theme with accent colors
@@ -156,9 +172,15 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeInit(JNIEnv* env, jclass /* this */, jobj
     style.Colors[ImGuiCol_Header] = ImVec4(0.2f, 0.2f, 0.3f, 1.0f);
     style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.3f, 0.3f, 0.4f, 1.0f);
     
-    // Scale for mobile
-    style.ScaleAllSizes(2.0f);
-    io.FontGlobalScale = 2.0f;
+    // Scale for mobile without making controls overly cramped
+    style.ScaleAllSizes(1.15f);
+    io.FontGlobalScale = 1.08f;
+    style.WindowPadding = ImVec2(16.0f, 14.0f);
+    style.FramePadding = ImVec2(10.0f, 8.0f);
+    style.ItemSpacing = ImVec2(10.0f, 8.0f);
+    style.ItemInnerSpacing = ImVec2(8.0f, 6.0f);
+    style.WindowBorderSize = 1.0f;
+    style.ScrollbarSize = 18.0f;
     
     // Initialize backends
     LOGI("Initializing ImGui Android backend");
@@ -243,6 +265,11 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
         // Get detection results and apply smoothing if enabled
         ESP::DetectionResult latest;
         bool hasDetections = GetLatestResultSnapshot(&latest);
+        if (latest.inferenceTimeMs > 0.01f && std::isfinite(latest.inferenceTimeMs)) {
+            g_measuredInferenceMs = (g_measuredInferenceMs > 0.0f)
+                ? (g_measuredInferenceMs * 0.88f + latest.inferenceTimeMs * 0.12f)
+                : latest.inferenceTimeMs;
+        }
         
         // Apply smoothing if enabled
         bool useSmoothing = settings->enableSmoothing.load(std::memory_order_relaxed);
@@ -428,28 +455,34 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
             ImDrawList* drawList = ImGui::GetBackgroundDrawList();
             ImU32 redColor = IM_COL32(255, 50, 50, 255);
             ImFont* font = ImGui::GetFont();
-            float largeSize = ImGui::GetFontSize() * 2.0f;
-            float topMargin = 40.0f;  // Proper margin to avoid clipping
-            
-            // Format: "X enemy" or "X enemies"
-            char countText[64];
-            const char* label = (detCount == 1) ? "enemy" : "enemies";
-            snprintf(countText, sizeof(countText), "%d %s", detCount, label);
-            
-            ImVec2 textSize = font->CalcTextSizeA(largeSize, FLT_MAX, 0.0f, countText);
-            ImVec2 textPos((displayW - textSize.x) * 0.5f, topMargin);
-            drawList->AddText(font, largeSize, textPos, redColor, countText);
+            if (drawList != nullptr && font != nullptr) {
+                float largeSize = ImGui::GetFontSize() * 2.0f;
+                float topMargin = 40.0f;  // Proper margin to avoid clipping
+
+                // Format: "X enemy" or "X enemies"
+                char countText[64];
+                const char* label = (detCount == 1) ? "enemy" : "enemies";
+                snprintf(countText, sizeof(countText), "%d %s", detCount, label);
+
+                ImVec2 textSize = font->CalcTextSizeA(largeSize, FLT_MAX, 0.0f, countText);
+                ImVec2 textPos((displayW - textSize.x) * 0.5f, topMargin);
+                drawList->AddText(font, largeSize, textPos, redColor, countText);
+            }
         }
 
-        // Menu window — display-proportional size
+        // Menu window — display-proportional size with scrollable tab layout
         g_menuVisible = settings->menuVisible.load(std::memory_order_relaxed);
         if (g_menuVisible) {
             bool settingsDirty = false;
-            // Width: 38% of screen, clamped 320–600px
-            // Height: 87% of screen, clamped 480–920px
-            const float menuWidth  = std::max(320.0f, std::min(displayW * 0.38f, 600.0f));
-            const float menuHeight = std::max(480.0f, std::min(displayH * 0.87f, 920.0f));
-            const float iconPad = 14.0f;
+            const float defaultMenuWidth  = std::max(460.0f, std::min(displayW * 0.48f, 860.0f));
+            const float defaultMenuHeight = std::max(560.0f, std::min(displayH * 0.92f, 1060.0f));
+            if (!g_menuWasVisible || g_menuSize.x <= 0.0f || g_menuSize.y <= 0.0f) {
+                g_menuSize = ImVec2(defaultMenuWidth, defaultMenuHeight);
+            }
+
+            const float menuWidth = g_menuSize.x;
+            const float menuHeight = g_menuSize.y;
+            const float iconPad = 52.0f;
             float menuX = g_iconPos.x + ICON_RADIUS + iconPad;
             float menuY = g_iconPos.y - menuHeight * 0.5f;
             if (menuX + menuWidth > displayW)
@@ -458,304 +491,330 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
             menuY = std::max(4.0f, std::min(menuY, displayH - menuHeight - 4.0f));
 
             ImGui::SetNextWindowPos(ImVec2(menuX, menuY), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(menuWidth, menuHeight), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(g_menuSize, ImGuiCond_Appearing);
+            ImGui::SetNextWindowSizeConstraints(ImVec2(420.0f, 460.0f), ImVec2(displayW - 8.0f, displayH - 8.0f));
 
-            ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
-            if (ImGui::Begin("AimBuddy", nullptr, windowFlags)) {
-
-                // --- Quick toggles ---
-                bool showLabels = settings->showLabels.load(std::memory_order_relaxed);
-                bool drawLine   = settings->drawLine.load(std::memory_order_relaxed);
-                bool drawDot    = settings->drawDot.load(std::memory_order_relaxed);
-                bool countOn    = settings->showDetectionCount.load(std::memory_order_relaxed);
-                if (ImGui::Checkbox("Labels", &showLabels)) { settings->showLabels.store(showLabels, std::memory_order_relaxed); settingsDirty = true; }
-                ImGui::SameLine();
-                if (ImGui::Checkbox("Snapline", &drawLine)) { settings->drawLine.store(drawLine, std::memory_order_relaxed); settingsDirty = true; }
-                ImGui::SameLine();
-                if (ImGui::Checkbox("Head dot", &drawDot)) { settings->drawDot.store(drawDot, std::memory_order_relaxed); settingsDirty = true; }
-                ImGui::SameLine();
-                if (ImGui::Checkbox("Count", &countOn)) { settings->showDetectionCount.store(countOn, std::memory_order_relaxed); settingsDirty = true; }
-
-                ImGui::Separator();
-                
-                // --- Visuals ---
-                if (ImGui::CollapsingHeader("Visuals")) {
-                    float boxColor[4] = {
-                        settings->boxColorR.load(std::memory_order_relaxed),
-                        settings->boxColorG.load(std::memory_order_relaxed),
-                        settings->boxColorB.load(std::memory_order_relaxed), 1.0f
-                    };
-                    if (ImGui::ColorEdit4("Box color", boxColor, ImGuiColorEditFlags_NoInputs)) {
-                        settings->boxColorR.store(boxColor[0], std::memory_order_relaxed);
-                        settings->boxColorG.store(boxColor[1], std::memory_order_relaxed);
-                        settings->boxColorB.store(boxColor[2], std::memory_order_relaxed);
-                        settingsDirty = true;
-                    }
-                    float thickness = static_cast<float>(settings->boxThickness.load(std::memory_order_relaxed));
-                    if (ImGui::SliderFloat("Thickness", &thickness, 1.0f, 5.0f, "%.0f")) {
-                        settings->boxThickness.store(static_cast<int>(thickness), std::memory_order_relaxed);
-                        settingsDirty = true;
-                    }
+            ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse;
+            if (ImGui::Begin("AimBuddy v0.1.0-beta.1", nullptr, windowFlags)) {
+                g_menuSize = ImGui::GetWindowSize();
+                const bool rootAvailable = g_rootAvailable.load(std::memory_order_relaxed);
+                if (!rootAvailable) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Root not granted (ESP mode)");
                 }
 
                 ImGui::Separator();
+                ImGui::BeginChild("##MenuScroll", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 6.0f), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
-                // --- Detection ---
-                if (ImGui::CollapsingHeader("Detection")) {
-                    float conf = settings->confidenceThreshold.load(std::memory_order_relaxed);
-                    if (ImGui::SliderFloat("Confidence", &conf, 0.1f, 1.0f, "%.2f")) {
-                        settings->confidenceThreshold.store(conf, std::memory_order_relaxed);
-                        settingsDirty = true;
-                    }
-                    float detFov = settings->fovRadius.load(std::memory_order_relaxed);
-                    if (ImGui::SliderFloat("Scan zone", &detFov, 100.0f, 650.0f, "%.0f px")) {
-                        settings->fovRadius.store(detFov, std::memory_order_relaxed);
-                        if (g_settings.aimFovRadius > detFov) g_settings.aimFovRadius = detFov;
-                        settingsDirty = true;
-                    }
-                }
+                if (ImGui::BeginTabBar("##MenuTabs", ImGuiTabBarFlags_FittingPolicyResizeDown)) {
+                    if (ImGui::BeginTabItem("ESP")) {
+                        bool showLabels = settings->showLabels.load(std::memory_order_relaxed);
+                        bool drawLine = settings->drawLine.load(std::memory_order_relaxed);
+                        bool drawDot = settings->drawDot.load(std::memory_order_relaxed);
+                        bool countOn = settings->showDetectionCount.load(std::memory_order_relaxed);
+                        bool smoothOn = settings->enableSmoothing.load(std::memory_order_relaxed);
 
-                ImGui::Separator();
+                        if (ImGui::Checkbox("Labels", &showLabels)) { settings->showLabels.store(showLabels, std::memory_order_relaxed); settingsDirty = true; }
+                        ShowSettingHelp("Shows label text over each detected target.");
+                        if (ImGui::Checkbox("Snap line", &drawLine)) { settings->drawLine.store(drawLine, std::memory_order_relaxed); settingsDirty = true; }
+                        ShowSettingHelp("Draws a line from your screen center to the target box.");
+                        if (ImGui::Checkbox("Head dot", &drawDot)) { settings->drawDot.store(drawDot, std::memory_order_relaxed); settingsDirty = true; }
+                        ShowSettingHelp("Marks the estimated head point for each detection.");
+                        if (ImGui::Checkbox("Detection count", &countOn)) { settings->showDetectionCount.store(countOn, std::memory_order_relaxed); settingsDirty = true; }
+                        ShowSettingHelp("Shows how many targets are currently detected.");
+                        ImGui::Separator();
 
-                // --- Aimbot ---
-                bool rootAvailable = g_rootAvailable.load(std::memory_order_relaxed);
-                if (rootAvailable) {
-                    if (ImGui::CollapsingHeader("Aimbot", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        bool enabled = settings->aimbotEnabled.load(std::memory_order_relaxed);
-                        if (ImGui::Checkbox("Enable", &enabled)) {
-                            settings->aimbotEnabled.store(enabled, std::memory_order_relaxed);
+                        if (ImGui::Checkbox("Enable ESP box smoothing", &smoothOn)) { settings->enableSmoothing.store(smoothOn, std::memory_order_relaxed); settingsDirty = true; }
+                        ShowSettingHelp("Stabilizes box movement to reduce jitter between frames.");
+                        if (smoothOn) {
+                            float smooth = settings->smoothingFactor.load(std::memory_order_relaxed);
+                            if (ImGui::SliderFloat("Smoothing amount", &smooth, 0.10f, 1.0f, "%.2f")) {
+                                settings->smoothingFactor.store(smooth, std::memory_order_relaxed);
+                                settingsDirty = true;
+                            }
+                            ShowSettingHelp("Lower values react faster; higher values are smoother but lag more.");
+                        }
+
+                        ImGui::Separator();
+
+                        float boxColor[4] = {
+                            settings->boxColorR.load(std::memory_order_relaxed),
+                            settings->boxColorG.load(std::memory_order_relaxed),
+                            settings->boxColorB.load(std::memory_order_relaxed),
+                            1.0f
+                        };
+                        if (ImGui::ColorEdit4("Box color", boxColor, ImGuiColorEditFlags_NoInputs)) {
+                            settings->boxColorR.store(boxColor[0], std::memory_order_relaxed);
+                            settings->boxColorG.store(boxColor[1], std::memory_order_relaxed);
+                            settings->boxColorB.store(boxColor[2], std::memory_order_relaxed);
                             settingsDirty = true;
                         }
-                        
-                        if (enabled) {
-                            ImGui::Spacing();
+                        ShowSettingHelp("Changes ESP box color for better visibility.");
 
-                            // ---- Presets ----
-                            // Default=Smooth, Competitive=Snap, Balanced=Smooth, Precision=Magnetic
-                            ImGui::TextDisabled("Presets");
-                            if (ImGui::Button("Default")) {
-                                g_settings.aimMode = 0; g_settings.aimSpeed = 0.48f;
-                                g_settings.smoothness = 0.78f; g_settings.filterType = 1;
-                                g_settings.emaAlpha = 0.40f; g_settings.pdDerivativeGain = 0.040f;
-                                g_settings.velocityLeadFactor = 0.01f;
-                                g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 30.0f;
-                                g_settings.maxLockMissFrames = 5; g_settings.targetSwitchDelayFrames = 8;
-                                g_settings.recoilCompensationEnabled = false;
-                                g_settings.aimFovRadius = 240.0f;
-                                settings->headOffset.store(0.18f, std::memory_order_relaxed);
-                                settings->enableSmoothing.store(true, std::memory_order_relaxed);
-                                settings->smoothingFactor.store(0.35f, std::memory_order_relaxed);
+                        float thickness = static_cast<float>(settings->boxThickness.load(std::memory_order_relaxed));
+                        if (ImGui::SliderFloat("Box thickness", &thickness, 1.0f, 5.0f, "%.0f")) {
+                            settings->boxThickness.store(static_cast<int>(thickness), std::memory_order_relaxed);
+                            settingsDirty = true;
+                        }
+                        ShowSettingHelp("Higher values make boxes easier to see; lower values look cleaner.");
+
+                        ImGui::Separator();
+
+                        float conf = settings->confidenceThreshold.load(std::memory_order_relaxed);
+                        if (ImGui::SliderFloat("Confidence", &conf, 0.1f, 0.95f, "%.2f")) {
+                            settings->confidenceThreshold.store(conf, std::memory_order_relaxed);
+                            settingsDirty = true;
+                        }
+                        ShowSettingHelp("Minimum detection confidence. Higher reduces false positives.");
+
+                        float detFov = settings->fovRadius.load(std::memory_order_relaxed);
+                        if (ImGui::SliderFloat("Detection zone", &detFov, 100.0f, 650.0f, "%.0f px")) {
+                            settings->fovRadius.store(detFov, std::memory_order_relaxed);
+                            if (g_settings.aimFovRadius > detFov) {
+                                g_settings.aimFovRadius = detFov;
+                            }
+                            settingsDirty = true;
+                        }
+                        ShowSettingHelp("Limits detection processing to a center region for more stable targeting.");
+
+                        bool showTouchZone = g_settings.showTouchZone;
+                        if (ImGui::Checkbox("Touch zone overlay", &showTouchZone)) {
+                            g_settings.showTouchZone = showTouchZone;
+                            settingsDirty = true;
+                        }
+                        ShowSettingHelp("Shows the touch input area used for assist movement.");
+                        if (g_settings.showTouchZone) {
+                            float alpha = g_settings.touchZoneAlpha;
+                            if (ImGui::SliderFloat("Touch zone opacity", &alpha, 0.10f, 1.0f, "%.2f")) {
+                                g_settings.touchZoneAlpha = QuantizeStep(alpha, 0.01f);
                                 settingsDirty = true;
                             }
-                            ImGui::SameLine();
-                            if (ImGui::Button("Competitive")) {
-                                // Snap mode: fast burst acquisition
-                                g_settings.aimMode = 1; g_settings.aimSpeed = 0.72f;
-                                g_settings.smoothness = 0.45f; g_settings.filterType = 0;
-                                g_settings.emaAlpha = 0.55f; g_settings.pdDerivativeGain = 0.025f;
-                                g_settings.velocityLeadFactor = 0.04f;
-                                g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 22.0f;
-                                g_settings.maxLockMissFrames = 3; g_settings.targetSwitchDelayFrames = 5;
-                                g_settings.recoilCompensationEnabled = false;
-                                g_settings.aimFovRadius = 220.0f;
-                                settings->headOffset.store(0.15f, std::memory_order_relaxed);
-                                settings->enableSmoothing.store(false, std::memory_order_relaxed);
-                                settings->smoothingFactor.store(0.25f, std::memory_order_relaxed);
-                                settingsDirty = true;
-                            }
-                            ImGui::SameLine();
-                            if (ImGui::Button("Balanced")) {
-                                // Smooth with anti-overshoot
-                                g_settings.aimMode = 0; g_settings.aimSpeed = 0.52f;
-                                g_settings.smoothness = 0.80f; g_settings.filterType = 1;
-                                g_settings.emaAlpha = 0.38f; g_settings.pdDerivativeGain = 0.042f;
-                                g_settings.velocityLeadFactor = 0.01f;
-                                g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 32.0f;
-                                g_settings.maxLockMissFrames = 5; g_settings.targetSwitchDelayFrames = 9;
-                                g_settings.recoilCompensationEnabled = false;
-                                g_settings.aimFovRadius = 260.0f;
-                                settings->headOffset.store(0.18f, std::memory_order_relaxed);
-                                settings->enableSmoothing.store(true, std::memory_order_relaxed);
-                                settings->smoothingFactor.store(0.30f, std::memory_order_relaxed);
-                                settingsDirty = true;
-                            }
-                            ImGui::SameLine();
-                            if (ImGui::Button("Precision")) {
-                                // Magnetic: sticky slow-approach lock
-                                g_settings.aimMode = 2; g_settings.aimSpeed = 0.58f;
-                                g_settings.smoothness = 0.88f; g_settings.filterType = 2;
-                                g_settings.kalmanProcessNoise = 0.8f; g_settings.kalmanMeasurementNoise = 5.0f;
-                                g_settings.pdDerivativeGain = 0.030f; g_settings.velocityLeadFactor = 0.00f;
-                                g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 40.0f;
-                                g_settings.maxLockMissFrames = 6; g_settings.targetSwitchDelayFrames = 12;
-                                g_settings.recoilCompensationEnabled = false;
-                                g_settings.aimFovRadius = 300.0f;
-                                settings->headOffset.store(0.17f, std::memory_order_relaxed);
-                                settings->enableSmoothing.store(true, std::memory_order_relaxed);
-                                settings->smoothingFactor.store(0.32f, std::memory_order_relaxed);
-                                settingsDirty = true;
-                            }
-
-                            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
-                            // ---- Acquisition ----
-                            ImGui::TextDisabled("Acquisition");
-                            if (g_settings.aimFovRadius > settings->fovRadius.load(std::memory_order_relaxed))
-                                g_settings.aimFovRadius = settings->fovRadius.load(std::memory_order_relaxed);
-                            float aimFov = g_settings.aimFovRadius;
-                            if (ImGui::SliderFloat("Aim FOV", &aimFov, 50.0f, 600.0f, "%.0f px")) {
-                                g_settings.aimFovRadius = QuantizeStep(aimFov, 1.0f);
-                                if (g_settings.aimFovRadius > settings->fovRadius.load(std::memory_order_relaxed))
-                                    g_settings.aimFovRadius = settings->fovRadius.load(std::memory_order_relaxed);
-                                settingsDirty = true;
-                            }
-                            float offset = settings->headOffset.load(std::memory_order_relaxed);
-                            if (ImGui::SliderFloat("Head offset", &offset, 0.0f, 0.5f, "%.2f")) {
-                                settings->headOffset.store(offset, std::memory_order_relaxed);
-                                settingsDirty = true;
-                            }
-                            ImGui::TextDisabled("0=Top  0.15=Head  0.2=Neck  0.5=Center");
-
-                            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
-                            // ---- Motion ----
-                            ImGui::TextDisabled("Motion");
-                            
-                            const char* aimModes[] = { "Smooth", "Snap", "Magnetic" };
-                            int aimMode = static_cast<int>(g_settings.aimMode);
-                            if (ImGui::Combo("Mode", &aimMode, aimModes, 3)) {
-                                g_settings.aimMode = aimMode; settingsDirty = true;
-                            }
-                            float aimSpeed = g_settings.aimSpeed;
-                            if (ImGui::SliderFloat("Speed", &aimSpeed, 0.1f, 1.0f, "%.2f")) {
-                                g_settings.aimSpeed = QuantizeStep(aimSpeed, 0.01f); settingsDirty = true;
-                            }
-                            float smoothness = g_settings.smoothness;
-                            if (ImGui::SliderFloat("Smoothness", &smoothness, 0.0f, 1.0f, "%.2f")) {
-                                g_settings.smoothness = QuantizeStep(smoothness, 0.01f); settingsDirty = true;
-                            }
-
-                            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
-                            // ---- Stabilization ----
-                            ImGui::TextDisabled("Stabilization");
-                            const char* filterTypes[] = { "None", "EMA", "Kalman" };
-                            int filterType = static_cast<int>(g_settings.filterType);
-                            if (ImGui::Combo("Filter", &filterType, filterTypes, 3)) {
-                                g_settings.filterType = filterType; settingsDirty = true;
-                            }
-                            if (g_settings.filterType == 1) {
-                                float emaAlpha = g_settings.emaAlpha;
-                                if (ImGui::SliderFloat("EMA", &emaAlpha, 0.1f, 0.9f, "%.2f")) {
-                                    g_settings.emaAlpha = QuantizeStep(emaAlpha, 0.01f); settingsDirty = true;
-                                }
-                            } else if (g_settings.filterType == 2) {
-                                float pn = g_settings.kalmanProcessNoise;
-                                if (ImGui::SliderFloat("Process noise", &pn, 0.1f, 5.0f, "%.1f")) {
-                                    g_settings.kalmanProcessNoise = QuantizeStep(pn, 0.1f); settingsDirty = true;
-                                }
-                                float mn = g_settings.kalmanMeasurementNoise;
-                                if (ImGui::SliderFloat("Measure noise", &mn, 1.0f, 10.0f, "%.1f")) {
-                                    g_settings.kalmanMeasurementNoise = QuantizeStep(mn, 0.1f); settingsDirty = true;
-                                }
-                            }
-
-                            bool convDamp = g_settings.enableConvergenceDamping;
-                            if (ImGui::Checkbox("Anti-overshoot", &convDamp)) {
-                                g_settings.enableConvergenceDamping = convDamp; settingsDirty = true;
-                            }
-                            if (g_settings.enableConvergenceDamping) {
-                                float cr = g_settings.convergenceRadius;
-                                if (ImGui::SliderFloat("Damp radius", &cr, 10.0f, 100.0f, "%.0f px")) {
-                                    g_settings.convergenceRadius = QuantizeStep(cr, 1.0f); settingsDirty = true;
-                                }
-                            }
-
-                            float pdGain = g_settings.pdDerivativeGain;
-                            if (ImGui::SliderFloat("Deriv. damp", &pdGain, 0.0f, 0.12f, "%.3f")) {
-                                g_settings.pdDerivativeGain = QuantizeStep(pdGain, 0.005f); settingsDirty = true;
-                            }
-                            float leadFactor = g_settings.velocityLeadFactor;
-                            if (ImGui::SliderFloat("Velocity lead", &leadFactor, 0.0f, 0.20f, "%.2f")) {
-                                g_settings.velocityLeadFactor = QuantizeStep(leadFactor, 0.01f); settingsDirty = true;
-                            }
-
-                            bool recoilOn = g_settings.recoilCompensationEnabled;
-                            if (ImGui::Checkbox("Recoil comp.", &recoilOn)) {
-                                g_settings.recoilCompensationEnabled = recoilOn; settingsDirty = true;
-                            }
-                            if (g_settings.recoilCompensationEnabled) {
-                                float rs = g_settings.recoilCompensationStrength;
-                                if (ImGui::SliderFloat("Strength", &rs, 0.0f, 0.35f, "%.2f")) {
-                                    g_settings.recoilCompensationStrength = QuantizeStep(rs, 0.01f); settingsDirty = true;
-                                }
-                                float rm = g_settings.recoilCompensationMax;
-                                if (ImGui::SliderFloat("Max comp.", &rm, 2.0f, 18.0f, "%.0f px")) {
-                                    g_settings.recoilCompensationMax = QuantizeStep(rm, 1.0f); settingsDirty = true;
-                                }
-                            }
-
-                            ImGui::Spacing();
-                            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
-                            // ---- Tracking ----
-                            ImGui::TextDisabled("Tracking");
-                            int missFrames2 = g_settings.maxLockMissFrames;
-                            if (ImGui::SliderInt("Miss grace", &missFrames2, 1, 12, "%d")) {
-                                g_settings.maxLockMissFrames = missFrames2; settingsDirty = true;
-                            }
-                            int switchDelay2 = g_settings.targetSwitchDelayFrames;
-                            if (ImGui::SliderInt("Switch delay", &switchDelay2, 0, 20, "%d")) {
-                                g_settings.targetSwitchDelayFrames = switchDelay2; settingsDirty = true;
-                            }
-                            const char* priorities2[] = { "Nearest", "Largest", "Confidence" };
-                            int priority2 = static_cast<int>(g_settings.targetPriority);
-                            if (ImGui::Combo("Priority", &priority2, priorities2, 3)) {
-                                g_settings.targetPriority = priority2; settingsDirty = true;
-                            }
-
-                            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
-                            // ---- Touch Zone ----
-                            ImGui::TextDisabled("Touch zone");
-                            float tcx = settings->touchCenterX.load(std::memory_order_relaxed);
-                            if (ImGui::SliderFloat("Center X", &tcx, 0.5f, 0.95f, "%.2f")) {
-                                settings->touchCenterX.store(tcx, std::memory_order_relaxed); settingsDirty = true;
-                            }
-                            float tcy = settings->touchCenterY.load(std::memory_order_relaxed);
-                            if (ImGui::SliderFloat("Center Y", &tcy, 0.3f, 0.7f, "%.2f")) {
-                                settings->touchCenterY.store(tcy, std::memory_order_relaxed); settingsDirty = true;
-                            }
-                            float tr = settings->touchRadius.load(std::memory_order_relaxed);
-                            if (ImGui::SliderFloat("Radius", &tr, 50.0f, 300.0f, "%.0f px")) {
-                                settings->touchRadius.store(tr, std::memory_order_relaxed); settingsDirty = true;
-                            }
-                            float ad = settings->aimDelay.load(std::memory_order_relaxed);
-                            if (ImGui::SliderFloat("Delay", &ad, 0.0f, 5.0f, "%.1f ms")) {
-                                settings->aimDelay.store(ad, std::memory_order_relaxed); settingsDirty = true;
-                            }
-                        } // enabled
-                    } // CollapsingHeader Aimbot
-                } else {
-                    if (ImGui::CollapsingHeader("Aimbot", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
-                        ImGui::TextUnformatted("Root access required");
-                        ImGui::PopStyleColor();
-                        ImGui::TextDisabled("Grant root in Magisk/KernelSU, then restart.");
+                            ShowSettingHelp("Lower opacity is less distracting; higher opacity is easier to locate.");
+                        }
+                        ImGui::EndTabItem();
                     }
+
+                    if (ImGui::BeginTabItem("Aim")) {
+                        if (!rootAvailable) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
+                            ImGui::TextUnformatted("Root access required for assisted input controls.");
+                            ImGui::PopStyleColor();
+                            ImGui::TextDisabled("Grant root in Magisk/KernelSU and reopen Start flow.");
+                        } else {
+                            bool enabled = settings->aimbotEnabled.load(std::memory_order_relaxed);
+                            if (ImGui::Checkbox("Enable Aim Assist", &enabled)) {
+                                settings->aimbotEnabled.store(enabled, std::memory_order_relaxed);
+                                settingsDirty = true;
+                            }
+
+                            if (enabled) {
+                                ImGui::Spacing();
+                                if (ImGui::Button("Default", ImVec2(150, 0))) {
+                                    g_settings.aimMode = 0; g_settings.aimSpeed = 0.48f;
+                                    g_settings.smoothness = 0.78f; g_settings.filterType = 1;
+                                    g_settings.emaAlpha = 0.40f; g_settings.pdDerivativeGain = 0.040f;
+                                    g_settings.velocityLeadFactor = 0.01f; g_settings.velocityLeadClamp = 10.0f;
+                                    g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 30.0f;
+                                    g_settings.maxLockMissFrames = 5; g_settings.targetSwitchDelayFrames = 8;
+                                    g_settings.recoilCompensationEnabled = false;
+                                    g_settings.aimFovRadius = 240.0f;
+                                    settings->headOffset.store(0.18f, std::memory_order_relaxed);
+                                    settingsDirty = true;
+                                }
+                                ImGui::SameLine();
+                                if (ImGui::Button("Competitive", ImVec2(150, 0))) {
+                                    g_settings.aimMode = 1; g_settings.aimSpeed = 0.72f;
+                                    g_settings.smoothness = 0.45f; g_settings.filterType = 0;
+                                    g_settings.emaAlpha = 0.55f; g_settings.pdDerivativeGain = 0.025f;
+                                    g_settings.velocityLeadFactor = 0.04f; g_settings.velocityLeadClamp = 12.0f;
+                                    g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 22.0f;
+                                    g_settings.maxLockMissFrames = 3; g_settings.targetSwitchDelayFrames = 5;
+                                    g_settings.recoilCompensationEnabled = false;
+                                    g_settings.aimFovRadius = 220.0f;
+                                    settings->headOffset.store(0.15f, std::memory_order_relaxed);
+                                    settingsDirty = true;
+                                }
+                                if (ImGui::Button("Balanced", ImVec2(150, 0))) {
+                                    g_settings.aimMode = 0; g_settings.aimSpeed = 0.52f;
+                                    g_settings.smoothness = 0.80f; g_settings.filterType = 1;
+                                    g_settings.emaAlpha = 0.38f; g_settings.pdDerivativeGain = 0.042f;
+                                    g_settings.velocityLeadFactor = 0.01f; g_settings.velocityLeadClamp = 10.0f;
+                                    g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 32.0f;
+                                    g_settings.maxLockMissFrames = 5; g_settings.targetSwitchDelayFrames = 9;
+                                    g_settings.recoilCompensationEnabled = false;
+                                    g_settings.aimFovRadius = 260.0f;
+                                    settings->headOffset.store(0.18f, std::memory_order_relaxed);
+                                    settingsDirty = true;
+                                }
+                                ImGui::SameLine();
+                                if (ImGui::Button("Precision", ImVec2(150, 0))) {
+                                    g_settings.aimMode = 2; g_settings.aimSpeed = 0.58f;
+                                    g_settings.smoothness = 0.88f; g_settings.filterType = 2;
+                                    g_settings.kalmanProcessNoise = 0.8f; g_settings.kalmanMeasurementNoise = 5.0f;
+                                    g_settings.pdDerivativeGain = 0.030f; g_settings.velocityLeadFactor = 0.00f;
+                                    g_settings.velocityLeadClamp = 8.0f;
+                                    g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 40.0f;
+                                    g_settings.maxLockMissFrames = 6; g_settings.targetSwitchDelayFrames = 12;
+                                    g_settings.recoilCompensationEnabled = false;
+                                    g_settings.aimFovRadius = 300.0f;
+                                    settings->headOffset.store(0.17f, std::memory_order_relaxed);
+                                    settingsDirty = true;
+                                }
+
+                                ImGui::Separator();
+
+                                float offset = settings->headOffset.load(std::memory_order_relaxed);
+                                if (ImGui::SliderFloat("Head offset", &offset, 0.0f, 0.5f, "%.2f")) {
+                                    settings->headOffset.store(offset, std::memory_order_relaxed);
+                                    settingsDirty = true;
+                                }
+                                ShowSettingHelp("Adjusts vertical aim point inside the box. Increase to target higher.");
+
+                                int priority = static_cast<int>(g_settings.targetPriority);
+                                const char* priorities[] = { "Nearest", "Largest", "Confidence" };
+                                if (ImGui::Combo("Target priority", &priority, priorities, 3)) {
+                                    g_settings.targetPriority = priority;
+                                    settingsDirty = true;
+                                }
+
+                                ImGui::Separator();
+
+                                if (g_settings.aimFovRadius > settings->fovRadius.load(std::memory_order_relaxed)) {
+                                    g_settings.aimFovRadius = settings->fovRadius.load(std::memory_order_relaxed);
+                                }
+
+                                const char* aimModes[] = { "Smooth", "Snap", "Magnetic" };
+                                int aimMode = static_cast<int>(g_settings.aimMode);
+                                if (ImGui::Combo("Aim mode", &aimMode, aimModes, 3)) { g_settings.aimMode = aimMode; settingsDirty = true; }
+
+                                float aimSpeed = g_settings.aimSpeed;
+                                if (ImGui::SliderFloat("Aim speed", &aimSpeed, 0.1f, 1.0f, "%.2f")) { g_settings.aimSpeed = QuantizeStep(aimSpeed, 0.01f); settingsDirty = true; }
+                                ShowSettingHelp("Higher is faster snap movement; lower is slower and smoother.");
+
+                                float smoothness = g_settings.smoothness;
+                                if (ImGui::SliderFloat("Smoothness", &smoothness, 0.0f, 1.0f, "%.2f")) { g_settings.smoothness = QuantizeStep(smoothness, 0.01f); settingsDirty = true; }
+                                ShowSettingHelp("Higher smoothness looks natural but reacts slower.");
+
+                                float aimFov = g_settings.aimFovRadius;
+                                if (ImGui::SliderFloat("Aim FOV", &aimFov, 50.0f, 600.0f, "%.0f px")) {
+                                    g_settings.aimFovRadius = QuantizeStep(aimFov, 1.0f);
+                                    if (g_settings.aimFovRadius > settings->fovRadius.load(std::memory_order_relaxed)) {
+                                        g_settings.aimFovRadius = settings->fovRadius.load(std::memory_order_relaxed);
+                                    }
+                                    settingsDirty = true;
+                                }
+                                ShowSettingHelp("Only targets inside this radius can be selected.");
+
+                                float maxDist = g_settings.maxAimDistance;
+                                if (ImGui::SliderFloat("Max aim distance", &maxDist, 100.0f, 1000.0f, "%.0f px")) {
+                                    g_settings.maxAimDistance = QuantizeStep(maxDist, 1.0f);
+                                    settingsDirty = true;
+                                }
+
+                                int fps = static_cast<int>(g_settings.aimbotFps);
+                                if (ImGui::SliderInt("Aimbot FPS", &fps, 30, 120)) {
+                                    g_settings.aimbotFps = static_cast<uint32_t>(fps);
+                                    settingsDirty = true;
+                                }
+                                ShowSettingHelp("Update rate for assist logic. Higher is more responsive but heavier.");
+
+                                ImGui::Separator();
+
+                                const char* filterTypes[] = { "None", "EMA", "Kalman" };
+                                int filterType = static_cast<int>(g_settings.filterType);
+                                if (ImGui::Combo("Stabilization filter", &filterType, filterTypes, 3)) {
+                                    g_settings.filterType = filterType;
+                                    settingsDirty = true;
+                                }
+                                if (g_settings.filterType == 1) {
+                                    float ema = g_settings.emaAlpha;
+                                    if (ImGui::SliderFloat("EMA alpha", &ema, 0.1f, 0.9f, "%.2f")) { g_settings.emaAlpha = QuantizeStep(ema, 0.01f); settingsDirty = true; }
+                                } else if (g_settings.filterType == 2) {
+                                    float pn = g_settings.kalmanProcessNoise;
+                                    if (ImGui::SliderFloat("Kalman process", &pn, 0.1f, 5.0f, "%.1f")) { g_settings.kalmanProcessNoise = QuantizeStep(pn, 0.1f); settingsDirty = true; }
+                                    float mn = g_settings.kalmanMeasurementNoise;
+                                    if (ImGui::SliderFloat("Kalman measure", &mn, 1.0f, 10.0f, "%.1f")) { g_settings.kalmanMeasurementNoise = QuantizeStep(mn, 0.1f); settingsDirty = true; }
+                                }
+
+                                bool antiOvershoot = g_settings.enableConvergenceDamping;
+                                if (ImGui::Checkbox("Anti overshoot", &antiOvershoot)) { g_settings.enableConvergenceDamping = antiOvershoot; settingsDirty = true; }
+                                if (g_settings.enableConvergenceDamping) {
+                                    float cr = g_settings.convergenceRadius;
+                                    if (ImGui::SliderFloat("Damp radius", &cr, 10.0f, 100.0f, "%.0f px")) { g_settings.convergenceRadius = QuantizeStep(cr, 1.0f); settingsDirty = true; }
+                                }
+
+                                float pdGain = g_settings.pdDerivativeGain;
+                                if (ImGui::SliderFloat("Derivative damping", &pdGain, 0.0f, 0.12f, "%.3f")) { g_settings.pdDerivativeGain = QuantizeStep(pdGain, 0.005f); settingsDirty = true; }
+
+                                float leadFactor = g_settings.velocityLeadFactor;
+                                if (ImGui::SliderFloat("Velocity lead", &leadFactor, 0.0f, 0.20f, "%.2f")) { g_settings.velocityLeadFactor = QuantizeStep(leadFactor, 0.01f); settingsDirty = true; }
+                                float leadClamp = g_settings.velocityLeadClamp;
+                                if (ImGui::SliderFloat("Lead clamp", &leadClamp, 1.0f, 40.0f, "%.0f px")) { g_settings.velocityLeadClamp = QuantizeStep(leadClamp, 1.0f); settingsDirty = true; }
+
+                                bool recoilOn = g_settings.recoilCompensationEnabled;
+                                if (ImGui::Checkbox("Recoil compensation", &recoilOn)) { g_settings.recoilCompensationEnabled = recoilOn; settingsDirty = true; }
+                                if (g_settings.recoilCompensationEnabled) {
+                                    float rs = g_settings.recoilCompensationStrength;
+                                    if (ImGui::SliderFloat("Recoil strength", &rs, 0.0f, 0.35f, "%.2f")) { g_settings.recoilCompensationStrength = QuantizeStep(rs, 0.01f); settingsDirty = true; }
+                                    float rm = g_settings.recoilCompensationMax;
+                                    if (ImGui::SliderFloat("Recoil max", &rm, 2.0f, 18.0f, "%.0f px")) { g_settings.recoilCompensationMax = QuantizeStep(rm, 1.0f); settingsDirty = true; }
+                                    float rd = g_settings.recoilCompensationDecay;
+                                    if (ImGui::SliderFloat("Recoil decay", &rd, 0.50f, 0.98f, "%.2f")) { g_settings.recoilCompensationDecay = QuantizeStep(rd, 0.01f); settingsDirty = true; }
+                                }
+
+                                int missFrames = g_settings.maxLockMissFrames;
+                                if (ImGui::SliderInt("Miss grace", &missFrames, 1, 12, "%d")) { g_settings.maxLockMissFrames = missFrames; settingsDirty = true; }
+                                int switchDelay = g_settings.targetSwitchDelayFrames;
+                                if (ImGui::SliderInt("Switch delay", &switchDelay, 0, 20, "%d")) { g_settings.targetSwitchDelayFrames = switchDelay; settingsDirty = true; }
+
+                                ImGui::Separator();
+
+                                float tcx = settings->touchCenterX.load(std::memory_order_relaxed);
+                                if (ImGui::SliderFloat("Touch center X", &tcx, 0.5f, 0.95f, "%.2f")) { settings->touchCenterX.store(tcx, std::memory_order_relaxed); settingsDirty = true; }
+                                float tcy = settings->touchCenterY.load(std::memory_order_relaxed);
+                                if (ImGui::SliderFloat("Touch center Y", &tcy, 0.3f, 0.7f, "%.2f")) { settings->touchCenterY.store(tcy, std::memory_order_relaxed); settingsDirty = true; }
+                                float tr = settings->touchRadius.load(std::memory_order_relaxed);
+                                if (ImGui::SliderFloat("Touch radius", &tr, 50.0f, 300.0f, "%.0f px")) { settings->touchRadius.store(tr, std::memory_order_relaxed); settingsDirty = true; }
+                                float ad = settings->aimDelay.load(std::memory_order_relaxed);
+                                if (ImGui::SliderFloat("Aim delay", &ad, 0.0f, 5.0f, "%.1f ms")) { settings->aimDelay.store(ad, std::memory_order_relaxed); settingsDirty = true; }
+
+                                if (ImGui::Button("Reset touch zone", ImVec2(220.0f, 0.0f))) {
+                                    settings->touchCenterX.store(0.75f, std::memory_order_relaxed);
+                                    settings->touchCenterY.store(0.5f, std::memory_order_relaxed);
+                                    settings->touchRadius.store(150.0f, std::memory_order_relaxed);
+                                    settings->aimDelay.store(0.0f, std::memory_order_relaxed);
+                                    settingsDirty = true;
+                                }
+                            }
+                        }
+                        ImGui::EndTabItem();
+                    }
+
+                    if (ImGui::BeginTabItem("Info")) {
+                        ImGui::Text("AimBuddy (open source)");
+                        ImGui::Text("Version: 0.1.0-beta.1");
+                        ImGui::Text("Overlay FPS: %.0f", g_measuredOverlayFps);
+                        ImGui::Text("Inference: %.1f ms", g_measuredInferenceMs);
+                        ImGui::Text("Detections: %d", static_cast<int>(latest.boxes.size()));
+                        ImGui::Text("Screen: %dx%d", g_screenWidth, g_screenHeight);
+                        ImGui::TextDisabled("github.com/1337XCode/AimBuddy");
+                        ImGui::Separator();
+                        ImGui::TextWrapped("Tip: use presets first, then fine tune only a few controls for stable behavior.");
+                        ImGui::EndTabItem();
+                    }
+
+                    ImGui::EndTabBar();
                 }
 
-                ImGui::Separator();
+                ImGui::EndChild();
 
-                // ---- Info ----
-                if (ImGui::CollapsingHeader("Info")) {
-                    const float fps = g_measuredOverlayFps;
-                    ImGui::Text("AimBuddy  (open source)");
-                    ImGui::Text("Overlay: %.0f fps", fps);
-                    ImGui::Text("Detections: %d", (int)latest.boxes.size());
-                    ImGui::Text("Screen: %dx%d", g_screenWidth, g_screenHeight);
-                    ImGui::TextDisabled("github.com/1337XCode/AimBuddy");
+                if (ImGui::Button("Save now", ImVec2(160.0f, 0.0f))) {
+                    ApplyRenderConfigToUnifiedSettings(*settings);
+                    g_settings.validate();
+                    g_settings.save();
+                    g_settingsPendingSave = false;
                 }
+                ImGui::SameLine();
+                ImGui::TextDisabled("Changes auto-save shortly after edits");
             }
             if (settingsDirty) {
                 ApplyRenderConfigToUnifiedSettings(*settings);
@@ -763,6 +822,9 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                 g_settingsDirtyAt = ImGui::GetTime();
             }
             ImGui::End();
+            g_menuWasVisible = true;
+        } else {
+            g_menuWasVisible = false;
         }
 
         if (g_settingsPendingSave) {
