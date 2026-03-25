@@ -106,6 +106,7 @@ class MainActivity : AppCompatActivity() {
     private val isStarting = AtomicBoolean(false)
     private val rootCheckInProgress = AtomicBoolean(false)
     private val rootAvailable = AtomicBoolean(false)
+    private var pendingStartAfterRoot = false
 
     // Floating menu icon overlay
     private var floatingIconView: ImageView? = null
@@ -199,13 +200,6 @@ class MainActivity : AppCompatActivity() {
             setStatus("Status: Ready")
             ImGuiGLSurface.nativeSetRootAvailable(false)
             maybeShowOpenSourceDialogOnce()
-            // Delay root check slightly so the activity is fully stable before
-            // the Magisk prompt fires (avoids prompt appearing during transitions).
-            Handler(Looper.getMainLooper()).postDelayed({
-                if (!isFinishing && !isDestroyed) {
-                    beginAsyncRootCheck(showDialogOnFailure = true)
-                }
-            }, 800)
         }
     }
     
@@ -250,7 +244,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Check overlay permission first — show a helpful explanation dialog
+        if (statusTextState == "Status: Init Failed") {
+            showAppToast("Initialization failed. Check model files.", true)
+            return
+        }
+
+        // Step 1: overlay permission
         if (!Settings.canDrawOverlays(this)) {
             Log.i(TAG, "Requesting overlay permission")
             AlertDialog.Builder(this)
@@ -269,14 +268,52 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Request MediaProjection permission
+        requestRootThenMediaProjection()
+    }
+
+    private fun requestRootThenMediaProjection() {
+        // Root is optional for ESP runtime. If already granted, continue immediately.
+        if (rootAvailable.get()) {
+            requestMediaProjectionPermission()
+            return
+        }
+
+        pendingStartAfterRoot = true
+        setStatus("Status: Waiting for Root Permission")
+        showAppToast("Approve root request if you want assisted input.", false)
+        beginAsyncRootCheck(showDialogOnFailure = false) { hasRoot ->
+            if (!pendingStartAfterRoot) return@beginAsyncRootCheck
+
+            if (hasRoot) {
+                setStatus("Status: Root Granted")
+                requestMediaProjectionPermission()
+            } else {
+                setStatus("Status: Ready")
+                showRootMissingDialog(
+                    onRetry = {
+                        requestRootThenMediaProjection()
+                    },
+                    onContinue = {
+                        requestMediaProjectionPermission()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun requestMediaProjectionPermission() {
+        pendingStartAfterRoot = false
+        // Step 2 (or 3 when root prompt is shown): media projection permission
         Log.i(TAG, "Requesting MediaProjection")
         val captureIntent = mediaProjectionManager?.createScreenCaptureIntent()
             ?: run {
                 Log.e(TAG, "MediaProjectionManager is null")
                 showAppToast("Unable to start screen capture", true)
+                setStatus("Status: Ready")
                 return
             }
+
+        setStatus("Status: Waiting for Screen Capture Permission")
 
         startActivityForResult(
             captureIntent,
@@ -296,7 +333,7 @@ class MainActivity : AppCompatActivity() {
             REQUEST_OVERLAY_PERMISSION -> {
                 if (Settings.canDrawOverlays(this)) {
                     Log.i(TAG, "Overlay permission granted")
-                    onStartClicked()  // Retry start
+                    requestRootThenMediaProjection()
                 } else {
                     Log.w(TAG, "Overlay permission denied")
                     showAppToast("Overlay permission required", true)
@@ -655,7 +692,7 @@ class MainActivity : AppCompatActivity() {
 
         AlertDialog.Builder(this)
             .setTitle("AimBuddy Notice")
-            .setMessage("AimBuddy is free and open source. If you paid for this app, you were scammed.\n\nRepository: $OSS_GITHUB_URL")
+            .setMessage("AimBuddy is completely free and open source. If you paid for this app, you were scammed.\n\nRepository: $OSS_GITHUB_URL")
             .setPositiveButton("Open GitHub") { _, _ ->
                 prefs.edit().putBoolean(PREF_OSS_NOTICE_SHOWN, true).apply()
                 openGithubUrl()
@@ -714,7 +751,7 @@ class MainActivity : AppCompatActivity() {
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "Real-time detection and aiming companion",
+                text = "Real-time object detection and tracking",
                 modifier = Modifier.padding(top = 8.dp),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -811,21 +848,21 @@ class MainActivity : AppCompatActivity() {
     /**
      * Show dialog if Root is missing
      */
-    private fun showRootMissingDialog() {
+    private fun showRootMissingDialog(onRetry: () -> Unit, onContinue: () -> Unit) {
         AlertDialog.Builder(this)
             .setTitle("Root Access Required")
-            .setMessage("The High-Performance Aimbot requires ROOT access to function.\n\nWithout root, only the ESP (Visuals) will work.\n\nPlease grant root permissions in Magisk/KernelSU.")
+            .setMessage("Assisted input needs root access.\n\nIf your root app uses fingerprint or MFA, approve it first and wait for confirmation.\n\nYou can retry root now, or continue in Visual Assist mode.")
             .setPositiveButton("Retry") { _, _ ->
-                beginAsyncRootCheck(showDialogOnFailure = false)
+                onRetry()
             }
-            .setNegativeButton("Continue without Aimbot") { _, _ ->
-                // User can use ESP only
+            .setNegativeButton("Continue Visual Only") { _, _ ->
+                onContinue()
             }
             .setCancelable(false)
             .show()
     }
 
-    private fun beginAsyncRootCheck(showDialogOnFailure: Boolean) {
+    private fun beginAsyncRootCheck(showDialogOnFailure: Boolean, onCompleted: ((Boolean) -> Unit)? = null) {
         if (!rootCheckInProgress.compareAndSet(false, true)) {
             Log.i(TAG, "Root check already in progress")
             return
@@ -833,7 +870,7 @@ class MainActivity : AppCompatActivity() {
 
         Log.i(TAG, "Starting async root check")
         thread(start = true, name = "aimbuddy-root-check") {
-            val hasRoot = RootUtils.ensureRoot(this)
+            val hasRoot = RootUtils.ensureRoot(this, timeoutSeconds = 90)
             runOnUiThread {
                 rootCheckInProgress.set(false)
                 rootAvailable.set(hasRoot)
@@ -847,7 +884,7 @@ class MainActivity : AppCompatActivity() {
                     if (statusTextState != "Status: Init Failed") {
                         if (nativeInitAimbot()) {
                             Log.i(TAG, "Aimbot initialized successfully")
-                            showAppToast("Root granted — aimbot enabled ✓", false)
+                            showAppToast("Root granted! Aimbot enabled.", false)
                         } else {
                             Log.w(TAG, "Aimbot init failed after root grant")
                             showAppToast("Root granted but aimbot init failed. Check /dev/uinput.", true)
@@ -858,11 +895,15 @@ class MainActivity : AppCompatActivity() {
                     if (showDialogOnFailure && !isFinishing && !isDestroyed) {
                         Handler(Looper.getMainLooper()).postDelayed({
                             if (!isFinishing && !isDestroyed) {
-                                showRootMissingDialog()
+                                showRootMissingDialog(
+                                    onRetry = { beginAsyncRootCheck(showDialogOnFailure = false, onCompleted = onCompleted) },
+                                    onContinue = { }
+                                )
                             }
                         }, 400)
                     }
                 }
+                onCompleted?.invoke(hasRoot)
             }
         }
     }

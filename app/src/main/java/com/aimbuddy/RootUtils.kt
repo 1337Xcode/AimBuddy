@@ -5,6 +5,7 @@ import android.util.Log
 import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 
 /**
  * RootUtils - Root permission management
@@ -18,7 +19,7 @@ object RootUtils {
     /**
      * Check if root access is available and grant it if needed
      */
-    fun ensureRoot(context: Context? = null): Boolean {
+    fun ensureRoot(context: Context? = null, timeoutSeconds: Long = 90): Boolean {
         return try {
             Log.i(TAG, "Checking root access...")
             
@@ -26,9 +27,17 @@ object RootUtils {
             val process = ProcessBuilder("su", "-c", "id")
                 .redirectErrorStream(true)
                 .start()
-            
+
+            val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroy()
+                process.destroyForcibly()
+                Log.w(TAG, "Root check timed out after ${timeoutSeconds}s (MFA approval may still be pending)")
+                return false
+            }
+
             val output = process.inputStream.bufferedReader().use { it.readText() }
-            val exitCode = process.waitFor()
+            val exitCode = process.exitValue()
             
             Log.i(TAG, "su exit=$exitCode output=$output")
             
