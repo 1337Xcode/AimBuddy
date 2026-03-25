@@ -1,0 +1,17 @@
+// Top-level build file for ESP Overlay project
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:9.0.0'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0'
+    }
+}
+
+
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

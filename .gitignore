@@ -1,0 +1,78 @@
+# Android and Gradle artifacts
+.gradle/
+build/
+**/build/
+.kotlin/
+**/.cxx/
+app/.externalNativeBuild/
+app/release/
+
+# Android Studio and IntelliJ
+.idea/
+*.iml
+captures/
+
+# VS Code workspace metadata
+.vscode/
+
+# Local machine settings
+local.properties
+
+# Build outputs and packaged binaries
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Native and symbol artifacts
+*.so
+*.o
+*.obj
+*.a
+*.lib
+*.pdb
+
+# Python virtual environments and caches
+.venv/
+venv/
+env/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+warnings.txt
+Info.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local-only workspace archive
+archive_local/
+
+# Training generated artifacts and local datasets
+training/dataset/
+training/raw_frames/
+training/videos/
+training/outputs/
+training/export/
+training/export
+
+# Keep model deployment folder structure but ignore actual deployed model binaries
+app/src/main/assets/models/*
+!app/src/main/assets/models/.gitkeep
+
+# Model and checkpoint artifacts generated during training
+training/**/*.pt
+training/**/*.pth
+training/**/*.onnx
+training/**/*.bin
+training/**/*.param

@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">AimBuddy</string>
+    <string name="accessibility_service_description">High-performance touch injection for AimBuddy.</string>
+</resources>

@@ -1,0 +1,115 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.plugin.compose' version '2.1.0'
+}
+
+android {
+    namespace = 'com.aimbuddy'
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.aimbuddy"
+        minSdk = 30  // Android 11+ for HardwareBuffer support
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+
+        // Only build for arm64-v8a — covers all modern Android flagship and mid-range phones
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+                arguments "-DANDROID_STL=c++_static", "-DANDROID_ARM_NEON=TRUE"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            debuggable = false
+            jniDebuggable = false
+            pseudoLocalesEnabled = false
+            zipAlignEnabled = true
+            ndk {
+                debugSymbolLevel = 'none'
+            }
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable = true
+            jniDebuggable = false
+            ndk {
+                debugSymbolLevel = 'none'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = 'src/main/cpp/CMakeLists.txt'
+            version = '3.22.1'
+        }
+    }
+
+    // Source sets for assets
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    buildFeatures {
+        compose = true
+        prefab = true
+    }
+
+    packaging {
+        jniLibs {
+            // Map JNI libs directly from the APK without extraction — saves RAM at runtime
+            useLegacyPackaging = false
+            pickFirsts += ['**/libc++_shared.so']
+        }
+        resources {
+            // Strip unnecessary resource files from the APK
+            excludes += [
+                'META-INF/*.kotlin_module',
+                'META-INF/LICENSE*',
+                'META-INF/NOTICE*',
+                'kotlin/**',
+                '**.proto'
+            ]
+        }
+    }
+
+    buildToolsVersion = '36.0.0'
+    ndkVersion = '29.0.13113456 rc1'
+}
+
+dependencies {
+    // AndroidX core
+    implementation 'androidx.core:core-ktx:1.15.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+
+    // AndroidSVG
+    implementation 'com.caverock:androidsvg:1.4'
+
+    // Jetpack Compose — use latest BOM for coordinated dependency versions
+    implementation platform('androidx.compose:compose-bom:2025.01.00')
+    implementation 'androidx.activity:activity-compose:1.10.0'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.material3:material3'
+    // Debug-only: keep tooling preview off the release build
+    debugImplementation 'androidx.compose.ui:ui-tooling-preview'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+}
