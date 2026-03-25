@@ -143,7 +143,7 @@ namespace {
         double statsEndToEndMs = 0.0;
         uint64_t statsEndToEndSamples = 0;
         constexpr uint64_t kStatsWindow = 120;
-        constexpr double kTargetCycleMs = 14.0;
+        constexpr double kTargetCycleMs = 8.0;
         constexpr double kE2ePressureMs = 20.0;
         constexpr double kEmaAlpha = 0.15;
         constexpr int kMinAdaptiveCrop = 224;

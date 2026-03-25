@@ -37,21 +37,21 @@ struct UnifiedSettings {
     float touchRadius = 250.0f;
     float aimDelay = 3.5f;
     
-    int32_t maxLostFrames = 30;
+    int32_t maxLostFrames = 8;
     float iouThreshold = 0.3f;
-    float velocitySmoothing = 0.7f;
+    float velocitySmoothing = 0.55f;
     float targetSwitchThreshold = 1.3f;
     int32_t targetSwitchDelayFrames = 6;
-    int32_t maxLockMissFrames = 5;
+    int32_t maxLockMissFrames = 2;
     
     // Aim Stabilization System
     int32_t filterType = 1;  // 0=None, 1=EMA, 2=Kalman
-    float emaAlpha = 0.4f;  // EMA smoothing factor (lower = smoother)
+    float emaAlpha = 0.25f;  // EMA smoothing factor (lower = smoother, better jitter suppression)
     bool enableConvergenceDamping = true;  // Reduce overshoot near target
     float convergenceRadius = 30.0f;  // Distance for full dampening
     float pdDerivativeGain = 0.045f;  // Derivative brake (damping) for smooth mode
-    float velocityLeadFactor = 0.14f; // Scales tracked velocity when leading targets
-    float velocityLeadClamp = 10.0f;  // Max lead in pixels per axis
+    float velocityLeadFactor = 0.28f; // Scales tracked velocity when leading targets
+    float velocityLeadClamp = 18.0f;  // Max lead in pixels per axis
     bool recoilCompensationEnabled = false;
     float recoilCompensationStrength = 0.18f; // Scales adaptive recoil correction
     float recoilCompensationMax = 12.0f;      // Max additional Y correction in px/frame

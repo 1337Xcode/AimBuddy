@@ -21,7 +21,7 @@ extern UnifiedSettings g_settings;
 
 static constexpr int AIM_SLOT = 9;
 static constexpr float MAX_SINGLE_MOVE = 35.0f;
-static constexpr float MIN_DISTANCE = 3.0f;
+static constexpr float MIN_DISTANCE = 5.0f;
 static constexpr float EPSILON = 0.0001f;
 static constexpr float AXIS_NO_CROSS_RATIO = 0.85f;
 
@@ -67,6 +67,11 @@ void AimbotController::stop() {
 
 void AimbotController::updateTargets(const ESP::BoundingBox* detections, int count) {
     if (!m_running) return;
+    
+    // Zero-detection fast-release: immediately stop touch when nothing is detected
+    if (count == 0 && m_isAiming) {
+        stopAiming();
+    }
     
     std::lock_guard<std::mutex> lock(m_trackerMutex);
     UnifiedSettings settingsSnapshot = g_settings;
@@ -133,9 +138,10 @@ void AimbotController::aimAt(const TrackedTarget& target) {
     const float leadConfidenceScale = AimbotMath::clamp((target.confidence - 0.40f) / 0.60f, 0.0f, 1.0f);
     float leadScale = leadDistanceScale * leadConfidenceScale;
 
+    // Proportional speed gate: scale lead UP with target speed (faster = more lead)
     const float targetSpeed = std::sqrt(target.velocity.x * target.velocity.x + target.velocity.y * target.velocity.y);
-    const float motionLeadGate = AimbotMath::clamp(1.0f - (targetSpeed / 22.0f), 0.0f, 1.0f);
-    leadScale *= motionLeadGate;
+    const float motionSpeedGate = AimbotMath::clamp(targetSpeed / 30.0f, 0.0f, 1.0f);
+    leadScale *= motionSpeedGate;
 
     if (!m_isAiming) {
         leadScale = 0.0f;
@@ -419,6 +425,16 @@ void AimbotController::applyMovement(float moveX, float moveY, const UnifiedSett
 
     m_prevMoveX = moveX;
     m_prevMoveY = moveY;
+
+    // Jitter suppression: dampen very small movements when already locked on target
+    if (m_isAiming) {
+        const float moveMag = std::sqrt(moveX * moveX + moveY * moveY);
+        if (moveMag < 1.5f && moveMag > EPSILON) {
+            const float jitterScale = moveMag / 1.5f; // 0..1 ramp
+            moveX *= jitterScale * jitterScale; // quadratic suppression
+            moveY *= jitterScale * jitterScale;
+        }
+    }
 
     const float touchCenterX = settings.touchX;
     const float touchCenterY = settings.touchY;

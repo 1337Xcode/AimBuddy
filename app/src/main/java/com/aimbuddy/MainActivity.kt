@@ -450,7 +450,7 @@ class MainActivity : AppCompatActivity() {
         imageReader = ImageReader.newInstance(
             CAPTURE_WIDTH, CAPTURE_HEIGHT,
             PixelFormat.RGBA_8888,
-            2  // 2-buffer depth for double buffering
+            3  // Triple buffering to prevent producer stalls (matches native IMAGE_READER_MAX_IMAGES)
         ).apply {
             setOnImageAvailableListener({ reader ->
                 val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener

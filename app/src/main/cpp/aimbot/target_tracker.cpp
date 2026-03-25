@@ -40,7 +40,7 @@ void TargetTracker::updateVelocity(TrackedTarget& track, const ESP::BoundingBox&
     ESP::Vector2 newVelocity = (centerNew - centerOld) * (1.0f / dt);
 
     // Clamp velocity spikes caused by single-frame detector jitter
-    const float maxVelocity = std::max(45.0f, detection.height * 0.9f);
+    const float maxVelocity = std::max(60.0f, detection.height * 1.5f);
     newVelocity.x = AimbotMath::clamp(newVelocity.x, -maxVelocity, maxVelocity);
     newVelocity.y = AimbotMath::clamp(newVelocity.y, -maxVelocity, maxVelocity);
     

@@ -26,8 +26,8 @@ namespace Config {
     /// Reduced from 640 to 480 for better performance
     constexpr int CROP_SIZE = 480;
     
-    /// ImageReader buffer depth (double buffering)
-    constexpr int IMAGE_READER_MAX_IMAGES = 2;
+    /// ImageReader buffer depth (triple buffering to prevent producer stalls)
+    constexpr int IMAGE_READER_MAX_IMAGES = 3;
     
     /// Frame capture interval in milliseconds
     constexpr int CAPTURE_INTERVAL_MS = 10;

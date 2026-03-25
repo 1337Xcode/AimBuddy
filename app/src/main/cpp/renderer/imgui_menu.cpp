@@ -611,10 +611,10 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                                 if (ImGui::Button("Default", ImVec2(150, 0))) {
                                     g_settings.aimMode = 0; g_settings.aimSpeed = 0.48f;
                                     g_settings.smoothness = 0.78f; g_settings.filterType = 1;
-                                    g_settings.emaAlpha = 0.40f; g_settings.pdDerivativeGain = 0.040f;
-                                    g_settings.velocityLeadFactor = 0.01f; g_settings.velocityLeadClamp = 10.0f;
+                                    g_settings.emaAlpha = 0.25f; g_settings.pdDerivativeGain = 0.040f;
+                                    g_settings.velocityLeadFactor = 0.22f; g_settings.velocityLeadClamp = 18.0f;
                                     g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 30.0f;
-                                    g_settings.maxLockMissFrames = 5; g_settings.targetSwitchDelayFrames = 8;
+                                    g_settings.maxLockMissFrames = 2; g_settings.targetSwitchDelayFrames = 8;
                                     g_settings.recoilCompensationEnabled = false;
                                     g_settings.aimFovRadius = 240.0f;
                                     settings->headOffset.store(0.18f, std::memory_order_relaxed);
@@ -624,10 +624,10 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                                 if (ImGui::Button("Competitive", ImVec2(150, 0))) {
                                     g_settings.aimMode = 1; g_settings.aimSpeed = 0.72f;
                                     g_settings.smoothness = 0.45f; g_settings.filterType = 0;
-                                    g_settings.emaAlpha = 0.55f; g_settings.pdDerivativeGain = 0.025f;
-                                    g_settings.velocityLeadFactor = 0.04f; g_settings.velocityLeadClamp = 12.0f;
+                                    g_settings.emaAlpha = 0.30f; g_settings.pdDerivativeGain = 0.025f;
+                                    g_settings.velocityLeadFactor = 0.30f; g_settings.velocityLeadClamp = 20.0f;
                                     g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 22.0f;
-                                    g_settings.maxLockMissFrames = 3; g_settings.targetSwitchDelayFrames = 5;
+                                    g_settings.maxLockMissFrames = 2; g_settings.targetSwitchDelayFrames = 5;
                                     g_settings.recoilCompensationEnabled = false;
                                     g_settings.aimFovRadius = 220.0f;
                                     settings->headOffset.store(0.15f, std::memory_order_relaxed);
@@ -636,10 +636,10 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                                 if (ImGui::Button("Balanced", ImVec2(150, 0))) {
                                     g_settings.aimMode = 0; g_settings.aimSpeed = 0.52f;
                                     g_settings.smoothness = 0.80f; g_settings.filterType = 1;
-                                    g_settings.emaAlpha = 0.38f; g_settings.pdDerivativeGain = 0.042f;
-                                    g_settings.velocityLeadFactor = 0.01f; g_settings.velocityLeadClamp = 10.0f;
+                                    g_settings.emaAlpha = 0.22f; g_settings.pdDerivativeGain = 0.042f;
+                                    g_settings.velocityLeadFactor = 0.24f; g_settings.velocityLeadClamp = 16.0f;
                                     g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 32.0f;
-                                    g_settings.maxLockMissFrames = 5; g_settings.targetSwitchDelayFrames = 9;
+                                    g_settings.maxLockMissFrames = 2; g_settings.targetSwitchDelayFrames = 9;
                                     g_settings.recoilCompensationEnabled = false;
                                     g_settings.aimFovRadius = 260.0f;
                                     settings->headOffset.store(0.18f, std::memory_order_relaxed);
@@ -650,10 +650,10 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                                     g_settings.aimMode = 2; g_settings.aimSpeed = 0.58f;
                                     g_settings.smoothness = 0.88f; g_settings.filterType = 2;
                                     g_settings.kalmanProcessNoise = 0.8f; g_settings.kalmanMeasurementNoise = 5.0f;
-                                    g_settings.pdDerivativeGain = 0.030f; g_settings.velocityLeadFactor = 0.00f;
-                                    g_settings.velocityLeadClamp = 8.0f;
+                                    g_settings.pdDerivativeGain = 0.030f; g_settings.velocityLeadFactor = 0.18f;
+                                    g_settings.velocityLeadClamp = 14.0f;
                                     g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 40.0f;
-                                    g_settings.maxLockMissFrames = 6; g_settings.targetSwitchDelayFrames = 12;
+                                    g_settings.maxLockMissFrames = 2; g_settings.targetSwitchDelayFrames = 12;
                                     g_settings.recoilCompensationEnabled = false;
                                     g_settings.aimFovRadius = 300.0f;
                                     settings->headOffset.store(0.17f, std::memory_order_relaxed);
