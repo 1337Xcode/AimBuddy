@@ -55,7 +55,7 @@ Python entrypoints auto-create missing required folders, including output and de
 
 Run in this order when executing manually:
 
-1. `scripts\01_setup_environment.bat`
+1. `scripts\01_setup_environment.bat` (creates `.venv`, installs deps, and ensures `yolo26n.pt`)
 2. `scripts\02_extract_frames.bat` (optional if starting from videos)
 3. `scripts\03_validate_dataset.bat`
 4. `scripts\04_train_adaptive.bat` or `scripts\05_train_manual.bat`

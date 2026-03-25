@@ -62,6 +62,13 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo Ensuring base model ^(yolo26n.pt^) is available...
+python src\download_base_model.py
+if errorlevel 1 (
+  echo ERROR: Failed to fetch base model yolo26n.pt.
+  exit /b 1
+)
+
 if not exist outputs mkdir outputs
 if not exist outputs\reports mkdir outputs\reports
 if not exist outputs\runs mkdir outputs\runs

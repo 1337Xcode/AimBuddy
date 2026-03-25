@@ -43,6 +43,13 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+echo "Ensuring base model (yolo26n.pt) is available..."
+python3 src/download_base_model.py
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to fetch base model yolo26n.pt"
+    exit 1
+fi
+
 echo ""
 echo "============================================"
 echo "Setup complete!"
