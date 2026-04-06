@@ -26,10 +26,11 @@ AimBuddy expects a single-class YOLOv26n model (class 0 = enemy). The NCNN runti
 
 ```mermaid
 flowchart LR
-    A[Setup Environment] --> B[Validate Dataset]
-    B --> C[Train Model]
-    C --> D[Export to NCNN]
-    D --> E[Deploy to App Assets]
+    A[Setup Environment] --> B[Preflight Checks]
+    B --> C[Validate Dataset]
+    C --> D[Train Model]
+    D --> E[Export to NCNN]
+    E --> F[Deploy to App Assets]
 ```
 
 ### One-Command Run
@@ -40,6 +41,24 @@ scripts\07_run_full_pipeline.bat
 ```
 
 This runs all steps in sequence: environment setup, preflight checks, dataset validation, training, and NCNN export.
+
+### Full Pipeline Flags
+
+`scripts\07_run_full_pipeline.bat` forwards flags to `src/run_pipeline.py`:
+
+| Flag | Purpose |
+|------|---------|
+| `--manual` | Force manual training config from `config.ini` |
+| `--adaptive` | Force adaptive hyperparameter selection |
+| `--skip-export` | Stop after training (skip NCNN export) |
+| `--non-strict-preflight` | Warn on minimum hardware failures instead of stopping |
+| `--config <path>` | Use a custom config file |
+
+Example:
+
+```powershell
+scripts\07_run_full_pipeline.bat --manual --skip-export
+```
 
 ## Step-by-Step Scripts
 
@@ -54,6 +73,29 @@ Run from the `training/` directory:
 | `scripts\05_train_manual.bat` | Train with explicit config from `training/config/config.ini` |
 | `scripts\06_export_ncnn.bat` | Convert trained weights to NCNN format |
 | `scripts\07_run_full_pipeline.bat` | Run all steps end-to-end |
+
+### Preflight Strictness Modes
+
+- `scripts\01_setup_environment.bat` runs preflight with `--non-strict`.
+- `scripts\04_train_adaptive.bat` and `scripts\05_train_manual.bat` run strict preflight.
+- `scripts\07_run_full_pipeline.bat` runs strict preflight by default, and supports `--non-strict-preflight`.
+
+If strict mode blocks your hardware, run the full pipeline with `--non-strict-preflight` and review the generated report warnings.
+
+### Frame Extraction Details
+
+`scripts\02_extract_frames.bat` uses runtime-aligned preprocessing:
+
+- Resizes input video to 720p height.
+- Applies center crop (`--crop`, default `480`).
+- Resizes to `imgsz` from config (default `256`).
+- Extracts at `--fps` frames per second (default `1.0`).
+
+Output path:
+
+```text
+training/raw_frames/<video_name>/
+```
 
 ## Dataset Structure
 
@@ -109,6 +151,14 @@ scripts\04_train_adaptive.bat
 
 Good for first-time training or when unsure about settings.
 
+Adaptive thresholds:
+
+| Dataset size (train images) | Typical resolved behavior |
+|-----------------------------|---------------------------|
+| `< 300` | epochs around 260, batch constrained to 8-12, higher patience |
+| `300 to < 1200` | epochs around 180, batch constrained to 12-20 |
+| `>= 1200` | epochs around 120, batch constrained to 16-32, lower patience |
+
 ### Manual Training
 
 Uses explicit values from `training/config/config.ini`:
@@ -153,14 +203,19 @@ File names must match the constants in `settings.h`:
 - `MODEL_PARAM_FILE = "models/yolo26n-opt.param"`
 - `MODEL_BIN_FILE = "models/yolo26n-opt.bin"`
 
+Path format note:
+- Configuration paths intentionally use forward slashes (`/`) for cross-platform behavior, including on Windows.
+
 ## Output Locations
 
 | Output | Path |
 |--------|------|
 | Training reports | `training/outputs/reports/` |
 | Trained weights | `training/outputs/runs/detect/train/weights/` |
-| NCNN export | `training/outputs/export/` |
-| Deployment target | `app/src/main/assets/models/` |
+| NCNN export working copy | `training/outputs/export/` |
+| Deployment target used by app runtime | `app/src/main/assets/models/` |
+
+The export step writes to `training/outputs/export/` and copies the same files into app assets.
 
 ## Preflight Checks
 
@@ -173,6 +228,15 @@ The preflight script validates:
 
 Results saved to: `training/outputs/reports/preflight_report.json`
 
+GPU status values in `preflight_report.json`:
+
+| gpu_status | Meaning |
+|------------|---------|
+| `cuda_ready` | CUDA torch stack available and usable |
+| `torch_cuda_unavailable` | NVIDIA GPU exists but torch CUDA is unavailable |
+| `torch_missing_or_incompatible` | torch import/runtime issue in current environment |
+| `no_gpu` | No NVIDIA GPU detected |
+
 ## Report Files
 
 | File | Contents |
@@ -183,6 +247,15 @@ Results saved to: `training/outputs/reports/preflight_report.json`
 | `pipeline_last_run.json` | Pipeline step status and timings |
 | `pipeline_last_run.log` | Full pipeline stdout/stderr |
 
+### Model Contract Validation
+
+Before exporting custom checkpoints, verify single-class runtime compatibility:
+
+```powershell
+cd training
+python src\check_model_contract.py --weights outputs\runs\detect\train\weights\best.pt
+```
+
 ## Common Issues
 
 | Problem | Solution |
@@ -190,6 +263,7 @@ Results saved to: `training/outputs/reports/preflight_report.json`
 | CUDA not detected by torch | Install CUDA 12.1, reinstall torch with CUDA wheel |
 | Dataset validation fails | Fix label format, check normalized coordinates |
 | Export succeeds but app does not detect | Copy NCNN files to `app/src/main/assets/models/`, rebuild |
+| Base model download fails during setup | Manually place `yolo26n.pt` in `training/` root, rerun setup |
 | Training is very slow | Use NVIDIA GPU, or reduce dataset size for faster iterations |
 | Out of memory during training | Reduce batch size in `config.ini`, or use adaptive mode |
 

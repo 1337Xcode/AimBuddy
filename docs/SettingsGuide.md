@@ -35,6 +35,27 @@ Settings are read by snapshot copy in hot-path threads to avoid contention.
 | pdDerivativeGain | 0.0 to 0.35 | 0.045 |
 | maxLostFrames | 1 to 30+ | 8 |
 | maxLockMissFrames | 1 to 30 | 2 |
+| targetSwitchDelayFrames | 0 to 30 | 6 |
+| velocitySmoothing | 0.05 to 0.95 | 0.55 |
+| boxThickness | 1 to 10 | 2 |
+| smoothingFactor | 0.1 to 1.0 | 0.30 |
+| touchZoneAlpha | 0.1 to 1.0 | 0.3 |
+| convergenceRadius | 10 to 100 (recommended) | 30 |
+| recoilCompensationStrength | 0.0 to 1.5 | 0.18 |
+| recoilCompensationMax | 2 to 60 | 12 |
+| recoilCompensationDecay | 0.50 to 0.98 | 0.84 |
+| kalmanProcessNoise | 0.01 to 20.0 | 1.0 |
+| kalmanMeasurementNoise | 0.5 to 40.0 | 4.0 |
+
+Boolean defaults that are often tuned together:
+
+- `enableConvergenceDamping`: true
+- `recoilCompensationEnabled`: false
+- `showTouchZone`: true
+
+Deprecated setting note:
+
+- `enableKalmanFilter` is deprecated and retained for compatibility. Use `filterType` (`0=None`, `1=EMA`, `2=Kalman`) as the active filter selector.
 
 ## Presets
 

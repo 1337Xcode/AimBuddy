@@ -68,6 +68,25 @@ cd training
 scripts\07_run_full_pipeline.bat
 ```
 
+Pipeline flags (passed to `src/run_pipeline.py`):
+
+- `--manual` or `--adaptive`
+- `--skip-export`
+- `--non-strict-preflight`
+- `--config <path>`
+
+Example:
+
+```powershell
+scripts\07_run_full_pipeline.bat --manual --skip-export
+```
+
+Preflight strictness behavior:
+
+- `01_setup_environment.bat` uses non-strict preflight (`--non-strict`).
+- `04_train_adaptive.bat` and `05_train_manual.bat` use strict preflight.
+- `07_run_full_pipeline.bat` is strict by default, optional non-strict via `--non-strict-preflight`.
+
 ## Configuration
 
 Config file: `training/config/config.ini`
@@ -76,6 +95,14 @@ Config file: `training/config/config.ini`
 - `[training]`: manual hyperparameters
 - `[adaptive]`: dataset-size adaptive training rules
 - `[export]`: NCNN export options
+
+Adaptive dataset thresholds resolved in `src/training_config.py`:
+
+- Small (`<300` train images): epochs around 260, batch constrained to 8-12
+- Medium (`300 to <1200`): epochs around 180, batch constrained to 12-20
+- Large (`>=1200`): epochs around 120, batch constrained to 16-32
+
+Resolved values are written to `training/outputs/reports/selected_training_config.json`.
 
 ## Dataset Requirements
 
@@ -105,8 +132,13 @@ Expected dataset paths:
 
 - Reports: `training/outputs/reports`
 - Weights: `training/outputs/runs/detect/train/weights`
-- Exported NCNN artifacts: `training/outputs/export`
+- Exported NCNN artifacts (working copy): `training/outputs/export`
 - Deployment target for app runtime: `app/src/main/assets/models`
+
+The export script writes both locations and keeps filenames aligned with runtime constants:
+
+- `models/yolo26n-opt.param`
+- `models/yolo26n-opt.bin`
 
 ## Preflight and Error Reports
 
@@ -119,6 +151,13 @@ Review these files after each run:
 - `training/outputs/reports/selected_training_config.json`
 - `training/outputs/reports/pipeline_last_run.json`
 - `training/outputs/reports/pipeline_last_run.log`
+
+Model contract validation before export:
+
+```powershell
+cd training
+python src\check_model_contract.py --weights outputs\runs\detect\train\weights\best.pt
+```
 
 ## Troubleshooting
 

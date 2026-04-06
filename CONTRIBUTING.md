@@ -19,7 +19,7 @@ flowchart LR
     D --> E[Open pull request]
 ```
 
-1. Create a topic branch from `main`.
+1. Create a topic branch from `master`.
 2. Implement with minimal unrelated edits.
 3. Validate locally (build + on-device test).
 4. Update docs when behavior, architecture, settings, or workflow changed.

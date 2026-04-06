@@ -89,17 +89,22 @@ The pipeline from screen capture to detection output:
 
 ### Adaptive Crop
 
-The inference loop dynamically adjusts the crop size to maintain the target cycle time:
+The inference loop dynamically adjusts the crop size using two pressure signals:
 
-- If inference or end-to-end latency exceeds the target, crop size shrinks by 16px (minimum 224px).
-- If inference is under budget and no frames were drained, crop size grows by 8px up to the computed FOV-based size.
+- Latency pressure: EMA inference exceeds target cycle, or EMA end-to-end latency exceeds target threshold.
+- Backlog pressure: one or more buffered frames were drained in the current iteration.
+
+Adjustment rules:
+
+- If either pressure signal is active, crop size shrinks by 16px (minimum 224px).
+- If pressure is clear and crop is below the current FOV-derived target, crop grows by 8px.
 - This adapts automatically to different GPU speeds without manual tuning.
 
 ## Android Layer
 
 | File | Responsibility |
 |------|---------------|
-| `MainActivity.kt` | Startup, permission sequence (overlay, root, MediaProjection), native lifecycle control |
+| `MainActivity.kt` | Startup, permission sequence (overlay, root, MediaProjection), native lifecycle control (`nativeInit`, guarded `nativeInitAimbot`) |
 | `ScreenCaptureService.kt` | Foreground service for MediaProjection, JNI bridge for frame delivery |
 | `ImGuiGLSurface.kt` | OpenGL ES surface hosting ImGui render pass, touch event routing |
 | `RootUtils.kt` | Root availability checks, `/dev/uinput` permission setup |
@@ -138,9 +143,12 @@ Path: `app/src/main/cpp`
 | `aimbot/aimbot_controller.*` | Three aim modes (smooth, snap, magnetic), PD controller, velocity lead, touch injection |
 | `input/touch_helper.*` | Linux uinput device creation, touch down/move/up injection |
 | `renderer/esp_renderer.cpp` | ESP overlay rendering (boxes, snap lines, FOV circles) |
+| `renderer/overlay_window.*` | EGL window/surface lifecycle for native overlay render path |
 | `renderer/imgui_menu.cpp` | Full ImGui settings menu with presets, live editing, auto-save |
 | `renderer/box_smoothing.h` | Temporal EMA smoothing for ESP box rendering (separate from aimbot filtering) |
 | `utils/aimbot_types.h` | UnifiedSettings struct, TrackedTarget struct, math helpers, FixedArray |
+| `utils/detection_zone.h` | Detection zone metric helpers used by renderer and UI |
+| `utils/imgui_helper.h` | Shared ImGui draw/color helper utilities |
 | `utils/vector2.h` | 2D vector math |
 | `utils/logger.h` | Android logcat macros with build-mode filtering |
 | `utils/timer.h` | High-resolution timing |

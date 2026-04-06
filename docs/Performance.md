@@ -51,7 +51,7 @@ The inference loop dynamically adjusts the center crop size:
 |-----------|--------|
 | EMA inference > 8ms or end-to-end > 20ms | Shrink crop by 16px (min 224) |
 | Backlog frames drained > 0 | Shrink crop by 16px |
-| Both metrics under target, no backlog | Grow crop by 8px (up to FOV-based max) |
+| Both pressure signals clear | Grow crop by 8px (up to FOV-based target) |
 
 This automatically adapts to different GPU speeds. Faster GPUs get larger crop areas for better detection coverage.
 
@@ -59,7 +59,7 @@ This automatically adapts to different GPU speeds. Faster GPUs get larger crop a
 
 - `DetectionResult` uses `FixedArray` (stack-allocated, max 50 detections).
 - `TargetArray` uses `FixedArray` (stack-allocated, max 50 tracks).
-- `FrameBuffer` is a lock-free SPSC ring buffer with no heap allocation.
+- `FrameBuffer` is a lock-free SPSC ring buffer with no heap allocation (`Config::RING_BUFFER_CAPACITY = 8`).
 - NCNN input mat is pre-allocated and reused.
 
 ### NCNN Vulkan Configuration
@@ -73,14 +73,15 @@ Optimized for Adreno 660 (Snapdragon 888):
 | FP16 arithmetic | Enabled | Native FP16 compute |
 | Packing layout | Enabled | Better GPU register utilization |
 | Light mode | Enabled | Reduced memory footprint |
-| GPU threads | Device default | Uses Vulkan compute shaders |
+| Vulkan compute | Enabled | Uses GPU compute shaders (`NCNN_USE_VULKAN_COMPUTE`) |
+| CPU threads fallback | 4 | Fallback path (`NCNN_NUM_THREADS`) |
 
 ### Thread Affinity
 
 | Thread | Core | CPU |
 |--------|------|-----|
 | Inference | 7 | Cortex-X1 (big core) |
-| Render | 6 | Cortex-A78 (medium core) |
+| Render | GLSurfaceView managed | Constant exists (`RENDERING_THREAD_CPU_AFFINITY = 6`), not forced by current startup path |
 | Aim loop | OS-scheduled | Any available |
 | Capture | OS-scheduled (Handler thread) | Any available |
 

@@ -175,6 +175,13 @@ scripts\01_setup_environment.bat
 
 3. Review the preflight report: `training/outputs/reports/preflight_report.json`.
 
+If strict preflight fails on scripts `04` or `05`, run the full pipeline with non-strict preflight:
+
+```powershell
+cd training
+scripts\07_run_full_pipeline.bat --non-strict-preflight
+```
+
 ### CUDA Not Available in Torch
 
 Symptoms:
@@ -200,6 +207,20 @@ Common fixes:
 1. Verify exported files are copied to `app/src/main/assets/models/`.
 2. File names must match `settings.h`: `yolo26n-opt.param` and `yolo26n-opt.bin`.
 3. Rebuild and reinstall the app.
+
+### Model Contract Check Fails
+
+Symptoms:
+- `check_model_contract.py` reports class-count or shape mismatch.
+
+Fix:
+1. Verify `training/dataset/data.yaml` uses exactly one class (`nc: 1`, class id `0`).
+2. Retrain and re-run contract check:
+
+```powershell
+cd training
+python src\check_model_contract.py --weights outputs\runs\detect\train\weights\best.pt
+```
 
 ## Useful Commands
 
