@@ -1,0 +1,17 @@
+title: AimBuddy
+url: "https://1337xcode.github.io"
+baseurl: "/aimbuddy"
+
+# GitHub Pages safe mode settings
+safe: true
+markdown: kramdown
+highlighter: rouge
+permalink: pretty
+
+enforce_ssl: 1337xcode.github.io
+
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - node_modules

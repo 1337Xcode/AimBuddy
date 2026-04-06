@@ -20,10 +20,10 @@ body {
 }
 
 main {
-  width: 100vw;
-  height: 100vh;
+  width: calc(100vw - 32px);
+  height: calc(100vh - 32px);
   position: relative;
-  margin: 0;
+  margin: 16px;
   border: 1px solid var(--border);
 }
 
