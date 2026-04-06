@@ -141,6 +141,7 @@ struct UnifiedSettings {
         headOffset = (headOffset < 0.0f) ? 0.0f : (headOffset > 1.0f) ? 1.0f : headOffset;
         targetSwitchDelayFrames = (targetSwitchDelayFrames < 0) ? 0 : (targetSwitchDelayFrames > 30) ? 30 : targetSwitchDelayFrames;
         maxLockMissFrames = (maxLockMissFrames < 1) ? 1 : (maxLockMissFrames > 30) ? 30 : maxLockMissFrames;
+        velocitySmoothing = (velocitySmoothing < 0.05f) ? 0.05f : (velocitySmoothing > 0.95f) ? 0.95f : velocitySmoothing;
         pdDerivativeGain = (pdDerivativeGain < 0.0f) ? 0.0f : (pdDerivativeGain > 0.35f) ? 0.35f : pdDerivativeGain;
         velocityLeadFactor = (velocityLeadFactor < 0.0f) ? 0.0f : (velocityLeadFactor > 0.8f) ? 0.8f : velocityLeadFactor;
         velocityLeadClamp = (velocityLeadClamp < 1.0f) ? 1.0f : (velocityLeadClamp > 40.0f) ? 40.0f : velocityLeadClamp;
@@ -349,7 +350,8 @@ struct TrackedTarget {
     }
     
     inline ESP::Vector2 predictPosition(float dt = 1.0f) const {
-        return ESP::Vector2(box.x, box.y) + velocity * dt;
+        // Predict using box center, because velocity is tracked in center-space.
+        return box.center() + velocity * dt;
     }
     
     inline float iou(const TrackedTarget& other) const {

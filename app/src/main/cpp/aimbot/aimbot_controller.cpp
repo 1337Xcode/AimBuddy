@@ -18,12 +18,24 @@
 #endif
 
 extern UnifiedSettings g_settings;
+extern "C" bool IsImGuiMenuVisible();
 
 static constexpr int AIM_SLOT = 9;
 static constexpr float MAX_SINGLE_MOVE = 35.0f;
 static constexpr float MIN_DISTANCE = 5.0f;
 static constexpr float EPSILON = 0.0001f;
 static constexpr float AXIS_NO_CROSS_RATIO = 0.85f;
+
+static inline int CountEnemyDetections(const ESP::BoundingBox* detections, int count) {
+    if (!detections || count <= 0) return 0;
+    int enemyCount = 0;
+    for (int i = 0; i < count; ++i) {
+        if (detections[i].classId == Config::ENEMY_CLASS_ID) {
+            ++enemyCount;
+        }
+    }
+    return enemyCount;
+}
 
 AimbotController::AimbotController(TouchHelper* touch, int screenWidth, int screenHeight)
     : m_touch(touch)
@@ -67,15 +79,27 @@ void AimbotController::stop() {
 
 void AimbotController::updateTargets(const ESP::BoundingBox* detections, int count) {
     if (!m_running) return;
+
+    if (IsImGuiMenuVisible()) {
+        stopAiming();
+        std::lock_guard<std::mutex> lock(m_trackerMutex);
+        m_tracker.reset();
+        return;
+    }
     
-    // Zero-detection fast-release: immediately stop touch when nothing is detected
-    if (count == 0 && m_isAiming) {
+    // Enemy-only fast release: never keep touch active on teammate/self/empty frames.
+    const int enemyCount = CountEnemyDetections(detections, count);
+    if (enemyCount == 0 && m_isAiming) {
         stopAiming();
     }
     
     std::lock_guard<std::mutex> lock(m_trackerMutex);
     UnifiedSettings settingsSnapshot = g_settings;
     settingsSnapshot.validate();
+    if (enemyCount == 0) {
+        m_tracker.reset();
+        return;
+    }
     m_tracker.update(detections, count, settingsSnapshot);
 }
 
@@ -83,6 +107,16 @@ void AimbotController::aimLoop() {
     while (m_running) {
         UnifiedSettings settingsSnapshot = g_settings;
         settingsSnapshot.validate();
+
+        if (IsImGuiMenuVisible()) {
+            if (m_isAiming) stopAiming();
+            {
+                std::lock_guard<std::mutex> lock(m_trackerMutex);
+                m_tracker.reset();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(12));
+            continue;
+        }
 
         if (!settingsSnapshot.aimbotEnabled) {
             if (m_isAiming) stopAiming();
@@ -134,21 +168,25 @@ void AimbotController::aimAt(const TrackedTarget& target) {
     const float rawDx = aimPoint.x - m_crosshairX;
     const float rawDy = aimPoint.y - m_crosshairY;
     const float rawDistance = std::sqrt(rawDx * rawDx + rawDy * rawDy);
-    const float leadDistanceScale = AimbotMath::clamp((rawDistance - 10.0f) / std::max(80.0f, settings.fovRadius * 0.7f), 0.0f, 1.0f);
+    const float leadDistanceScale = AimbotMath::clamp((rawDistance - 8.0f) / std::max(64.0f, settings.fovRadius * 0.65f), 0.0f, 1.0f);
     const float leadConfidenceScale = AimbotMath::clamp((target.confidence - 0.40f) / 0.60f, 0.0f, 1.0f);
     float leadScale = leadDistanceScale * leadConfidenceScale;
 
-    // Proportional speed gate: scale lead UP with target speed (faster = more lead)
+    // Motion gate: keep still-target stability, but allow stronger lead on runners.
     const float targetSpeed = std::sqrt(target.velocity.x * target.velocity.x + target.velocity.y * target.velocity.y);
-    const float motionSpeedGate = AimbotMath::clamp(targetSpeed / 30.0f, 0.0f, 1.0f);
+    const float motionSpeed = std::max(0.0f, targetSpeed - 1.0f);
+    const float motionSpeedGate = AimbotMath::clamp(motionSpeed / 18.0f, 0.0f, 1.0f);
     leadScale *= motionSpeedGate;
 
+    // Lead uses a short look-ahead time (seconds), producing stable behavior across FPS/settings.
+    const float leadTime = AimbotMath::clamp(0.008f + leadDistanceScale * 0.018f + motionSpeedGate * 0.018f, 0.0f, 0.05f);
     if (!m_isAiming) {
-        leadScale = 0.0f;
+        leadScale *= 0.40f;
     }
-
-    aimPoint.x += AimbotMath::clamp(target.velocity.x * leadFactor * leadScale, -leadClamp, leadClamp);
-    aimPoint.y += AimbotMath::clamp(target.velocity.y * leadFactor * leadScale, -leadClamp, leadClamp);
+    const float leadPxX = target.velocity.x * leadTime * leadFactor * leadScale;
+    const float leadPxY = target.velocity.y * leadTime * leadFactor * leadScale;
+    aimPoint.x += AimbotMath::clamp(leadPxX, -leadClamp, leadClamp);
+    aimPoint.y += AimbotMath::clamp(leadPxY, -leadClamp, leadClamp);
     
     const float dx = aimPoint.x - m_crosshairX;
     const float dy = aimPoint.y - m_crosshairY;
@@ -238,11 +276,11 @@ void AimbotController::calcSmoothAim(float dx, float dy, float distance,
     float factor = AimbotMath::lerp(speed * 0.12f, speed, response);
     factor = AimbotMath::clamp(factor, 0.02f, 1.0f);
     
-    // Distance-based scaling for far targets
-    if (distance > 10.0f) {
-        float t = AimbotMath::clamp(distance / settings.fovRadius, 0.0f, 1.0f);
-        factor *= AimbotMath::smoothstep(0.0f, 1.0f, t);
-    }
+    // Explicit crosshair-distance response: far = faster pull, near = slower/precise.
+    const float aimFov = std::max(80.0f, (settings.aimFovRadius > 0.0f) ? settings.aimFovRadius : settings.fovRadius);
+    const float distanceNorm = AimbotMath::clamp(distance / aimFov, 0.0f, 1.0f);
+    const float distanceBoost = AimbotMath::lerp(0.34f, 1.15f, std::pow(distanceNorm, 0.68f));
+    factor *= distanceBoost;
     
     // Convergence dampening: reduce speed near target to prevent overshoot
     if (settings.enableConvergenceDamping && distance < settings.convergenceRadius) {
@@ -403,7 +441,7 @@ void AimbotController::sanitizeMovement(float dx, float dy, float distance,
     }
 
     // Sticky correction: avoid stalling with tiny deltas while target is still offset.
-    const float minStep = (distance > 2.0f) ? 0.52f : 0.0f;
+    const float minStep = (distance > std::max(18.0f, settings.convergenceRadius * 0.9f)) ? 0.42f : 0.0f;
     if (moveDist < minStep && moveDist > EPSILON) {
         const float scale = minStep / moveDist;
         inOutX *= scale;

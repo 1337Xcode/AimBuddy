@@ -944,3 +944,7 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeSetRootAvailable(JNIEnv* /* env */, jclas
     g_rootAvailable.store(available == JNI_TRUE, std::memory_order_relaxed);
     LOGI("Root status updated: %s", available ? "AVAILABLE" : "NOT AVAILABLE");
 }
+
+extern "C" bool IsImGuiMenuVisible() {
+    return g_menuVisible;
+}

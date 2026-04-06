@@ -39,13 +39,23 @@ void TargetTracker::updateVelocity(TrackedTarget& track, const ESP::BoundingBox&
     ESP::Vector2 centerNew = detection.center();
     ESP::Vector2 newVelocity = (centerNew - centerOld) * (1.0f / dt);
 
+    // Suppress tiny detector wobble that otherwise creates fake motion.
+    const float centerDelta = ESP::Vector2::Distance(centerNew, centerOld);
+    if (centerDelta < 0.9f) {
+        newVelocity = ESP::Vector2::Zero();
+    }
+
     // Clamp velocity spikes caused by single-frame detector jitter
     const float maxVelocity = std::max(60.0f, detection.height * 1.5f);
     newVelocity.x = AimbotMath::clamp(newVelocity.x, -maxVelocity, maxVelocity);
     newVelocity.y = AimbotMath::clamp(newVelocity.y, -maxVelocity, maxVelocity);
     
-    // EMA filter: velocity = velocity * alpha + newVelocity * (1 - alpha)
-    track.velocity = track.velocity * smoothing + newVelocity * (1.0f - smoothing);
+    // EMA filter with confidence/track-age aware blending.
+    // Mature tracks should react quickly to real movement but reject jitter.
+    const float conf = AimbotMath::clamp(detection.confidence, 0.0f, 1.0f);
+    const float maturity = AimbotMath::clamp(static_cast<float>(track.consecutiveMatches) / 8.0f, 0.0f, 1.0f);
+    const float dynamicSmoothing = AimbotMath::clamp(smoothing + (1.0f - conf) * 0.20f - maturity * 0.10f, 0.15f, 0.92f);
+    track.velocity = track.velocity * dynamicSmoothing + newVelocity * (1.0f - dynamicSmoothing);
 }
 
 void TargetTracker::update(const ESP::BoundingBox* detections, int count, const UnifiedSettings& settings) {
