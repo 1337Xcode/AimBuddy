@@ -9,6 +9,7 @@
 #include <memory>
 #include <thread>
 #include <chrono>
+#include <string>
 #include <cstdio>
 #include <cstdlib>
 #include <cstdarg>
@@ -86,6 +87,8 @@ namespace {
     
     // Cached JNI references
     JavaVM* g_jvm = nullptr;
+    std::string g_modelParamPath;
+    std::string g_modelBinPath;
 
     void SyncUnifiedSettingsToRenderConfig() {
         g_renderConfig.boxColorR.store(g_settings.boxColorR, std::memory_order_relaxed);
@@ -417,7 +420,9 @@ Java_com_aimbuddy_MainActivity_nativeInit(JNIEnv* env, jobject thiz,
     
     // Create and initialize detector
     g_detector = std::make_unique<ESP::YoloDetector>();
-    if (!g_detector->initialize(mgr, screenWidth, screenHeight)) {
+    const char* modelParamPath = g_modelParamPath.empty() ? nullptr : g_modelParamPath.c_str();
+    const char* modelBinPath = g_modelBinPath.empty() ? nullptr : g_modelBinPath.c_str();
+    if (!g_detector->initialize(mgr, screenWidth, screenHeight, modelParamPath, modelBinPath)) {
         LOGE("Failed to initialize detector");
         g_detector.reset();
         return JNI_FALSE;
@@ -651,6 +656,36 @@ Java_com_aimbuddy_MainActivity_nativeInitAimbot(JNIEnv* env, jobject thiz) {
     LOGE("TouchHelper init FAILED!");
     LOGE("Check: 1) Root granted  2) /dev/uinput exists  3) /dev/input/event* accessible");
     return JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_aimbuddy_MainActivity_nativeSetModelPaths(JNIEnv* env, jobject thiz,
+                                                   jstring paramPath,
+                                                   jstring binPath) {
+    (void)thiz;
+
+    g_modelParamPath.clear();
+    g_modelBinPath.clear();
+
+    if (paramPath != nullptr) {
+        const char* chars = env->GetStringUTFChars(paramPath, nullptr);
+        if (chars != nullptr) {
+            g_modelParamPath.assign(chars);
+            env->ReleaseStringUTFChars(paramPath, chars);
+        }
+    }
+
+    if (binPath != nullptr) {
+        const char* chars = env->GetStringUTFChars(binPath, nullptr);
+        if (chars != nullptr) {
+            g_modelBinPath.assign(chars);
+            env->ReleaseStringUTFChars(binPath, chars);
+        }
+    }
+
+    LOGI("Updated model paths: param='%s' bin='%s'",
+         g_modelParamPath.c_str(),
+         g_modelBinPath.c_str());
 }
 
 } // extern "C"

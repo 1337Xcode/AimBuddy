@@ -292,9 +292,9 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                 boxCount = latest.boxes.size();
             }
         } else if (useSmoothing) {
-            // Update smoother with zero detections to age out stale tracks
-            std::array<ESP::BoundingBox, Config::MAX_DETECTIONS> emptyArr{};
-            g_boxSmoother.update(emptyArr, 0, g_smoothedBoxes, g_smoothedCount, 0.5f);
+            // Clear immediately when detector has no boxes to avoid lingering ghosts.
+            g_boxSmoother.clear();
+            g_smoothedCount = 0;
             boxesToRender = g_smoothedBoxes.data();
             boxCount = g_smoothedCount;
         }

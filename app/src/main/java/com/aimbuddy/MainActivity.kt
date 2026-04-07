@@ -13,6 +13,7 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
 import android.media.projection.MediaProjection
+import android.media.projection.MediaProjection.Callback
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -35,11 +36,17 @@ import android.widget.ImageView
 import android.widget.Toast
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.PictureDrawable
+import android.content.ActivityNotFoundException
+import androidx.activity.result.contract.ActivityResultContracts
+import java.io.File
+import java.io.FileOutputStream
 import com.caverock.androidsvg.SVG
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +54,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -86,6 +98,10 @@ class MainActivity : AppCompatActivity() {
         private const val CREATOR_URL = "https://www.darshanchheda.com"
         private const val PREFS_NAME = "aimbuddy_prefs"
         private const val PREF_OSS_NOTICE_SHOWN = "oss_notice_shown"
+        private const val PREF_MODEL_PARAM_PATH = "model_param_path"
+        private const val PREF_MODEL_BIN_PATH = "model_bin_path"
+        private const val ASSET_MODEL_PARAM = "models/yolo26n-opt.param"
+        private const val ASSET_MODEL_BIN = "models/yolo26n-opt.bin"
 
         init {
             System.loadLibrary("esp_native")
@@ -121,6 +137,18 @@ class MainActivity : AppCompatActivity() {
     // MediaProjection components
     private var mediaProjectionManager: MediaProjectionManager? = null
     private var mediaProjection: MediaProjection? = null
+    private var projectionCallbackRegistered = false
+    private val mediaProjectionCallback = object : Callback() {
+        override fun onStop() {
+            Log.w(TAG, "MediaProjection stopped by system/user")
+            runOnUiThread {
+                if (isRunningState || isStarting.get()) {
+                    showAppToast("Screen capture ended. ESP stopped.", true)
+                    stopESP()
+                }
+            }
+        }
+    }
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private val imageThread = HandlerThread("esp-image-reader").also { it.start() }
@@ -142,6 +170,50 @@ class MainActivity : AppCompatActivity() {
     private external fun nativeShutdown()
     private external fun nativeIsRunning(): Boolean
     private external fun nativeInitAimbot(): Boolean
+    private external fun nativeSetModelPaths(paramPath: String?, binPath: String?)
+
+    private val importParamLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) {
+            return@registerForActivityResult
+        }
+        val importedParam = copyModelFromUri(uri, "custom-yolo.param")
+        if (importedParam == null) {
+            showAppToast("Failed to import .param model file", true)
+            return@registerForActivityResult
+        }
+
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(PREF_MODEL_PARAM_PATH, importedParam.absolutePath)
+            .apply()
+
+        showAppToast(".param imported. Now select the matching .bin file.", false)
+        importBinLauncher.launch(arrayOf("application/octet-stream", "*/*"))
+    }
+
+    private val importBinLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) {
+            return@registerForActivityResult
+        }
+        val importedBin = copyModelFromUri(uri, "custom-yolo.bin")
+        if (importedBin == null) {
+            showAppToast("Failed to import .bin model file", true)
+            return@registerForActivityResult
+        }
+
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val paramPath = prefs.getString(PREF_MODEL_PARAM_PATH, null)
+            ?: File(filesDir, "models/custom-yolo.param").takeIf { it.exists() }?.absolutePath
+
+        if (paramPath == null) {
+            showAppToast("Select .param first, then .bin.", true)
+            return@registerForActivityResult
+        }
+
+        persistAndApplyModelPaths(paramPath, importedBin.absolutePath)
+        showAppToast("Model imported from storage", false)
+        reinitializeNativeIfIdle()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -187,6 +259,29 @@ class MainActivity : AppCompatActivity() {
 
         setStatus("Status: Model Loading")
 
+        val hasAssetParam = assetExists(ASSET_MODEL_PARAM)
+        val hasAssetBin = assetExists(ASSET_MODEL_BIN)
+        if (!hasAssetParam || !hasAssetBin) {
+            val missing = buildList {
+                if (!hasAssetParam) add(ASSET_MODEL_PARAM)
+                if (!hasAssetBin) add(ASSET_MODEL_BIN)
+            }.joinToString(", ")
+            showAppToast("Missing model in assets: $missing", true)
+        }
+
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val persistedParamPath = prefs.getString(PREF_MODEL_PARAM_PATH, null)
+        val persistedBinPath = prefs.getString(PREF_MODEL_BIN_PATH, null)
+        val localParamExists = persistedParamPath != null && File(persistedParamPath).exists()
+        val localBinExists = persistedBinPath != null && File(persistedBinPath).exists()
+
+        if (localParamExists && localBinExists) {
+            nativeSetModelPaths(persistedParamPath, persistedBinPath)
+            Log.i(TAG, "Using imported local model files")
+        } else {
+            nativeSetModelPaths(null, null)
+        }
+
         // Get MediaProjectionManager
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE)
                 as MediaProjectionManager
@@ -194,7 +289,11 @@ class MainActivity : AppCompatActivity() {
         // Initialize native components FIRST
         if (!nativeInit(assets, screenWidth, screenHeight)) {
             Log.e(TAG, "Failed to initialize native components")
-            showAppToast("Failed to initialize ESP. Check model files.", true)
+            if (!hasAssetParam || !hasAssetBin) {
+                showAppToast("Initialization failed. Import model manually or add assets models.", true)
+            } else {
+                showAppToast("Failed to initialize ESP. Check model files.", true)
+            }
             setStatus("Status: Init Failed")
         } else {
             setStatus("Status: Ready")
@@ -357,6 +456,7 @@ class MainActivity : AppCompatActivity() {
                     Handler(Looper.getMainLooper()).postDelayed({
                         try {
                             mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, data)
+                            registerProjectionCallbackIfNeeded()
                             startESP()
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to create MediaProjection: ${e.message}")
@@ -428,8 +528,15 @@ class MainActivity : AppCompatActivity() {
             imageReader?.close()
             imageReader = null
 
+            if (projectionCallbackRegistered) {
+                try {
+                    mediaProjection?.unregisterCallback(mediaProjectionCallback)
+                } catch (_: Exception) {
+                }
+            }
             mediaProjection?.stop()
             mediaProjection = null
+            projectionCallbackRegistered = false
 
             // Remove overlay
             removeOverlay()
@@ -445,6 +552,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupScreenCapture() {
         Log.i(TAG, "Setting up screen capture at ${CAPTURE_WIDTH}x${CAPTURE_HEIGHT}")
+
+        registerProjectionCallbackIfNeeded()
 
         // Create ImageReader with HardwareBuffer support
         imageReader = ImageReader.newInstance(
@@ -476,6 +585,84 @@ class MainActivity : AppCompatActivity() {
         )
 
         Log.i(TAG, "Screen capture setup complete")
+    }
+
+    private fun registerProjectionCallbackIfNeeded() {
+        val projection = mediaProjection ?: return
+        if (projectionCallbackRegistered) {
+            return
+        }
+        projection.registerCallback(mediaProjectionCallback, Handler(Looper.getMainLooper()))
+        projectionCallbackRegistered = true
+    }
+
+    private fun assetExists(assetPath: String): Boolean {
+        return try {
+            assets.open(assetPath).use { }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun copyModelFromUri(uri: Uri, outputName: String): File? {
+        return try {
+            val modelDir = File(filesDir, "models")
+            if (!modelDir.exists() && !modelDir.mkdirs()) {
+                Log.e(TAG, "Failed to create local model directory")
+                return null
+            }
+            val outFile = File(modelDir, outputName)
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(outFile).use { output ->
+                    input.copyTo(output)
+                }
+            } ?: return null
+            outFile
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to copy model from uri: ${e.message}", e)
+            null
+        }
+    }
+
+    private fun persistAndApplyModelPaths(paramPath: String, binPath: String) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(PREF_MODEL_PARAM_PATH, paramPath)
+            .putString(PREF_MODEL_BIN_PATH, binPath)
+            .apply()
+
+        nativeSetModelPaths(paramPath, binPath)
+    }
+
+    private fun reinitializeNativeIfIdle() {
+        if (isRunningState || isStarting.get() || isStopping.get()) {
+            showAppToast("New model will be used on next start.", false)
+            return
+        }
+        nativeShutdown()
+        if (nativeInit(assets, screenWidth, screenHeight)) {
+            if (rootAvailable.get()) {
+                nativeInitAimbot()
+            }
+            setStatus("Status: Ready")
+            showAppToast("Model applied", false)
+        } else {
+            setStatus("Status: Init Failed")
+            showAppToast("Imported model failed to initialize", true)
+        }
+    }
+
+    private fun onImportModelClicked() {
+        try {
+            importParamLauncher.launch(arrayOf("*/*"))
+        } catch (e: ActivityNotFoundException) {
+            showAppToast("No file picker found on this device", true)
+        }
+    }
+
+    private fun onStoreClicked() {
+        showAppToast("Model Store: Coming soon", false)
     }
 
     private fun setupOverlay() {
@@ -738,70 +925,103 @@ class MainActivity : AppCompatActivity() {
         onStart: () -> Unit,
         onStop: () -> Unit
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(20.dp)
         ) {
-            Text(
-                text = "AimBuddy",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Text(
-                text = "Real-time object detection and tracking",
-                modifier = Modifier.padding(top = 8.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = statusText,
-                modifier = Modifier.padding(top = 12.dp, bottom = 24.dp),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-
             Row(
-                modifier = Modifier.padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = onStart,
-                    enabled = !isRunning,
-                    modifier = Modifier.width(170.dp)
-                ) {
-                    Text(if (isRunning) "Running" else "Start")
+                IconButton(onClick = { onImportModelClicked() }) {
+                    Icon(
+                        imageVector = Icons.Filled.FolderOpen,
+                        contentDescription = "Import model files"
+                    )
                 }
-
-                Button(
-                    onClick = onStop,
-                    enabled = isRunning,
-                    modifier = Modifier.width(170.dp)
-                ) {
-                    Text("Stop")
+                IconButton(onClick = { onStoreClicked() }) {
+                    Icon(
+                        imageVector = Icons.Filled.Download,
+                        contentDescription = "Model store (coming soon)"
+                    )
                 }
             }
 
-            Text(
-                text = "GitHub: $OSS_GITHUB_URL",
+            Column(
                 modifier = Modifier
-                    .padding(top = 16.dp)
-                    .clickable { openGithubUrl() },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary
-            )
-            Text(
-                text = "Created by $CREATOR_NAME",
+                    .align(Alignment.Center)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "AimBuddy",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = "Real-time object detection and tracking",
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = statusText,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 24.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+
+                Row(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = onStart,
+                        enabled = !isRunning,
+                        modifier = Modifier.width(170.dp)
+                    ) {
+                        Text(if (isRunning) "Running" else "Start")
+                    }
+
+                    Button(
+                        onClick = onStop,
+                        enabled = isRunning,
+                        modifier = Modifier.width(170.dp)
+                    ) {
+                        Text("Stop")
+                    }
+                }
+            }
+
+            Row(
                 modifier = Modifier
-                    .padding(top = 6.dp)
-                    .clickable { openCreatorUrl() },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "GitHub: $OSS_GITHUB_URL",
+                    modifier = Modifier.clickable { openGithubUrl() },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "Created by $CREATOR_NAME",
+                    modifier = Modifier.clickable { openCreatorUrl() },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
     

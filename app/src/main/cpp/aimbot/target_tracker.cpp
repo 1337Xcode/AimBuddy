@@ -260,16 +260,12 @@ void TargetTracker::update(const ESP::BoundingBox* detections, int count, const 
 }
 
 void TargetTracker::predictTargets(float dt) {
+    (void)dt;
     for (int i = 0; i < m_targets.size(); i++) {
         TrackedTarget& t = m_targets[i];
         if (t.lost > 0) {
-            // Apply velocity prediction for lost targets
-            ESP::Vector2 pred = t.predictPosition(dt);
-            // Update box center (keep size)
-            float halfW = t.box.width * 0.5f;
-            float halfH = t.box.height * 0.5f;
-            t.box.x = pred.x - halfW;
-            t.box.y = pred.y - halfH;
+            // Do not coast predicted boxes while lost; stale motion causes drift.
+            t.velocity = ESP::Vector2::Zero();
         }
     }
 }
@@ -294,7 +290,8 @@ bool TargetTracker::getBestTargetCopy(const UnifiedSettings& settings, float scr
     
     ESP::Vector2 crosshair(screenWidth * 0.5f, screenHeight * 0.5f);
     const float aimFovRadius = (settings.aimFovRadius > 0.0f) ? settings.aimFovRadius : settings.fovRadius;
-    const int maxFreshLostFrames = std::max(1, std::min(settings.maxLockMissFrames, 3));
+    // Require target to be visible in current frame for aiming.
+    const int maxFreshLostFrames = 0;
     const TrackedTarget* best = nullptr;
     const TrackedTarget* lockedTarget = nullptr;
     float bestScore = 1e9f;

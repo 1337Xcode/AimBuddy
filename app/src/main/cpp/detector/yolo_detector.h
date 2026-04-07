@@ -59,7 +59,11 @@ public:
      * @param screenHeight Full screen height for coordinate mapping
      * @return true if initialization successful
      */
-    bool initialize(AAssetManager* assetManager, int screenWidth, int screenHeight);
+    bool initialize(AAssetManager* assetManager,
+                    int screenWidth,
+                    int screenHeight,
+                    const char* modelParamPath = nullptr,
+                    const char* modelBinPath = nullptr);
     
     /**
      * @brief Shutdown detector and release resources

@@ -19,7 +19,11 @@ YoloDetector::~YoloDetector() {
     shutdown();
 }
 
-bool YoloDetector::initialize(AAssetManager* assetManager, int screenWidth, int screenHeight) {
+bool YoloDetector::initialize(AAssetManager* assetManager,
+                              int screenWidth,
+                              int screenHeight,
+                              const char* modelParamPath,
+                              const char* modelBinPath) {
     if (initialized_) {
         LOGW("YoloDetector already initialized");
         return true;
@@ -65,20 +69,36 @@ bool YoloDetector::initialize(AAssetManager* assetManager, int screenWidth, int 
          net_.opt.use_vulkan_compute, net_.opt.use_fp16_storage,
          net_.opt.use_fp16_arithmetic, net_.opt.num_threads);
     
-    // Load model from assets
-    int ret = net_.load_param(assetManager, Config::MODEL_PARAM_FILE);
-    if (ret != 0) {
-        LOGE("Failed to load model param: %s (error %d)", Config::MODEL_PARAM_FILE, ret);
-        return false;
+    int ret = -1;
+    if (modelParamPath && modelBinPath && modelParamPath[0] != '\0' && modelBinPath[0] != '\0') {
+        LOGI("Trying local model files: %s / %s", modelParamPath, modelBinPath);
+        ret = net_.load_param(modelParamPath);
+        if (ret == 0) {
+            ret = net_.load_model(modelBinPath);
+        }
+
+        if (ret == 0) {
+            LOGI("Loaded model from local storage");
+        } else {
+            LOGW("Local model load failed (error %d), falling back to assets", ret);
+        }
     }
-    LOGI("Loaded model param: %s", Config::MODEL_PARAM_FILE);
-    
-    ret = net_.load_model(assetManager, Config::MODEL_BIN_FILE);
+
     if (ret != 0) {
-        LOGE("Failed to load model bin: %s (error %d)", Config::MODEL_BIN_FILE, ret);
-        return false;
+        ret = net_.load_param(assetManager, Config::MODEL_PARAM_FILE);
+        if (ret != 0) {
+            LOGE("Failed to load model param: %s (error %d)", Config::MODEL_PARAM_FILE, ret);
+            return false;
+        }
+        LOGI("Loaded model param: %s", Config::MODEL_PARAM_FILE);
+
+        ret = net_.load_model(assetManager, Config::MODEL_BIN_FILE);
+        if (ret != 0) {
+            LOGE("Failed to load model bin: %s (error %d)", Config::MODEL_BIN_FILE, ret);
+            return false;
+        }
+        LOGI("Loaded model bin: %s", Config::MODEL_BIN_FILE);
     }
-    LOGI("Loaded model bin: %s", Config::MODEL_BIN_FILE);
 
     // Cache input/output blob names when available to avoid repeated lookup warnings
 #if NCNN_STRING
