@@ -7,6 +7,10 @@ build/
 app/.externalNativeBuild/
 app/release/
 
+# Artefacts
+*.cla*/
+.mcp.json
+
 # Android Studio and IntelliJ
 .idea/
 *.iml
@@ -60,6 +64,7 @@ env/
 *.temp
 warnings.txt
 Info.txt
+reference/*
 
 # OS files
 .DS_Store
@@ -86,3 +91,7 @@ training/**/*.pth
 training/**/*.onnx
 training/**/*.bin
 training/**/*.param
+
+# Unnecessary MD files
+CLAU*.md
+LOO*.md
