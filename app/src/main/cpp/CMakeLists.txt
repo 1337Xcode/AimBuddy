@@ -153,8 +153,6 @@ set(ESP_SOURCES
     detector/yolo_detector.cpp
     aimbot/aimbot_controller.cpp
     aimbot/target_tracker.cpp
-    renderer/overlay_window.cpp
-    renderer/esp_renderer.cpp
     renderer/imgui_menu.cpp
     input/touch_helper.cpp
 )

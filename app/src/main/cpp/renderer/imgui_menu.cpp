@@ -27,7 +27,7 @@
 #include "utils/logger.h"
 #include "utils/vector2.h"
 #include "utils/imgui_helper.h"
-#include "renderer/esp_renderer.h"
+#include "renderer/render_config.h"
 #include "utils/aimbot_types.h"
 #include "utils/detection_zone.h"
 #include "renderer/box_smoothing.h"

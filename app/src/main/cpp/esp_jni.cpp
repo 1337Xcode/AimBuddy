@@ -39,7 +39,7 @@ namespace std {
 #include "utils/timer.h"
 #include "capture/frame_buffer.h"
 #include "detector/yolo_detector.h"
-#include "renderer/esp_renderer.h"
+#include "renderer/render_config.h"
 #include "aimbot/aimbot_controller.h"
 
 /**
