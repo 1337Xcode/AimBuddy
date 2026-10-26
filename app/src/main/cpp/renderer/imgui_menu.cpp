@@ -29,7 +29,6 @@
 #include "utils/imgui_helper.h"
 #include "renderer/render_config.h"
 #include "utils/aimbot_types.h"
-#include "utils/detection_zone.h"
 #include "renderer/box_smoothing.h"
 #include "detector/yolo_detector.h"
 #include "utils/i18n.h"
@@ -41,7 +40,7 @@ using aimbuddy::i18n::Key;
 extern "C" ESP::RenderConfig* GetRenderConfig();
 extern "C" bool GetLatestResultSnapshot(ESP::DetectionResult* out);
 extern "C" void UpdateScreenSize(int width, int height);
-extern "C" void GetCaptureSize(int* outWidth, int* outHeight);
+extern "C" bool GetDetectionZoneScreenRect(float* left, float* top, float* right, float* bottom);
 extern UnifiedSettings g_settings;
 
 // Global state for ImGui menu
@@ -548,26 +547,12 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                 espFovRadius
             );
 
-            if (espFovRadius > 0.0f) {
+            float zoneLeft = 0.0f, zoneTop = 0.0f, zoneRight = 0.0f, zoneBottom = 0.0f;
+            if (espFovRadius > 0.0f && GetDetectionZoneScreenRect(&zoneLeft, &zoneTop, &zoneRight, &zoneBottom)) {
                 const float centerX = displayW * 0.5f;
                 const float centerY = displayH * 0.5f;
-
-                int captureWidth = Config::CAPTURE_WIDTH;
-                int captureHeight = Config::CAPTURE_HEIGHT;
-                GetCaptureSize(&captureWidth, &captureHeight);
-                const ESP::DetectionZoneMetrics zone = ESP::ComputeDetectionZoneMetrics(
-                    espFovRadius,
-                    g_screenWidth,
-                    displayW,
-                    displayH,
-                    captureWidth,
-                    captureHeight
-                );
-
                 const ImU32 espFovColor = IM_COL32(40, 140, 255, 220);
-                const ImVec2 tl(centerX - zone.halfWidthPx, centerY - zone.halfHeightPx);
-                const ImVec2 br(centerX + zone.halfWidthPx, centerY + zone.halfHeightPx);
-                drawList->AddRect(tl, br, espFovColor, 0.0f, 0, 2.2f);
+                drawList->AddRect(ImVec2(zoneLeft, zoneTop), ImVec2(zoneRight, zoneBottom), espFovColor, 0.0f, 0, 2.2f);
 
                 if (aimbotEnabled && aimFovRadius > 0.0f) {
                     drawList->AddCircle(ImVec2(centerX, centerY), aimFovRadius, IM_COL32(255, 60, 60, 230), 64, 2.3f);

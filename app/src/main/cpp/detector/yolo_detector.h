@@ -5,10 +5,10 @@
 #include <memory>
 #include <string>
 #include <android/asset_manager.h>
-#include <android/hardware_buffer.h>
 #include <ncnn/net.h>
 #include <ncnn/gpu.h>
 #include "bounding_box.h"
+#include "../capture/roi_capture.h"
 #include "../settings.h"
 #include "../utils/logger.h"
 #include "../utils/memory_pool.h"
@@ -55,13 +55,9 @@ public:
     /**
      * @brief Initialize detector with model from assets
      * @param assetManager Android AssetManager for loading model files
-     * @param screenWidth Full screen width for coordinate mapping
-     * @param screenHeight Full screen height for coordinate mapping
      * @return true if initialization successful
      */
     bool initialize(AAssetManager* assetManager,
-                    int screenWidth,
-                    int screenHeight,
                     const char* modelParamPath = nullptr,
                     const char* modelBinPath = nullptr);
     
@@ -71,24 +67,13 @@ public:
     void shutdown();
     
     /**
-     * @brief Run detection on hardware buffer
-     * @param buffer AHardwareBuffer from screen capture
+     * @brief Run detection on the centre region copied out of one captured frame
+     * @param frame Region pixels plus where they came from, so boxes land in screen space
      * @param result Output detection result (pre-allocated)
      * @return true if detection successful
      */
-    bool detect(AHardwareBuffer* buffer, DetectionResult& result);
-    bool detect(AHardwareBuffer* buffer, DetectionResult& result, int dynamicCropSize);
+    bool detect(const aimbuddy::RoiFrame& frame, DetectionResult& result);
 
-    /**
-     * @brief Update screen size for coordinate mapping
-     * @param screenWidth Current screen width in pixels
-     * @param screenHeight Current screen height in pixels
-     */
-    void setScreenSize(int screenWidth, int screenHeight) {
-        screenWidth_.store(screenWidth, std::memory_order_relaxed);
-        screenHeight_.store(screenHeight, std::memory_order_relaxed);
-    }
-    
     /**
      * @brief Set confidence threshold
      * @param threshold Confidence threshold (0.3 - 0.9)
@@ -119,12 +104,11 @@ public:
 
 private:
     /**
-     * @brief Preprocess image: center crop and resize
-     * @param buffer Input hardware buffer
+     * @brief Resize the region to the model input size and normalise it to [0, 1]
+     * @param frame Region copied out of the capture
      * @param inputMat Output NCNN mat ready for inference
-     * @return true if preprocessing successful
      */
-    bool preprocess(AHardwareBuffer* buffer, ncnn::Mat& inputMat, int cropSize = Config::CROP_SIZE);
+    void preprocess(const aimbuddy::RoiFrame& frame, ncnn::Mat& inputMat);
     
     /**
      * @brief Run NCNN inference
@@ -135,11 +119,12 @@ private:
     bool runInference(const ncnn::Mat& input, ncnn::Mat& output);
     
     /**
-     * @brief Post-process: decode boxes, apply NMS, map coordinates
+     * @brief Post-process: decode boxes, apply NMS, map coordinates to screen space
      * @param output Raw network output
+     * @param frame Region the output was computed from
      * @param result Output detection result
      */
-    void postprocess(const ncnn::Mat& output, DetectionResult& result, int cropSize = Config::CROP_SIZE);
+    void postprocess(const ncnn::Mat& output, const aimbuddy::RoiFrame& frame, DetectionResult& result);
     
     /**
      * @brief Apply Non-Maximum Suppression
@@ -152,19 +137,9 @@ private:
     ncnn::VulkanDevice* vulkanDevice_;
     bool initialized_;
     
-    // Screen dimensions for coordinate mapping
-    std::atomic<int> screenWidth_;
-    std::atomic<int> screenHeight_;
-    
     // Configuration
     std::atomic<float> confidenceThreshold_;
     
-    // Runtime state
-    int currentCropX_ = 0;
-    int currentCropY_ = 0;
-    int currentCaptureWidth_ = 0;
-    int currentCaptureHeight_ = 0;
-
     // Cached blob names to avoid repeated lookup warnings
     std::string inputBlobName_;
     std::string outputBlobName_;

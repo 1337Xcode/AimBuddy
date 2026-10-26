@@ -95,6 +95,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.lang.ref.WeakReference
+import kotlin.math.roundToInt
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import rikka.shizuku.Shizuku
@@ -156,9 +157,12 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_OVERLAY_PERMISSION = 1002
         private const val REQUEST_SHIZUKU_PERMISSION = 2001
 
-        // Capture resolution (720p for optimal SD888 performance)
-        private const val CAPTURE_WIDTH = 1280
-        private const val CAPTURE_HEIGHT = 720
+        // Longest edge of the capture image. The detector looks at a region of at most 448 px, so a
+        // wider capture only costs GPU time on the phone without helping detection.
+        private const val CAPTURE_MAX_LONG_EDGE = 1600
+
+        // Two images are enough: each one is copied and closed inside the callback.
+        private const val CAPTURE_MAX_IMAGES = 2
         private const val OSS_GITHUB_URL = "https://github.com/1337XCode/AimBuddy"
         private const val CREATOR_NAME = "1337XCode"
         private const val CREATOR_URL = "https://www.darshanchheda.com"
@@ -315,6 +319,8 @@ class MainActivity : AppCompatActivity() {
     // Native methods
     private external fun nativeInit(assetManager: android.content.res.AssetManager,
                                     screenWidth: Int, screenHeight: Int): Boolean
+    private external fun nativeConfigureCapture(screenWidth: Int, screenHeight: Int,
+                                                captureWidth: Int, captureHeight: Int)
     private external fun nativeStart()
     private external fun nativeStop()
     private external fun nativeShutdown()
@@ -801,21 +807,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Capture size with the screen's aspect ratio, so nothing is letterboxed or stretched,
+     * and a long edge of at most [CAPTURE_MAX_LONG_EDGE]. Both sides are even.
+     */
+    private fun computeCaptureSize(): Pair<Int, Int> {
+        val scale = minOf(1f, CAPTURE_MAX_LONG_EDGE.toFloat() / maxOf(screenWidth, screenHeight))
+        val width = (screenWidth * scale).roundToInt() and 1.inv()
+        val height = (screenHeight * scale).roundToInt() and 1.inv()
+        return width to height
+    }
+
     private fun setupScreenCapture() {
-        Log.i(TAG, "Setting up screen capture at ${CAPTURE_WIDTH}x${CAPTURE_HEIGHT}")
+        val (captureWidth, captureHeight) = computeCaptureSize()
+        Log.i(TAG, "Setting up screen capture at ${captureWidth}x${captureHeight}")
 
         registerProjectionCallbackIfNeeded()
+        nativeConfigureCapture(screenWidth, screenHeight, captureWidth, captureHeight)
 
-        // Create ImageReader with HardwareBuffer support
         imageReader = ImageReader.newInstance(
-            CAPTURE_WIDTH, CAPTURE_HEIGHT,
+            captureWidth, captureHeight,
             PixelFormat.RGBA_8888,
-            3  // Triple buffering to prevent producer stalls (matches native IMAGE_READER_MAX_IMAGES)
+            CAPTURE_MAX_IMAGES
         ).apply {
             setOnImageAvailableListener({ reader ->
                 val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                 try {
-                    // Get HardwareBuffer and pass to native code
+                    // Native code copies the detector's region before returning, so the
+                    // buffer can be handed straight back to the compositor afterwards.
                     val hardwareBuffer = image.hardwareBuffer
                     if (hardwareBuffer != null) {
                         ScreenCaptureService.nativeOnFrame(hardwareBuffer, image.timestamp)
@@ -827,10 +846,9 @@ class MainActivity : AppCompatActivity() {
             }, imageHandler)
         }
 
-        // Create VirtualDisplay
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "ESPCapture",
-            CAPTURE_WIDTH, CAPTURE_HEIGHT, screenDensity,
+            captureWidth, captureHeight, screenDensity,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             imageReader?.surface, null, null
         )

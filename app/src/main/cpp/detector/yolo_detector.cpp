@@ -2,15 +2,12 @@
 #include <chrono>
 #include <algorithm>
 #include <array>
-#include <android/hardware_buffer_jni.h>
 
 namespace ESP {
 
 YoloDetector::YoloDetector()
     : vulkanDevice_(nullptr)
     , initialized_(false)
-    , screenWidth_(1080)
-    , screenHeight_(2400)
     , confidenceThreshold_(Config::DEFAULT_CONFIDENCE_THRESHOLD) {
     LOGD("YoloDetector created");
 }
@@ -20,8 +17,6 @@ YoloDetector::~YoloDetector() {
 }
 
 bool YoloDetector::initialize(AAssetManager* assetManager,
-                              int screenWidth,
-                              int screenHeight,
                               const char* modelParamPath,
                               const char* modelBinPath) {
     if (initialized_) {
@@ -34,10 +29,8 @@ bool YoloDetector::initialize(AAssetManager* assetManager,
         return false;
     }
     
-    screenWidth_.store(screenWidth, std::memory_order_relaxed);
-    screenHeight_.store(screenHeight, std::memory_order_relaxed);
-    LOGI("Initializing YoloDetector for screen %dx%d", screenWidth, screenHeight);
-    
+    LOGI("Initializing YoloDetector");
+
     // Initialize Vulkan if available
     int gpuCount = ncnn::get_gpu_count();
     LOGI("NCNN GPU count: %d", gpuCount);
@@ -132,94 +125,38 @@ void YoloDetector::shutdown() {
     initialized_ = false;
 }
 
-bool YoloDetector::detect(AHardwareBuffer* buffer, DetectionResult& result) {
+bool YoloDetector::detect(const aimbuddy::RoiFrame& frame, DetectionResult& result) {
     if (!initialized_) {
         LOGE("Detector not initialized");
         return false;
     }
-    
-    if (!buffer) {
-        LOGE("Hardware buffer is null");
+    if (frame.roi.side <= 0 || frame.rgba.size() < static_cast<size_t>(frame.roi.side) * frame.roi.side * 4) {
+        LOGE("Region frame is empty");
         return false;
     }
-    
-    result.clear();
-    
-    auto startTime = std::chrono::high_resolution_clock::now();
-    
-    // Preprocess: extract pixels, center crop, resize into persistent buffer
-    // ncnn::Mat inputMat; <- REMOVED, using member inputMat_
-    if (!preprocess(buffer, inputMat_, Config::CROP_SIZE)) {
-        LOGE("Preprocessing failed");
-        return false;
-    }
-    
-    // Run inference
-    ncnn::Mat output;
-    if (!runInference(inputMat_, output)) {
-        LOGE("Inference failed");
-        return false;
-    }
-    
-    // Post-process: decode boxes, NMS, coordinate mapping
-    postprocess(output, result, Config::CROP_SIZE);
-    
-    auto endTime = std::chrono::high_resolution_clock::now();
-    result.inferenceTimeMs = std::chrono::duration<float, std::milli>(endTime - startTime).count();
-    
-    // Store result thread-safely
-    {
-        std::scoped_lock lock(resultMutex_);
-        latestResult_ = result;
-    }
-    
-    LOGP("Detection: %d boxes in %.2f ms", result.boxes.size(), result.inferenceTimeMs);
-    
-    return true;
-}
 
-bool YoloDetector::detect(AHardwareBuffer* buffer, DetectionResult& result, int dynamicCropSize) {
-    if (!initialized_) {
-        LOGE("Detector not initialized");
-        return false;
-    }
-    
-    if (!buffer) {
-        LOGE("Hardware buffer is null");
-        return false;
-    }
-    
     result.clear();
-    
-    auto startTime = std::chrono::high_resolution_clock::now();
-    
-    // Preprocess: extract pixels, center crop, resize into persistent buffer
-    if (!preprocess(buffer, inputMat_, dynamicCropSize)) {
-        LOGE("Preprocessing failed");
-        return false;
-    }
-    
-    // Run inference
+    const auto startTime = std::chrono::steady_clock::now();
+
+    preprocess(frame, inputMat_);
+
     ncnn::Mat output;
     if (!runInference(inputMat_, output)) {
         LOGE("Inference failed");
         return false;
     }
-    
-    // Post-process: decode boxes, NMS, coordinate mapping
-    postprocess(output, result, dynamicCropSize);
-    
-    auto endTime = std::chrono::high_resolution_clock::now();
+
+    postprocess(output, frame, result);
+
+    const auto endTime = std::chrono::steady_clock::now();
     result.inferenceTimeMs = std::chrono::duration<float, std::milli>(endTime - startTime).count();
-    
-    // Store result thread-safely
+
     {
         std::scoped_lock lock(resultMutex_);
         latestResult_ = result;
     }
-    
+
     LOGP("Detection: %d boxes in %.2f ms", result.boxes.size(), result.inferenceTimeMs);
-    
     return true;
 }
 
@@ -228,66 +165,21 @@ DetectionResult YoloDetector::getResult() const {
     return latestResult_;
 }
 
-bool YoloDetector::preprocess(AHardwareBuffer* buffer, ncnn::Mat& inputMat, int cropSize) {
-    // Get hardware buffer description
-    AHardwareBuffer_Desc desc;
-    AHardwareBuffer_describe(buffer, &desc);
-    
-    if (desc.format != AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM) {
-        LOGE("Unsupported buffer format: %d", desc.format);
-        return false;
-    }
-    
-    // Lock buffer for CPU read
-    void* pixels = nullptr;
-    int result = AHardwareBuffer_lock(buffer, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, 
-                                       -1, nullptr, &pixels);
-    if (result != 0 || !pixels) {
-        LOGE("Failed to lock hardware buffer: %d", result);
-        return false;
-    }
-    
-    const uint8_t* srcPixels = static_cast<const uint8_t*>(pixels);
-    int srcWidth = static_cast<int>(desc.width);
-    int srcHeight = static_cast<int>(desc.height);
-    int srcStride = static_cast<int>(desc.stride) * 4;  // RGBA = 4 bytes per pixel
+void YoloDetector::preprocess(const aimbuddy::RoiFrame& frame, ncnn::Mat& inputMat) {
+    const int side = frame.roi.side;
 
-    currentCaptureWidth_ = srcWidth;
-    currentCaptureHeight_ = srcHeight;
-    
-    // Clamp crop size
-    int actualCropSize = std::min(cropSize, std::min(srcWidth, srcHeight));
-    actualCropSize = std::max(32, actualCropSize);
-
-    // Center crop coordinates
-    int cropX = (srcWidth - actualCropSize) / 2;
-    int cropY = (srcHeight - actualCropSize) / 2;
-    currentCropX_ = std::max(0, std::min(cropX, srcWidth - actualCropSize));
-    currentCropY_ = std::max(0, std::min(cropY, srcHeight - actualCropSize));
-    
-    // OPTIMIZED: Direct resize from RGBA buffer to model input (skip intermediate crop)
-    const uint8_t* srcStart = srcPixels + currentCropY_ * srcStride + currentCropX_ * 4;
-    
-    // Use NCNN's optimized from_pixels_resize (handles RGBA->RGB + resize in one pass)
+    // One pass converts RGBA to RGB and resizes the region to the model input size.
     inputMat = ncnn::Mat::from_pixels_resize(
-        srcStart,
+        frame.rgba.data(),
         ncnn::Mat::PIXEL_RGBA2RGB,
-        actualCropSize, actualCropSize,
-        srcStride,  // stride in bytes
-        Config::MODEL_INPUT_SIZE, Config::MODEL_INPUT_SIZE
-    );
-    
-    int unlockResult = AHardwareBuffer_unlock(buffer, nullptr);
-    if (unlockResult != 0) {
-        LOGW("AHardwareBuffer_unlock failed: %d", unlockResult);
-    }
-    
-    // Normalize: scale from [0, 255] to [0, 1]
+        side, side,
+        side * 4,  // row stride in bytes: the region is tightly packed
+        Config::MODEL_INPUT_SIZE, Config::MODEL_INPUT_SIZE);
+
+    // Scale pixel values from [0, 255] to [0, 1], the range the model was trained on.
     const std::array<float, 3> meanVals = {0.0f, 0.0f, 0.0f};
     const std::array<float, 3> normVals = {1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f};
     inputMat.substract_mean_normalize(meanVals.data(), normVals.data());
-    
-    return true;
 }
 
 bool YoloDetector::runInference(const ncnn::Mat& input, ncnn::Mat& output) {
@@ -328,7 +220,7 @@ bool YoloDetector::runInference(const ncnn::Mat& input, ncnn::Mat& output) {
     return true;
 }
 
-void YoloDetector::postprocess(const ncnn::Mat& output, DetectionResult& result, int cropSize) {
+void YoloDetector::postprocess(const ncnn::Mat& output, const aimbuddy::RoiFrame& frame, DetectionResult& result) {
     result.boxes.clear(); // Fix ghosting: Clear previous frame detections
     float confThreshold = confidenceThreshold_.load(std::memory_order_relaxed);
     
@@ -341,23 +233,16 @@ void YoloDetector::postprocess(const ncnn::Mat& output, DetectionResult& result,
         std::swap(numBoxes, numValues);
     }
     
-    // Cache coordinate mapping scalars (Math Optimization)
-    float captureWidth = static_cast<float>(currentCaptureWidth_ > 0 ? currentCaptureWidth_ : Config::CAPTURE_WIDTH);
-    float captureHeight = static_cast<float>(currentCaptureHeight_ > 0 ? currentCaptureHeight_ : Config::CAPTURE_HEIGHT);
-    float screenW = static_cast<float>(screenWidth_.load(std::memory_order_relaxed));
-    float screenH = static_cast<float>(screenHeight_.load(std::memory_order_relaxed));
-    
-    float modelSize = static_cast<float>(Config::MODEL_INPUT_SIZE);
-    float modelToCrop = static_cast<float>(cropSize) / modelSize;
-    float captureToScreenX = screenW / captureWidth;
-    float captureToScreenY = screenH / captureHeight;
-    
-    // Combined scalars for single-fused multiply (Caching)
-    float scaleX = modelToCrop * captureToScreenX;
-    float scaleY = modelToCrop * captureToScreenY;
-    float offsetX = static_cast<float>(currentCropX_) * captureToScreenX;
-    float offsetY = static_cast<float>(currentCropY_) * captureToScreenY;
-    
+    // Model pixels -> region pixels -> capture pixels -> screen pixels, folded into one scale and offset.
+    // The capture and screen grids share one aspect ratio, so a single factor serves both axes.
+    const float modelSize = static_cast<float>(Config::MODEL_INPUT_SIZE);
+    const float regionPerModel = static_cast<float>(frame.roi.side) / modelSize;
+    const float screenPerCapture = frame.geometry.screenPerCapture();
+    const float scaleX = regionPerModel * screenPerCapture;
+    const float scaleY = scaleX;
+    const float offsetX = static_cast<float>(frame.roi.x) * screenPerCapture;
+    const float offsetY = static_cast<float>(frame.roi.y) * screenPerCapture;
+
     int numClasses = numValues - 4;
     int classOffset = 4;
     float objectness = 1.0f;

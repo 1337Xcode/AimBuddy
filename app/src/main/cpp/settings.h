@@ -13,31 +13,6 @@
 
 namespace Config {
     // ============================================================================
-    // Screen Capture Configuration
-    // ============================================================================
-    
-    /// Capture resolution width (1/3 of 1080p for SD888 optimization)
-    constexpr int CAPTURE_WIDTH = 1280;
-    
-    /// Capture resolution height
-    constexpr int CAPTURE_HEIGHT = 720;
-    
-    /// Center crop size for inference (square region).
-    /// Reduced from 480 to 320: smaller resize ratio into the model
-    /// (320 -> 256 = 1.25x vs 480 -> 256 = 1.875x), less per-frame CPU
-    /// in NCNN's resize, and a tighter FOV that matches what the runtime
-    /// model can reliably detect at imgsz=256. Adaptive crop still scales
-    /// this down under pressure; this cap is the maximum.
-    constexpr int CROP_SIZE = 320;
-
-    /// ImageReader buffer depth. 3 is the minimum for triple buffering
-    /// (one being captured, one queued, one being consumed by inference).
-    constexpr int IMAGE_READER_MAX_IMAGES = 3;
-    
-    /// Frame capture interval in milliseconds
-    constexpr int CAPTURE_INTERVAL_MS = 10;
-    
-    // ============================================================================
     // Model Configuration
     // ============================================================================
     
@@ -111,14 +86,6 @@ namespace Config {
     // ============================================================================
     // Threading Configuration
     // ============================================================================
-    
-    /// Ring buffer capacity (lock-free SPSC queue).
-    /// 4 slots buffer ~80ms at 50fps capture, which absorbs the occasional
-    /// inference stall while keeping the AHardwareBuffer memory footprint
-    /// bounded (8 slots * 1280*720*4 bytes ~ 28 MB peak; 4 slots ~ 14 MB).
-    /// The inference loop drains-to-latest on every iteration so deeper
-    /// buffering only hides latency, not improves it.
-    constexpr int RING_BUFFER_CAPACITY = 4;
     
     /// Inference thread CPU affinity (performance cores on SD888)
     constexpr int INFERENCE_THREAD_CPU_AFFINITY = 7;  // Cortex-X1 core
