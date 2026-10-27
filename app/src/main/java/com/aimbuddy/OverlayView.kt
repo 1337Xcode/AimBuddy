@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 class OverlayView(context: Context) : TextureView(context), TextureView.SurfaceTextureListener {
 
     private var renderer: RenderThread? = null
+    private val location = IntArray(2)   // where the view sits on the screen, read again on every layout
 
     init {
         isOpaque = false
@@ -69,7 +70,6 @@ class OverlayView(context: Context) : TextureView(context), TextureView.SurfaceT
      */
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
-        val location = IntArray(2)
         getLocationOnScreen(location)
         OverlayNative.setOrigin(location[0], location[1])
     }

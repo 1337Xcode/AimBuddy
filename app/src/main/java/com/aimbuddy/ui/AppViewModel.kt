@@ -96,7 +96,7 @@ data class TouchAccess(val shizuku: Boolean = false, val root: Boolean = false)
  */
 class AppViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val context: Context = application
+    private val context: Context get() = getApplication<Application>()
     private val catalog = ModelCatalog(application)
     private val storeRepository = ModelStoreRepository(Project.STORE_URL, File(application.filesDir, "store"))
     private val preferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

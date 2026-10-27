@@ -353,11 +353,8 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
             .addAction(0, getString(R.string.notification_menu), menu)
             .addAction(0, getString(R.string.notification_stop), stop)
             .build()
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, foregroundType())
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
     }
-
-    private fun foregroundType(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0
 
     companion object {
         private const val TAG = "AssistService"
