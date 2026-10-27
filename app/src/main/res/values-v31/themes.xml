@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- From Android 12 the system shows the app's icon while it starts. AimBuddy has no splash screen:
+         what shows instead is the plain window the app's first screen is drawn on. -->
+    <style name="Theme.AimBuddy" parent="Theme.AimBuddy.Base">
+        <item name="android:windowSplashScreenBackground">@color/window_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+    </style>
+</resources>
