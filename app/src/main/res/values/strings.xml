@@ -82,7 +82,13 @@
     <string name="models_next_start">Used the next time you press Start.</string>
     <string name="models_import_hint">Choose the .param file, then the matching .bin file.</string>
     <string name="models_import_failed">That model could not be imported.</string>
-    <string name="models_none_installed">No model yet. Get one from the Store tab, or import your own.</string>
+    <string name="models_none_installed">No models installed.</string>
+    <string name="models_guide_title">Get a detection model</string>
+    <string name="models_guide_download_title">Download one</string>
+    <string name="models_guide_download_text">Tap Get on AimBuddy General below. It is a small download.</string>
+    <string name="models_guide_import_title">Or import your own</string>
+    <string name="models_guide_import_text">Tap the file icon at the top, then pick the .param and .bin files.</string>
+    <string name="models_guide_footer">A model is what finds people in the game picture. The assist cannot start without one.</string>
     <string name="models_needed">Get a model first. AimBuddy General is a small download in the Store tab.</string>
 
     <!-- Settings -->

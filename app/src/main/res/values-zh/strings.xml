@@ -80,7 +80,13 @@
     <string name="models_next_start">下次点按“开始”时生效。</string>
     <string name="models_import_hint">先选择 .param 文件，再选择对应的 .bin 文件。</string>
     <string name="models_import_failed">无法导入该模型。</string>
-    <string name="models_none_installed">尚无模型。请在“商店”标签页获取一个，或导入自己的模型。</string>
+    <string name="models_none_installed">尚未安装模型。</string>
+    <string name="models_guide_title">获取检测模型</string>
+    <string name="models_guide_download_title">下载一个</string>
+    <string name="models_guide_download_text">点按下方 AimBuddy General 旁的“获取”。下载很小。</string>
+    <string name="models_guide_import_title">或导入自己的模型</string>
+    <string name="models_guide_import_text">点按顶部的文件图标，再选择 .param 和 .bin 文件。</string>
+    <string name="models_guide_footer">模型负责在游戏画面中找到人物。没有模型，辅助无法启动。</string>
     <string name="models_needed">请先获取模型。AimBuddy General 是“商店”标签页中的一个小型下载。</string>
 
     <!-- 设置 -->

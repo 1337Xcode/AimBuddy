@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +33,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -44,6 +46,8 @@ import com.aimbuddy.StoreModelDefinition
 import com.aimbuddy.ui.ModelsState
 import com.aimbuddy.ui.StoreState
 import com.aimbuddy.ui.components.Group
+import com.aimbuddy.ui.components.IconBadge
+import com.aimbuddy.ui.components.ListRow
 import com.aimbuddy.ui.components.PillButton
 import com.aimbuddy.ui.components.ScreenScaffold
 import com.aimbuddy.ui.components.Segmented
@@ -95,6 +99,9 @@ fun ModelsScreen(
             }
         },
     ) {
+        if (state.installed.isEmpty()) {
+            guide()
+        }
         item {
             Segmented(
                 options = listOf(stringResource(R.string.models_installed), stringResource(R.string.models_store)),
@@ -128,6 +135,31 @@ fun ModelsScreen(
             containerColor = AppTheme.palette.surface,
             shape = MaterialTheme.shapes.medium,
         )
+    }
+}
+
+/** What to do with no model yet: download one, or import your own. It is there only until there is a model. */
+private fun LazyStaggeredGridScope.guide() {
+    item {
+        Group(
+            title = stringResource(R.string.models_guide_title),
+            footer = stringResource(R.string.models_guide_footer),
+        ) {
+            row {
+                ListRow(
+                    title = stringResource(R.string.models_guide_download_title),
+                    subtitle = stringResource(R.string.models_guide_download_text),
+                    leading = { IconBadge(Icons.Rounded.Download, AppTheme.palette.accent) },
+                )
+            }
+            row {
+                ListRow(
+                    title = stringResource(R.string.models_guide_import_title),
+                    subtitle = stringResource(R.string.models_guide_import_text),
+                    leading = { IconBadge(Icons.Rounded.FileOpen, Color(0xFF8E5CF7)) },
+                )
+            }
+        }
     }
 }
 

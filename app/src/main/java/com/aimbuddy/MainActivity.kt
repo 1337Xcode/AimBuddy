@@ -203,9 +203,17 @@ class MainActivity : AppCompatActivity() {
 
     @Composable
     private fun AppRoot() {
-        var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
-        val snapshot by AssistState.state.collectAsStateWithLifecycle()
         val models by viewModel.models.collectAsStateWithLifecycle()
+        // A phone with no model (a first run, or an update from a build that carried one inside) opens
+        // on the models screen once, where the guide says how to get one.
+        val opensOnModels = remember { models.installed.isEmpty() && !modelGuideShown() }
+        var screen by rememberSaveable { mutableStateOf(if (opensOnModels) Screen.MODELS else Screen.HOME) }
+        LaunchedEffect(Unit) {
+            if (opensOnModels) {
+                markModelGuideShown()
+            }
+        }
+        val snapshot by AssistState.state.collectAsStateWithLifecycle()
         val settings by viewModel.settings.collectAsStateWithLifecycle()
         val appearance by viewModel.appearance.collectAsStateWithLifecycle()
         val touchAccess by viewModel.touchAccess.collectAsStateWithLifecycle()
@@ -368,6 +376,14 @@ class MainActivity : AppCompatActivity() {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putBoolean(PREF_NOTICE_SHOWN, true).apply()
     }
 
+    /** Whether the player has been taken to the models screen to get a first model. */
+    private fun modelGuideShown(): Boolean =
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getBoolean(PREF_MODEL_GUIDE_SHOWN, false)
+
+    private fun markModelGuideShown() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putBoolean(PREF_MODEL_GUIDE_SHOWN, true).apply()
+    }
+
     // ---------------------------------------------------------------------------------------
     // Starting: the permission dialogs, in order
     // ---------------------------------------------------------------------------------------
@@ -497,6 +513,7 @@ class MainActivity : AppCompatActivity() {
         const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         const val PREFS_NAME = "aimbuddy_prefs"
         const val PREF_NOTICE_SHOWN = "oss_notice_shown"
+        const val PREF_MODEL_GUIDE_SHOWN = "model_guide_shown"
 
         /** The value of the "touch access" setting that means root (see the settings in native code). */
         const val TOUCH_BACKEND_ROOT = 2
