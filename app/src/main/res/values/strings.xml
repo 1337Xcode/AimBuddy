@@ -73,7 +73,6 @@
     <string name="models_from_store">From the store</string>
     <string name="models_from_file">From a file</string>
     <string name="models_installed_label">Installed</string>
-    <string name="models_loading">Loading models</string>
     <string name="models_store_error">Can\'t reach the store.</string>
     <string name="models_download_failed">That model could not be downloaded.</string>
     <string name="models_store_empty">No models to show yet.</string>
@@ -84,7 +83,6 @@
     <string name="models_import_hint">Choose the .param file, then the matching .bin file.</string>
     <string name="models_import_failed">That model could not be imported.</string>
     <string name="models_none_installed">No models installed.</string>
-    <string name="models_missing_bundled">This build has no built-in model. Get one from the store.</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
@@ -159,7 +157,6 @@
     <string name="about_updates_available">%1$s available</string>
     <string name="s_auto_update">Check for updates automatically</string>
     <string name="back">Back</string>
-    <string name="more">More</string>
 
     <!-- Notification -->
     <string name="notification_channel">AimBuddy</string>

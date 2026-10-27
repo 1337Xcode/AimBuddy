@@ -71,7 +71,6 @@
     <string name="models_from_store">Из магазина</string>
     <string name="models_from_file">Из файла</string>
     <string name="models_installed_label">Установлена</string>
-    <string name="models_loading">Загрузка моделей</string>
     <string name="models_store_error">Не удаётся связаться с магазином.</string>
     <string name="models_download_failed">Не удалось скачать модель.</string>
     <string name="models_store_empty">Пока нет моделей.</string>
@@ -82,7 +81,6 @@
     <string name="models_import_hint">Выберите файл .param, затем подходящий файл .bin.</string>
     <string name="models_import_failed">Не удалось импортировать модель.</string>
     <string name="models_none_installed">Моделей нет.</string>
-    <string name="models_missing_bundled">В этой сборке нет встроенной модели. Скачайте её в магазине.</string>
 
     <!-- Настройки -->
     <string name="settings_title">Настройки</string>
@@ -157,7 +155,6 @@
     <string name="about_updates_available">Доступно %1$s</string>
     <string name="s_auto_update">Проверять обновления автоматически</string>
     <string name="back">Назад</string>
-    <string name="more">Ещё</string>
 
     <!-- Уведомление -->
     <string name="notification_channel">AimBuddy</string>
