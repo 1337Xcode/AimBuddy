@@ -137,12 +137,10 @@ set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui)
 
 set(IMGUI_SOURCES
     ${IMGUI_DIR}/imgui.cpp
-    ${IMGUI_DIR}/imgui_demo.cpp
     ${IMGUI_DIR}/imgui_draw.cpp
     ${IMGUI_DIR}/imgui_tables.cpp
     ${IMGUI_DIR}/imgui_widgets.cpp
     ${IMGUI_DIR}/imgui_impl_opengl3.cpp
-    ${IMGUI_DIR}/imgui_impl_android.cpp
 )
 
 # =============================================================================
@@ -173,6 +171,9 @@ target_include_directories(esp_native PRIVATE
     ${NCNN_INCLUDE_DIR}
     ${IMGUI_DIR}
 )
+
+# The demo and debug windows of ImGui are not used; leaving them out keeps their code out of the app.
+target_compile_definitions(esp_native PRIVATE IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS)
 
 # =============================================================================
 # Find Android Libraries

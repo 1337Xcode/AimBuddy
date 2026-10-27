@@ -2,28 +2,26 @@
  * imgui_menu.cpp - The overlay: draws the targets and the settings menu with ImGui and hands the
  * touches that land on the menu to it.
  *
- * Kotlin owns the window (ImGuiGLSurface) and calls the functions at the bottom of this file. The
- * window passes every touch through to the game except while the menu is open; a tap anywhere
- * outside the menu closes it, so the overlay can never keep blocking the screen.
+ * Kotlin owns the window and the OpenGL context (OverlayView) and calls the functions at the
+ * bottom of this file, the drawing ones always from the overlay's GL thread. The window passes
+ * every touch through to the game except while the menu is open; a tap anywhere outside the menu
+ * closes it, so the overlay can never keep blocking the screen.
  */
 
 #include <jni.h>
-#include <android/asset_manager.h>
-#include <android/asset_manager_jni.h>
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
 #include <GLES3/gl3.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <deque>
 #include <thread>
 
 #include "app_state.h"
 #include "imgui/imgui.h"
-#include "imgui/imgui_impl_android.h"
 #include "imgui/imgui_impl_opengl3.h"
 #include "overlay/target_overlay.h"
 #include "utils/i18n.h"
@@ -35,6 +33,7 @@ using aimbuddy::i18n::T;
 
 extern "C" bool GetDetectionZoneScreenRect(float* left, float* top, float* right, float* bottom);
 extern "C" void NotifyStreamerModeChanged(bool enabled);
+extern "C" void NotifyStopRequested();
 
 namespace {
 
@@ -52,8 +51,9 @@ constexpr double kSaveDelaySeconds = 0.35;
 // Size of the floating icon the menu opens beside, in pixels.
 constexpr float kIconRadius = 44.0f;
 
-ANativeWindow* g_window = nullptr;
-bool g_imguiReady = false;
+bool g_contextCreated = false;      ///< The ImGui context, fonts and theme exist (made once, kept for the process's life).
+bool g_backendReady = false;        ///< The OpenGL backend is set up for the current GL context (GL thread only).
+std::atomic<bool> g_imguiReady{false};   ///< Drawing may start: a GL context is attached.
 int g_windowWidth = 0;
 int g_windowHeight = 0;
 
@@ -65,11 +65,13 @@ std::atomic<uint64_t> g_frameCount{0};
 std::atomic<int> g_overlayOriginX{0};
 std::atomic<int> g_overlayOriginY{0};
 
-// Where the floating icon is, so the menu can open beside it.
-ImVec2 g_iconPosition = ImVec2(60.0f, 200.0f);
+// Where the floating icon is, so the menu can open beside it. Set from the UI thread.
+std::atomic<float> g_iconX{60.0f};
+std::atomic<float> g_iconY{200.0f};
 
 // The menu's rectangle (left, top, right, bottom) as drawn last, to tell a tap on it from one outside it.
-std::atomic<float> g_menuRect[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+// Only the GL thread reads or writes it.
+float g_menuRect[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
 ImVec2 g_menuSize = ImVec2(0.0f, 0.0f);
 bool g_menuWasVisible = false;
@@ -279,21 +281,89 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
 }
 
 // ---------------------------------------------------------------------------------------------
-// The menu
+// Touch input
 // ---------------------------------------------------------------------------------------------
 
-/// A short explanation that appears when the "(?)" after a control is held.
-void helpMarker(const char* text) {
-    ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
-    if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-        ImGui::TextUnformatted(text);
-        ImGui::PopTextWrapPos();
-        ImGui::EndTooltip();
+/// One thing the finger did on the menu, kept until ImGui can be shown it.
+struct TouchStep {
+    enum class Kind { kMove, kPress, kRelease, kLeave };
+    Kind kind;
+    float x;
+    float y;
+};
+
+// A press is held at least this many frames before it is released. A tap can be over in a few
+// milliseconds, less than one frame, and ImGui only clicks what it has seen pressed during a frame.
+constexpr int kMinPressFrames = 2;
+
+std::deque<TouchStep> g_touchSteps;   ///< What the finger did, not yet shown to ImGui. GL thread only.
+bool g_pressShown = false;            ///< ImGui has been told the button is down.
+int g_framesPressed = 0;              ///< Frames the button has been down.
+
+/**
+ * Shows ImGui what the finger did, spaced so that even a very quick tap becomes a click.
+ *
+ * ImGui treats a screen like a mouse, but a mouse moves over a control for a while before it
+ * clicks. A finger arrives and leaves within one frame, and then the click is lost. So the pointer
+ * is moved first, the press follows on the next frame, and the press is held for at least
+ * [kMinPressFrames] frames. Without this, quick taps on the menu were ignored.
+ */
+void feedTouchToImGui() {
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+    if (g_pressShown) {
+        ++g_framesPressed;
+    }
+    bool moved = false;
+    while (!g_touchSteps.empty()) {
+        const TouchStep step = g_touchSteps.front();
+        if (step.kind == TouchStep::Kind::kMove) {
+            io.AddMousePosEvent(step.x, step.y);
+            moved = true;
+            g_touchSteps.pop_front();
+            continue;
+        }
+        if (moved) {
+            break;   // the pointer arrives on this frame; what follows it comes on the next
+        }
+        if (step.kind == TouchStep::Kind::kPress) {
+            io.AddMouseButtonEvent(0, true);
+            g_pressShown = true;
+            g_framesPressed = 0;
+        } else if (step.kind == TouchStep::Kind::kRelease) {
+            if (g_pressShown && g_framesPressed < kMinPressFrames) {
+                break;
+            }
+            io.AddMouseButtonEvent(0, false);
+            g_pressShown = false;
+        } else {
+            if (g_pressShown) {
+                break;
+            }
+            io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);   // the finger is gone: nothing stays highlighted
+        }
+        g_touchSteps.pop_front();
+        break;   // a press, a release or a leave takes a frame of its own
     }
 }
+
+/// Forgets the finger, so a press that was cut short (the menu closed) cannot stay down for next time.
+void resetTouch() {
+    if (!g_pressShown && g_touchSteps.empty()) {
+        return;
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    if (g_pressShown) {
+        io.AddMouseButtonEvent(0, false);
+        g_pressShown = false;
+    }
+    g_touchSteps.clear();
+    io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The menu
+// ---------------------------------------------------------------------------------------------
 
 /// What to tell the player about the touch helper.
 const char* helperStatusText(const aimbuddy::AimLoop::Stats& stats) {
@@ -411,10 +481,12 @@ bool drawMenu(Settings& settings, int bodyCount) {
         g_menuSize = ImVec2(std::max(460.0f, std::min(windowSize.x * 0.48f, 860.0f)),
                             std::max(560.0f, std::min(windowSize.y * 0.92f, 1060.0f)));
     }
-    float x = g_iconPosition.x + kIconRadius + 52.0f;
-    float y = g_iconPosition.y - g_menuSize.y * 0.5f;
+    const float iconX = g_iconX.load(std::memory_order_relaxed);
+    const float iconY = g_iconY.load(std::memory_order_relaxed);
+    float x = iconX + kIconRadius + 52.0f;
+    float y = iconY - g_menuSize.y * 0.5f;
     if (x + g_menuSize.x > windowSize.x) {
-        x = g_iconPosition.x - kIconRadius - 52.0f - g_menuSize.x;
+        x = iconX - kIconRadius - 52.0f - g_menuSize.x;
     }
     x = std::max(4.0f, std::min(x, windowSize.x - g_menuSize.x - 4.0f));
     y = std::max(4.0f, std::min(y, windowSize.y - g_menuSize.y - 4.0f));
@@ -428,10 +500,10 @@ bool drawMenu(Settings& settings, int bodyCount) {
     if (ImGui::Begin(T(Key::AppTitle), &open, ImGuiWindowFlags_NoCollapse)) {
         g_menuSize = ImGui::GetWindowSize();
         const ImVec2 position = ImGui::GetWindowPos();
-        g_menuRect[0].store(position.x, std::memory_order_relaxed);
-        g_menuRect[1].store(position.y, std::memory_order_relaxed);
-        g_menuRect[2].store(position.x + g_menuSize.x, std::memory_order_relaxed);
-        g_menuRect[3].store(position.y + g_menuSize.y, std::memory_order_relaxed);
+        g_menuRect[0] = position.x;
+        g_menuRect[1] = position.y;
+        g_menuRect[2] = position.x + g_menuSize.x;
+        g_menuRect[3] = position.y + g_menuSize.y;
 
         ImGui::BeginChild("##MenuScroll", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 6.0f), false,
                           ImGuiWindowFlags_AlwaysVerticalScrollbar);
@@ -454,6 +526,10 @@ bool drawMenu(Settings& settings, int bodyCount) {
         if (ImGui::Button(T(Key::Close), ImVec2(160.0f, 0.0f))) {
             open = false;
         }
+        ImGui::SameLine();
+        if (ImGui::Button(T(Key::StopService), ImVec2(0.0f, 0.0f))) {
+            NotifyStopRequested();
+        }
     }
     ImGui::End();
     if (!open) {
@@ -475,8 +551,8 @@ void saveSettingsWhenDue() {
     }
 }
 
-/// Keeps the overlay from drawing faster than needed, and measures how fast it does draw.
-void limitFrameRate() {
+/// Keeps the overlay from drawing faster than needed, and measures how fast it does draw. Returns the seconds since the previous frame.
+float limitFrameRate() {
     const int cap = g_menuVisible.load(std::memory_order_relaxed) ? kMenuFpsCap : kBaseFpsCap;
     const auto minFrameTime = std::chrono::nanoseconds(1'000'000'000LL / cap);
     if (g_lastTick.time_since_epoch().count() != 0) {
@@ -486,89 +562,99 @@ void limitFrameRate() {
         }
     }
     const auto now = std::chrono::steady_clock::now();
+    float deltaSeconds = 1.0f / kBaseFpsCap;
     if (g_lastTick.time_since_epoch().count() != 0) {
         const float seconds = std::chrono::duration<float>(now - g_lastTick).count();
         if (seconds > 0.0f && seconds <= 0.25f) {
+            deltaSeconds = seconds;
             const float instant = 1.0f / seconds;
             g_measuredFps = g_measuredFps > 0.0f ? g_measuredFps * 0.9f + instant * 0.1f : instant;
         }
     }
     g_lastTick = now;
+    return deltaSeconds;
 }
 
 }  // namespace
 
 // ---------------------------------------------------------------------------------------------
-// Calls from ImGuiGLSurface
+// Calls from OverlayNative (see OverlayView.kt)
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Starts drawing into the OpenGL context that is current on the calling (GL) thread. Called each
+ * time the overlay gets a new surface, and with it a new context. The ImGui context and fonts are
+ * made once and kept; the OpenGL backend, which holds objects of one GL context, is set up again.
+ */
 extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeInit(JNIEnv* env, jclass /* clazz */, jobject /* assetManager */, jobject surface) {
-    if (g_imguiReady) {
-        LOGI("ImGui already initialised");
-        return;
-    }
-    if (!surface) {
-        LOGE("Surface is null");
-        return;
-    }
-    g_window = ANativeWindow_fromSurface(env, surface);
-    if (!g_window) {
-        LOGE("Failed to get ANativeWindow from Surface");
-        return;
-    }
-    g_windowWidth = ANativeWindow_getWidth(g_window);
-    g_windowHeight = ANativeWindow_getHeight(g_window);
+Java_com_aimbuddy_OverlayNative_attach(JNIEnv* /* env */, jclass /* clazz */, jint width, jint height) {
+    g_windowWidth = width;
+    g_windowHeight = height;
     LOGI("Overlay window: %dx%d", g_windowWidth, g_windowHeight);
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = nullptr;
-    io.ConfigFlags |= ImGuiConfigFlags_IsTouchScreen;
-    io.ConfigWindowsMoveFromTitleBarOnly = true;
-    io.DisplaySize = ImVec2(static_cast<float>(g_windowWidth), static_cast<float>(g_windowHeight));
-
-    loadFonts(20.0f);   // before the backend, which builds the atlas
-    applyTheme();
+    if (!g_contextCreated) {
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO();
+        io.IniFilename = nullptr;
+        io.ConfigFlags |= ImGuiConfigFlags_IsTouchScreen;
+        io.ConfigWindowsMoveFromTitleBarOnly = true;
+        loadFonts(20.0f);   // before the backend, which builds the atlas
+        applyTheme();
+        g_contextCreated = true;
+    }
+    ImGui::GetIO().DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
     aimbuddy::i18n::SetLanguage(aimbuddy::settingsStore().get().language);
+    g_streamerModeApplied = false;   // a new window starts unsecured; the next frame tells Kotlin if it should not be
+    g_lastTick = {};
 
-    ImGui_ImplAndroid_Init(g_window);
+    if (g_backendReady) {
+        ImGui_ImplOpenGL3_Shutdown();
+    }
     ImGui_ImplOpenGL3_Init("#version 300 es");
-    g_imguiReady = true;
+    g_backendReady = true;
+    glViewport(0, 0, width, height);
+    resetTouch();   // a finger that was on the old window means nothing to the new one
+    g_imguiReady.store(true, std::memory_order_release);
     LOGI("ImGui initialised");
 }
 
+/// The overlay window changed size (the screen turned, or a bar came or went).
 extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeSurfaceChanged(JNIEnv* /* env */, jclass /* clazz */, jint width, jint height) {
-    if (!g_imguiReady) {
-        return;
-    }
+Java_com_aimbuddy_OverlayNative_resize(JNIEnv* /* env */, jclass /* clazz */, jint width, jint height) {
     g_windowWidth = width;
     g_windowHeight = height;
+    if (!g_imguiReady.load(std::memory_order_acquire)) {
+        return;
+    }
     glViewport(0, 0, width, height);
-    // The overlay is not the screen: it shrinks while the navigation bar is showing. Detection and
-    // aiming always work in display pixels (see NativeBridge.configureDisplay).
+    // The overlay is not the screen: it shrinks while a bar is showing. Detection and aiming always
+    // work in display pixels (see NativeBridge.configureDisplay).
     ImGui::GetIO().DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
 }
 
+/// Where the overlay window's top-left corner is on the display, in pixels.
 extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeSetOrigin(JNIEnv* /* env */, jclass /* clazz */, jint x, jint y) {
+Java_com_aimbuddy_OverlayNative_setOrigin(JNIEnv* /* env */, jclass /* clazz */, jint x, jint y) {
     g_overlayOriginX.store(x, std::memory_order_relaxed);
     g_overlayOriginY.store(y, std::memory_order_relaxed);
 }
 
+/// Draws one frame into the current GL context.
 extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* clazz */) {
-    if (!g_imguiReady || !g_window) {
+Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */) {
+    if (!g_imguiReady.load(std::memory_order_acquire)) {
         return;
     }
     try {
-        limitFrameRate();
+        const float deltaSeconds = limitFrameRate();
         g_frameCount.fetch_add(1, std::memory_order_relaxed);
 
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplAndroid_NewFrame();
+        ImGuiIO& io = ImGui::GetIO();
+        io.DisplaySize = ImVec2(static_cast<float>(g_windowWidth), static_cast<float>(g_windowHeight));
+        io.DeltaTime = deltaSeconds;
+        feedTouchToImGui();
         ImGui::NewFrame();
 
         const Settings settings = aimbuddy::settingsStore().get();
@@ -587,9 +673,8 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* clazz *
             g_menuWasVisible = true;
         } else {
             g_menuWasVisible = false;
-            for (std::atomic<float>& side : g_menuRect) {
-                side.store(0.0f, std::memory_order_relaxed);
-            }
+            std::fill(std::begin(g_menuRect), std::end(g_menuRect), 0.0f);
+            resetTouch();
         }
         saveSettingsWhenDue();
 
@@ -613,68 +698,77 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* clazz *
  * Hands a touch to the menu. Returns true if the touch was used. While the menu is open the whole
  * overlay is touchable, so a touch that lands outside the menu closes it: the player can always get
  * back to the game with one tap, even if the menu failed to draw.
+ *
+ * Runs on the GL thread (Kotlin queues it there). The touch is not given to ImGui here but kept as
+ * steps that feedTouchToImGui() shows it, spaced by frames.
  */
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeMotionEvent(JNIEnv* /* env */, jclass /* clazz */, jint action, jfloat x, jfloat y) {
-    if (!g_imguiReady || !g_menuVisible.load(std::memory_order_relaxed)) {
+Java_com_aimbuddy_OverlayNative_touch(JNIEnv* /* env */, jclass /* clazz */, jint action, jfloat x, jfloat y) {
+    if (!g_imguiReady.load(std::memory_order_acquire) || !g_menuVisible.load(std::memory_order_relaxed)) {
         return JNI_FALSE;
     }
-    if (action == 0) {
-        const bool insideMenu = x >= g_menuRect[0].load(std::memory_order_relaxed) &&
-                                y >= g_menuRect[1].load(std::memory_order_relaxed) &&
-                                x <= g_menuRect[2].load(std::memory_order_relaxed) &&
-                                y <= g_menuRect[3].load(std::memory_order_relaxed);
-        if (!insideMenu) {
-            g_menuVisible.store(false, std::memory_order_relaxed);
-            return JNI_TRUE;
+    using Kind = TouchStep::Kind;
+    switch (action) {
+        case 0: {   // finger down
+            const bool insideMenu = x >= g_menuRect[0] && y >= g_menuRect[1] && x <= g_menuRect[2] && y <= g_menuRect[3];
+            if (!insideMenu) {
+                g_menuVisible.store(false, std::memory_order_relaxed);
+                return JNI_TRUE;
+            }
+            g_touchSteps.push_back({Kind::kMove, x, y});
+            g_touchSteps.push_back({Kind::kPress, x, y});
+            break;
         }
-    }
-    ImGuiIO& io = ImGui::GetIO();
-    io.AddMousePosEvent(x, y);
-    if (action == 0) {
-        io.AddMouseButtonEvent(0, true);
-    } else if (action == 1) {
-        io.AddMouseButtonEvent(0, false);
+        case 2:   // finger moved; several moves between two frames collapse into the last
+            if (!g_touchSteps.empty() && g_touchSteps.back().kind == Kind::kMove) {
+                g_touchSteps.back() = {Kind::kMove, x, y};
+            } else {
+                g_touchSteps.push_back({Kind::kMove, x, y});
+            }
+            break;
+        default:  // finger up or cancelled
+            g_touchSteps.push_back({Kind::kRelease, x, y});
+            g_touchSteps.push_back({Kind::kLeave, x, y});
+            break;
     }
     return JNI_TRUE;
 }
 
 /// Whether the overlay window should be touchable: only while the menu is open.
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeWantsCapture(JNIEnv* /* env */, jclass /* clazz */) {
+Java_com_aimbuddy_OverlayNative_wantsTouches(JNIEnv* /* env */, jclass /* clazz */) {
     return g_menuVisible.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeSetMenuVisible(JNIEnv* /* env */, jclass /* clazz */, jboolean visible) {
+Java_com_aimbuddy_OverlayNative_showMenu(JNIEnv* /* env */, jclass /* clazz */, jboolean visible) {
     g_menuVisible.store(visible == JNI_TRUE, std::memory_order_relaxed);
 }
 
 /// How many frames the overlay has drawn, so Kotlin can tell a stuck renderer from a working one.
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeFrameCount(JNIEnv* /* env */, jclass /* clazz */) {
+Java_com_aimbuddy_OverlayNative_framesDrawn(JNIEnv* /* env */, jclass /* clazz */) {
     return static_cast<jlong>(g_frameCount.load(std::memory_order_relaxed));
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeSetIconPosition(JNIEnv* /* env */, jclass /* clazz */, jfloat x, jfloat y) {
-    g_iconPosition.x = x + kIconRadius * 0.5f;
-    g_iconPosition.y = y + kIconRadius * 0.5f;
+Java_com_aimbuddy_OverlayNative_setIconPosition(JNIEnv* /* env */, jclass /* clazz */, jfloat x, jfloat y) {
+    g_iconX.store(x + kIconRadius * 0.5f, std::memory_order_relaxed);
+    g_iconY.store(y + kIconRadius * 0.5f, std::memory_order_relaxed);
 }
 
+/**
+ * Stops drawing and frees what was made for the GL context, which must still be current on the
+ * calling (GL) thread. The ImGui context itself stays for the next surface.
+ */
 extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeShutdown(JNIEnv* /* env */, jclass /* clazz */) {
-    if (!g_imguiReady) {
-        return;
-    }
-    LOGI("Shutting down the overlay");
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplAndroid_Shutdown();
-    ImGui::DestroyContext();
-    if (g_window) {
-        ANativeWindow_release(g_window);
-        g_window = nullptr;
-    }
+Java_com_aimbuddy_OverlayNative_detach(JNIEnv* /* env */, jclass /* clazz */) {
+    g_imguiReady.store(false, std::memory_order_release);
     g_menuVisible.store(false, std::memory_order_relaxed);
-    g_imguiReady = false;
+    resetTouch();
+    if (g_backendReady) {
+        ImGui_ImplOpenGL3_Shutdown();
+        g_backendReady = false;
+    }
+    LOGI("Overlay detached");
 }
