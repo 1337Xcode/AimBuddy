@@ -1,298 +1,130 @@
 # Architecture
 
-How AimBuddy works as an AI-based Android aim assistant, covering module responsibilities, data flow, threading, and safe change points.
+How AimBuddy is put together: what runs where, how a frame becomes a touch, and where to change things.
 
-## System Overview
+## Parts
 
-AimBuddy runs as two cooperating layers:
+AimBuddy is three programs that work together.
 
-- **Android layer (Kotlin)**: permissions, lifecycle, foreground service, screen capture, and overlay hosting.
-- **Native layer (C++)**: frame ingestion, YOLO inference, target tracking, overlay rendering, and optional input assistance.
+| Part | Language | What it does |
+|------|----------|--------------|
+| The app | Kotlin, Jetpack Compose | The screens, the permission dialogs, the foreground service that runs the assist, screen capture, and the overlay windows |
+| The native library `libesp_native.so` | C++ | Detection, tracking, the aim controller, the overlay's drawing, and the settings |
+| The touch helper `libaimtouch.so` | C++ | A small program that reads the real touchscreen and adds the assist's finger to it. It runs with the privilege of Shizuku (shell user) or root |
 
-Two runtime modes:
+The app and the native library share a process. The helper is a separate process, started by the app, and the two talk over a loopback socket.
 
-| Mode | Root Required | Features |
-|------|---------------|----------|
-| Visual Assist | No | Capture, inference, tracking, ESP overlays |
-| Assisted Input | Yes | Everything above plus touch injection |
-
-## High-Level Data Flow
+## From the screen to a touch
 
 ```mermaid
 flowchart LR
-    A[MainActivity.kt] --> B[ScreenCaptureService]
-    B --> C[MediaProjection + ImageReader]
-    C --> D["JNI Bridge (esp_jni.cpp)"]
-    D --> E[FrameBuffer Ring Buffer]
-    E --> F[YoloDetector]
-    F --> G[TargetTracker]
-    G --> H[AimbotController]
-    H --> I["TouchHelper (uinput)"]
-    F --> J[ESPRenderer + BoxSmoother]
-    G --> J
-    D --> K[ImGui Menu]
+    A[Screen capture] --> B[Region around the crosshair]
+    B --> C[Detector]
+    C --> D[Camera motion]
+    D --> E[Tracker]
+    E --> F[Aim controller]
+    F --> G[Touch helper]
+    G --> H[Virtual touchscreen]
+    E --> I[Overlay]
 ```
 
-## Threading Model
+1. **Capture.** `CaptureSession` mirrors the display with MediaProjection into an `ImageReader`. Each frame goes to `RoiCapture`, which copies out only the square region the detector needs (set by the "Detection area" setting) and publishes it. The mailbox keeps one frame, the newest, so a slow phone drops frames instead of falling behind.
+2. **Detect.** `DetectionPipeline` runs on its own thread. `YoloDetector` runs an NCNN model on the region. At start it times the model on the CPU and on the GPU (Vulkan) and keeps the faster one, because the GPU is shared with the game. What each class of the model means comes from the model's `model.json` (see `ModelProfile`).
+3. **Measure the camera.** Before the boxes are used, `GlobalMotion` measures how far the whole picture slid since the previous frame. It reduces both frames to 64 by 64 grey values and finds the shift by phase correlation, leaving out the boxes of detected enemies, the game's fixed interface and AimBuddy's own boxes. The result goes into `CameraMotion`.
+4. **Track.** `Tracker` pairs the boxes with the targets it already follows (strong detections first, then weaker ones, in the manner of ByteTrack), smooths each target with a Kalman filter and measures its speed, free of the camera's own movement. A target that goes unseen for a few frames keeps moving along its path, so a box never blinks because of one missed detection.
+5. **Aim.** `AimLoop` runs `AimController` at a steady rate. The controller picks a target (nearest the crosshair, biggest, or most certain), predicts where it will be when this step's move takes effect, and decides how far to drag the extra finger. Each move is recorded in `CameraMotion`, so the next frames are judged knowing what the assist itself did.
+6. **Touch.** `TouchLink` sends the move to the helper. The helper writes it to a virtual touchscreen next to the player's own fingers.
+7. **Draw.** The overlay reads the tracker's targets on every frame and draws them. It draws a little ahead of now, so a box lands where the target will be when the frame reaches the glass.
 
-AimBuddy uses four threads at runtime. Each runs on a specific CPU core for deterministic scheduling on Snapdragon SoCs.
+## The camera is unknown, and the controller knows it
 
-```mermaid
-flowchart TB
-    subgraph "Capture Thread (ImageReader Handler)"
-        A1[ImageReader callback] --> A2[AHardwareBuffer acquire]
-        A2 --> A3["FrameBuffer.push()"]
-    end
+How far a game's view turns per finger pixel, and how long it takes to react, differ between games and sensitivity settings by a factor of ten or more. A controller that guesses wrong overshoots and swings. So:
 
-    subgraph "Inference Thread (CPU 7, Cortex-X1)"
-        B1["FrameBuffer.pop()"] --> B2[Drain to latest frame]
-        B2 --> B3["YoloDetector.detect()"]
-        B3 --> B4[Copy result to shared state]
-        B4 --> B5["AimbotController.updateTargets()"]
-    end
+- `CameraMotion` keeps a log of the assist's finger moves and of the slides measured on the frames, and answers "how far did the scene slide between these two instants", for the past from measurements and for the near future from the moves that are on their way.
+- `ResponseEstimator` fits the camera's gain and delay from that log by least squares. Ordinary aiming is the experiment; nothing is asked of the player. The last result is saved and used as a starting guess the next time, never as a fact.
+- While the picture cannot be read (a bare sky, a scene too busy to compare), the controller allows less finger travel and closes the gap more slowly.
+- If the finger moves a good way and the scene does not slide with it (the touch started while the screen was turning, or landed where the game does not look around), the finger is lifted and put down again, waiting a little longer each time.
+- If the aim swings anyway, a stability factor takes its strength down until it stops.
 
-    subgraph "Aim Loop Thread (AimbotController, event-driven)"
-        C1[wait on cv until new detection or 16ms tick] --> C2[Read tracker state]
-        C2 --> C3[Compute aim movement]
-        C3 --> C4["TouchHelper inject (non-blocking)"]
-    end
+## The touch helper
 
-    subgraph "Render Thread (GLSurfaceView)"
-        D1[ImGui new frame] --> D2[Draw ESP overlays]
-        D2 --> D3[Draw ImGui menu]
-        D3 --> D4[GL swap buffers]
-    end
+Android's input dispatcher follows one input device at a time in a window. When a second device starts a touch while the first has a finger down, the first one's moves are dropped. So the assist cannot be a second touchscreen next to the real one. The helper instead takes the real touchscreen over, passes every event it reports to one virtual copy of it, and adds the assist's finger to that copy as an extra contact in the next free slot. The game sees one screen with the player's fingers plus one more.
 
-    A3 --> B1
-    B4 --> D2
-    B5 --> C1
-```
+Everything that could leave the player without a working screen is guarded:
 
-### Thread Synchronization
+- The screen is only taken over when no finger is on it, and the app waits 700 ms after a takeover or a screen rotation before the first assist touch, because the system ignores a touch that begins sooner.
+- The helper needs a heartbeat from the app. If it stops, the screen is given back at once.
+- Holding both volume keys gives the screen back and stops the helper.
+- If the helper is killed, the kernel gives the screen back by itself.
 
-| Shared Resource | Protection | Threads |
-|----------------|------------|---------|
-| FrameBuffer | Lock-free SPSC ring buffer (4 slots) | Capture to Inference |
-| g_latestResult | std::mutex | Inference to Render |
-| TargetTracker state | std::mutex (m_trackerMutex) | Inference to Aim Loop |
-| g_settings (UnifiedSettings) | Relaxed copy-on-read | All threads |
+`TouchHelper` starts the helper through Shizuku (`HelperHost`, a Shizuku user service) or through root (`HelperProcess`, with `RootShell`). Automatic prefers Shizuku. The helper picks its own port and prints it, and the app sends a secret with its first message, so the app never talks to a program that is not the helper.
 
-## Frame Pipeline
+`TouchMux` is the bookkeeping that merges the two sources. It does no input or output itself, so it is tested on a computer.
 
-The pipeline from screen capture to detection output:
+## The overlay
 
-1. **Capture**: `ImageReader` callback fires per frame at device refresh rate. Frame pushed as `AHardwareBuffer` into `FrameBuffer` (lock-free SPSC ring buffer, capacity 4).
-2. **Drain**: Inference thread pops the ring buffer and drains to the latest frame, releasing stale buffers. This ensures inference always processes the most recent capture.
-3. **Preprocess**: Center crop the capture buffer around screen center. Crop size is dynamic based on `fovRadius` and adaptive pressure.
-4. **Inference**: NCNN Vulkan runs YOLOv26n (256x256 input, FP16) on the cropped region. Target cycle time: 8ms.
-5. **Postprocess**: Decode boxes, apply NMS (IoU 0.45), and map coordinates from crop space back to screen space.
-6. **Distribute**: Detection result is copied to shared state for the render thread and forwarded to the aimbot target tracker.
+The overlay is two windows added with `WindowManager`, managed by `OverlayController`:
 
-### Adaptive Crop
+- A full screen window with an `OverlayView`, a `TextureView` in which the native code draws the targets and the settings menu with ImGui on a thread of its own. It lets every touch through to the game, except while the menu is open.
+- The floating button, a `StaticBubbleView`. Tapping it opens the menu, dragging moves it, holding it stops AimBuddy.
 
-The inference loop dynamically adjusts the crop size using two pressure signals:
+From Android 12 the system drops every touch that goes through another app's overlay when the overlay is more opaque than 0.8. A `SurfaceView` is judged by a rule that ignores how transparent its pixels are, which is why the overlay is a `TextureView`, and the window's alpha is kept just under the limit while it is see-through. The window only becomes opaque and takes touches while the menu is open, and if the menu is open but nothing is being drawn, it stops taking touches after a short while, so a broken renderer cannot leave an invisible layer over the screen.
 
-- Latency pressure: EMA inference exceeds target cycle, or EMA end-to-end latency exceeds target threshold.
-- Backlog pressure: one or more buffered frames were drained in the current iteration.
+### Streamer mode
 
-Adjustment rules:
+A window marked `FLAG_SECURE` is drawn as solid black in any capture that is not secure, however transparent its pixels are. AimBuddy's own picture of the screen is such a capture. A secure full screen window would therefore black out the game for the recorder and for the detector alike, so streamer mode does something else: the native code draws nothing over the game and the floating button turns invisible. The button stays where it is and keeps working (a tap opens the menu, holding it stops AimBuddy), so the player is never locked out, and the notification has a Menu button as well. The notification's status bar icon is empty, because the system does not let a foreground service's notification out of the status bar. The full screen window is secure only while the menu or the touch area editor is open, which is a few moments in which a recording shows black. `OverlayController.toggleMenu` makes the window secure before the menu is drawn into it and stops drawing the menu before the window stops being secure, so no frame of the menu is ever captured.
 
-- If either pressure signal is active, crop size shrinks by 16px (minimum 224px).
-- If pressure is clear and crop is below the current FOV-derived target, crop grows by 8px.
-- This adapts automatically to different GPU speeds without manual tuning.
+## Models
 
-## Android Layer
+`ModelCatalog` keeps the list of models on the phone and which one is in use. Three kinds:
 
-| File | Responsibility |
-|------|---------------|
-| `MainActivity.kt` | Startup, permission sequence (overlay, root, MediaProjection), native lifecycle control (`nativeInit`, guarded `nativeInitAimbot`) |
-| `ScreenCaptureService.kt` | Foreground service for MediaProjection, JNI bridge for frame delivery |
-| `ImGuiGLSurface.kt` | OpenGL ES surface hosting ImGui render pass, touch event routing |
-| `RootUtils.kt` | Root availability checks, `/dev/uinput` permission setup |
+- **Built in.** AimBuddy General. The build copies it from `model/aimbuddy-general` into the app's assets (`app/bundled-model.gradle`), so there is one copy in the repository and a first run needs no connection.
+- **From the store.** `ModelStoreRepository` reads `model/index.json` from the `master` branch (one small request), lists the models, and installs the one the player picks into `files/models/<id>/`. Every file is checked against the size and SHA-256 in the index, and a model is swapped in only once it is complete, so a failed download never damages a model that works. A downloaded copy of the built-in model replaces it only if its version is at least as new.
+- **Imported.** The player picks a `.param` and a `.bin` file.
 
-### Permission Sequence
+The store's format and how to add a model are in [model/README.md](../model/README.md).
 
-```mermaid
-flowchart TD
-    A[App Launch] --> B[nativeInit with model load]
-    B --> C{Overlay permission?}
-    C -->|No| D[Request overlay permission]
-    D --> C
-    C -->|Yes| E{Preferred backend}
-    E -->|uinput| R{Root available?}
-    E -->|Shizuku| S{Shizuku binder + permission?}
-    R -->|No| RS[Fall back to Shizuku branch]
-    R -->|Yes| G
-    RS --> S
-    S -->|Need permission| SP[Shizuku.requestPermission]
-    SP --> S
-    S -->|Granted| AB[nativeInitAimbot via JNI bridge]
-    AB --> G[Request MediaProjection]
-    G --> H[Start foreground service]
-    H --> I[Create ImageReader and VirtualDisplay]
-    I --> J[Start inference thread]
-    J --> K[Aim controller waits on CV]
-    K --> L[Show overlay and floating icon]
-```
+## Updates
 
-## Native Layer
+The `update` package keeps the app current. `ReleaseFeed` reads GitHub's list of releases and picks the newest one that is newer than the installed version, `AppUpdater` downloads it and checks the SHA-256, the package name, the version and the signing certificate, and hands it to the system's installer with `PackageInstaller`. The player confirms in the system's dialog. After the system has replaced the app, `AppUpdatedReceiver` opens it again. See [Releasing](Releasing.md).
 
-Path: `app/src/main/cpp`
+## Settings
 
-| Directory/File | Responsibility |
-|----------------|---------------|
-| `esp_jni.cpp` | JNI entry point, thread lifecycle, inference loop, global state management |
-| `settings.h` | Compile-time constants (capture size, model config, NCNN flags, thread affinity) |
-| `detector/yolo_detector.*` | NCNN model loading, Vulkan inference, preprocess and postprocess |
-| `detector/bounding_box.h` | BoundingBox struct with IoU, center, and coordinate helpers |
-| `aimbot/target_tracker.*` | DeepSORT-style multi-target tracking with IoU + center distance matching |
-| `aimbot/aimbot_controller.*` | Three aim modes (smooth, snap, magnetic), PD controller, velocity lead, touch injection |
-| `input/touch_helper.*` | Linux uinput device creation, touch down/move/up injection |
-| `renderer/esp_renderer.cpp` | ESP overlay rendering (boxes, snap lines, FOV circles) |
-| `renderer/overlay_window.*` | EGL window/surface lifecycle for native overlay render path |
-| `renderer/imgui_menu.cpp` | Full ImGui settings menu with presets, live editing, auto-save |
-| `renderer/box_smoothing.h` | Temporal EMA smoothing for ESP box rendering (separate from aimbot filtering) |
-| `utils/aimbot_types.h` | UnifiedSettings struct, TrackedTarget struct, math helpers, FixedArray |
-| `utils/detection_zone.h` | Detection zone metric helpers used by renderer and UI |
-| `utils/imgui_helper.h` | Shared ImGui draw/color helper utilities |
-| `utils/vector2.h` | 2D vector math |
-| `utils/logger.h` | Android logcat macros with build-mode filtering |
-| `utils/timer.h` | High-resolution timing |
-| `utils/thread.h` | Thread wrapper with CPU affinity support |
-| `utils/memory_pool.h` | Pre-allocated memory pool for zero-allocation hot paths |
+`SettingsStore` in the native library is the one place the settings live. The file, `settings.cfg` in the app's private storage, has one `name=value` line per setting. Readers ignore names they do not know and keep the default for names that are missing, so a file written by another version still loads. The Compose screens read and write it through `NativeBridge`, and the ImGui menu in the game reads and writes the same store, so a change in either shows in both. Values are clamped when they are stored, so no other code checks ranges.
 
-## Detection Pipeline
+## Threads
 
-```mermaid
-flowchart LR
-    A[AHardwareBuffer] --> B["Center Crop (dynamic size)"]
-    B --> C["Resize to 256x256"]
-    C --> D["NCNN Vulkan FP16 Inference"]
-    D --> E["Decode boxes + NMS (IoU 0.45)"]
-    E --> F["Map to screen coordinates"]
-    F --> G[DetectionResult]
-```
+| Thread | Work |
+|--------|------|
+| Main | The screens, the overlay windows, the permission dialogs |
+| Capture handler | `ImageReader` callbacks; copies the region out of each frame |
+| Detection pipeline (native) | Detector, camera motion, tracker |
+| Aim loop (native) | The aim controller at a steady rate; the connection to the helper |
+| Overlay render (native, ImGui) | Targets and menu, at most 60 frames a second (90 while the menu is open) |
+| Assist start | Loads the model and starts the helper, off the main thread |
 
-Key configuration from `settings.h`:
+The tracker is shared by the pipeline thread, the aim loop and the overlay, and hands out snapshots under its own lock. `CameraMotion` is safe to use from several threads.
 
-| Parameter | Value | Purpose |
-|-----------|-------|---------|
-| CAPTURE_WIDTH/HEIGHT | 1280x720 | Capture resolution (SD for performance) |
-| CROP_SIZE | 480 | Max center crop region |
-| MODEL_INPUT_SIZE | 256 | NCNN input resolution |
-| IMAGE_READER_MAX_IMAGES | 3 | Triple buffering |
-| NMS_IOU_THRESHOLD | 0.45 | Non-maximum suppression |
-| NUM_CLASSES | 1 | Single class (enemy) |
+## Testing
 
-## Tracking Pipeline
+- `app/src/test/native` holds the C++ tests of the parts that do no input or output: the tracker, the aim controller against a simulated game with a known camera response, camera motion, the touch merger, the detector's decoding, and the settings. Run them with `sh app/src/test/native/run.sh`.
+- `app/src/test/java` holds the Kotlin tests of the update logic: `./gradlew testDebugUnitTest`.
+- Debug builds contain a playground (`app/src/debug`), a stand-in first-person game with a known camera gain and delay, and a few hooks into the native code that record traces. They are compiled in only for debug builds (`AIMBUDDY_DEBUG_HOOKS`).
 
-TargetTracker uses a DeepSORT-inspired approach:
+## Where to change things
 
-1. **Predict**: Existing tracks are moved forward using tracked velocity.
-2. **Matching Cascade**: Tracks matched to detections by age (younger first), using combined IoU + center distance + area ratio scoring.
-3. **Unmatched Tracks**: Lost counter incremented, velocity decayed. Tentative tracks dropped after 1 miss. Confirmed tracks dropped after `maxLostFrames` (default 8).
-4. **New Tracks**: Unmatched detections create tentative tracks. Promoted to confirmed after 3 consecutive matches.
-
-### Target Selection
-
-`getBestTargetCopy()` selects the best track with hysteresis:
-
-- Only CONFIRMED enemy tracks within `aimFovRadius` are candidates.
-- Priority modes: nearest to crosshair, largest box, or highest confidence.
-- Locked target gets a switch threshold (default 1.3x better required to switch).
-- Switch cooldown prevents rapid target flickering.
-
-## Aim Control Pipeline
-
-```mermaid
-flowchart TD
-    A[aimLoop runs at aimbotFps] --> B{Has target?}
-    B -->|No| C[stopAiming - release touch]
-    B -->|Yes| D[Get filtered aim point]
-    D --> E["Apply velocity lead (proportional to speed)"]
-    E --> F{In FOV?}
-    F -->|No| C
-    F -->|Yes| G{Within deadzone?}
-    G -->|Yes| H[Gentle micro-nudge only]
-    G -->|No| I{Select aim mode}
-    I --> J[Smooth: PD controller]
-    I --> K[Snap: gain-capped direct]
-    I --> L[Magnetic: velocity-proportional pull]
-    J --> M[Sanitize movement]
-    K --> M
-    L --> M
-    M --> N[Jitter suppression]
-    N --> O[Apply touch movement]
-```
-
-### Aim Modes
-
-| Mode | Behavior | Best For |
-|------|----------|----------|
-| Smooth (0) | PD controller with convergence damping, derivative brake | General use, natural feel |
-| Snap (1) | Gain-capped proportional, fast acquisition | Fast response, competitive |
-| Magnetic (2) | Distance-proportional pull, gentle near lock | Precision, minimal overshoot |
-
-### Input Injection
-
-Two backends, both designed so the aimbot pointer coexists with user fingers - never replacing or blocking them.
-
-**Root (uinput)**
-
-1. Probes the real touchscreen via `/dev/input/event*` to copy ABS axis ranges, bus id, and physical-location string.
-2. Opens `/dev/uinput` and creates a *separate* virtual multitouch device named `aimbuddy-virtual-touch`.
-3. Emits Type B multitouch events on slot 0 with a fixed tracking id (`0x7000`) that can never collide with ids the kernel allocates to physical fingers.
-4. The real touchscreen is **never grabbed** (`EVIOCGRAB` removed). The kernel reports both devices to InputDispatcher, so the aim pointer and the user's fingers are dispatched as two parallel streams.
-5. Touch is constrained to a configurable radius around a center point so the synthetic pointer behaves like a thumb on the aim stick.
-
-**Non-root (Shizuku)**
-
-1. Resolves `IInputManager.injectInputEvent` from a Shizuku-authorized process via reflection.
-2. Synthesizes `MotionEvent`s with `deviceId = -1` (virtual) and a high pointer id (`19`) - both deliberately distinct from physical-touchscreen ids so InputDispatcher routes the synthetic gesture as a parallel stream rather than merging it into the user's pointer history.
-3. Uses `INJECT_MODE_ASYNC` so injection never blocks the aim loop.
-4. The Kotlin injector keeps a running `downTime` for the aim gesture so the OS treats `ACTION_DOWN`/`ACTION_MOVE`/`ACTION_UP` as a single uninterrupted contact.
-
-This means moving the player and aiming can happen at the same time. The user's finger on the move pad and the aimbot's contact on the look pad are both live; either can be released without affecting the other.
-
-### Streamer Mode
-
-`UnifiedSettings.streamerMode` (toggled from the overlay menu) marks the ESP/menu windows with `WindowManager.LayoutParams.FLAG_SECURE`. While enabled, Android excludes the overlay from MediaProjection captures, screen recorders, screenshots, and mirroring - the game is captured as usual, but the overlay is stripped to a black surface in the recorded output.
-
-## Settings System
-
-All runtime settings live in `UnifiedSettings` (defined in `utils/aimbot_types.h`):
-
-- Binary serialized to `/data/local/tmp/settings.bin`.
-- Magic number `0xE5BA1005` for format validation.
-- `validate()` clamps all values to safe ranges before hot-path use.
-- Settings are read by copy (snapshot) in each thread to avoid contention.
-- Auto-saved after a short delay following menu edits.
-
-## Runtime Contracts
-
-- `UnifiedSettings` values are validated with `validate()` before every hot-path usage.
-- Render and control coordinate spaces stay aligned through centralized projection logic.
-- Stop and restart paths are idempotent to prevent lifecycle race failures.
-- Non-root mode always keeps the visual pipeline functional.
-- Zero-detection fast-release: touch is released immediately when no enemies are detected.
-
-## Safe Change Guide
-
-| What to Change | Where to Look |
-|----------------|---------------|
-| Permission or startup behavior | `MainActivity.kt`, `RootUtils.kt` |
-| Capture resolution or buffering | `settings.h`, `MainActivity.kt` |
-| Detection model or preprocessing | `detector/` |
-| Tracking association or lock logic | `aimbot/target_tracker.*` |
-| Aim modes or motion control | `aimbot/aimbot_controller.*` |
-| Touch injection mechanism | `input/touch_helper.*` |
-| ESP overlay rendering | `renderer/esp_renderer.cpp`, `renderer/box_smoothing.h` |
-| Menu layout and presets | `renderer/imgui_menu.cpp` |
-| Defaults, clamping, persistence | `settings.h`, `utils/aimbot_types.h` |
-
-## Related Documentation
-
-- [Settings Guide](SettingsGuide.md)
-- [Performance](Performance.md)
-- [Training](Training.md)
-- [Troubleshooting](Troubleshooting.md)
+| To change | Look at |
+|-----------|---------|
+| The screens | `app/src/main/java/com/aimbuddy/ui/` |
+| The start flow and permission dialogs | `MainActivity.kt` |
+| What runs while the assist is on | `AssistService.kt` |
+| Screen capture | `CaptureSession.kt`, `capture/roi_capture.*` |
+| Detection and the models | `detector/`, `core/detection_decoder.*`, `core/model_profile.h` |
+| How the picture's motion is measured | `core/global_motion.*`, `core/camera_motion.*`, `core/response_estimator.*` |
+| Following targets | `core/tracker.*` |
+| How the aim moves | `core/aim_controller.*`, `pipeline/aim_loop.*` |
+| The touchscreen | `touch/`, `core/touch_mux.*` |
+| The overlay and the in-game menu | `OverlayController.kt`, `renderer/imgui_menu.cpp`, `overlay/target_overlay.*` |
+| The settings and their limits | `settings/settings.h`, `settings/settings_store.cpp` |
+| The model store | `ModelStoreRepository.kt`, `model/index.py` |
+| Updates | `update/` |
