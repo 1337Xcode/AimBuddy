@@ -31,14 +31,12 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM Defaults; override with extra args, e.g.:
+REM Defaults (the teacher is yolov8x.pt at imgsz 1280, conf 0.30); override with extra args, e.g.:
 REM   scripts\08_auto_label.bat --teacher yolo11x.pt --conf 0.25 --imgsz 1280
+REM   scripts\08_auto_label.bat --teacher-onnx "C:\path\to\Your Game.onnx" --conf 0.40 --write-negatives
 python src\auto_label.py ^
     --in raw_frames ^
     --out dataset\train ^
-    --teacher yolov8x.pt ^
-    --imgsz 1280 ^
-    --conf 0.30 ^
     %*
 
 set RC=%ERRORLEVEL%

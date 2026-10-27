@@ -184,6 +184,16 @@ scripts\08_auto_label.bat --teacher yolo11x.pt --imgsz 1536 --conf 0.20
 
 After your first training pass, swap the teacher to your trained `best.pt` and run again at `imgsz=640`. The student now distills its own labels on fresh frames - this is how to grow the dataset without ever opening a labelling tool again.
 
+#### A model made for your game as the teacher
+
+A general person detector knows nothing about your game: it boxes your own weapon and arms with more confidence than a distant enemy (on five frames of a free shooter, the model that ships with AimBuddy scored a weapon at 0.70, higher than most of the enemies in the same frames). A model made for the game knows what its enemies look like. The community models of the [Aimmy V2](https://github.com/Babyhamsta/Aimmy) repository are YOLOv8 detectors exported to ONNX, one game each. Download the one for your game from that repository yourself, for your own use (check its terms before sharing anything made with it), and give it to the labeller:
+
+```powershell
+scripts\08_auto_label.bat --teacher-onnx "C:\path\to\Your Game.onnx" --conf 0.40 --write-negatives
+```
+
+Those models read a square of the screen at the pixel size they were trained on, usually 640 by 640, so the script cuts each frame into overlapping tiles of that size and keeps a box seen in two tiles once. If your recordings are bigger or smaller than the game was when the model was made, resize them first with `--onnx-scale`, for example `--onnx-scale 0.67` for 1080p recordings of a model made on 720p. `--write-negatives` keeps the frames the teacher found nobody in, so the student also learns what is not an enemy, your own weapon included. Then train as usual: the student (`yolo26n`, 256 pixels at run time) is small enough for a phone, which a 640 pixel YOLOv8 is not (roughly nine times the work per picture).
+
 ### Stage 2 - Add labelled negatives
 
 A detector trained only on positives over-confidently boxes every human-shaped thing - kill-feed avatars, billboard models, friendly NPCs, vehicles. Mix in 10-25% negatives:
