@@ -34,6 +34,10 @@ Pre-release work staged for the next tag. A rebuild of the touch, aim and detect
 - The old ESP renderer and overlay window.
 
 ### Fixed
+- Boxes trailed the targets while the player turned the camera, by about 45 px in a simulated match. The camera is now read on the captured frames up to 30 times a second, not only on the frames the detector looks at, and the player's own turn is carried a little past the newest frame. The same match now shows about 7 px.
+- Ghost boxes: a box the detector reported for a single frame was drawn for a moment. A new target is now drawn from its third sighting on, or at once when the detector is at least 90 percent sure.
+- Boxes of still targets wandered about 6 px between screen refreshes. They are smoothed harder now (about 3 px), and only the part of a target's speed the tracker is sure of is carried forward.
+- The assist chased a box stuck to the screen (the player's own weapon or character taken for an enemy) for ever: in a simulated match it turned the camera more than 13,000 px in 12 seconds and lost the real enemy. It now gives up on such a target for a few seconds, longer each time.
 - Touches did not reach the game through the overlay on Android 12 and newer.
 - The app crashed when the touch helper's output was cut short.
 - The first assist touch after the touchscreen changed hands was ignored by the system. The app now waits 700 ms.

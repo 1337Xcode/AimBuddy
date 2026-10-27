@@ -46,6 +46,7 @@ Other things you may notice:
 | The aim overshoots, swings or crawls | Give it a minute: with Calibrate automatically on, the first moves are small on purpose while it measures how your game reacts. If it still misbehaves, turn calibration off and set Camera sensitivity and Response delay by hand. |
 | The aim goes up when the target is below | Switch on Invert vertical. |
 | The assist's finger keeps lifting and landing again | The game does not answer it. The touch area is probably on something that does not turn the view, such as a button. Move it in the in-game menu to where a finger would turn the camera, away from your own thumbs. |
+| The assist turns towards my own weapon or character | The detector takes it for an enemy. A box that stays put on the screen while the camera turns past it can never be reached, so after about half a second the assist gives up on it for a few seconds, longer each time. A model trained on your game stops it for good, see [Training](Training.md). |
 | It jumps between two targets | Choose another Target pick. The assist already keeps its target until another is clearly better. |
 | It aims at the wrong part | Change Aim at. A model that detects heads is aimed at exactly; for one that does not, the point is worked out from the shape of the box. |
 
