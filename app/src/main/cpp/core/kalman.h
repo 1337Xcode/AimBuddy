@@ -47,15 +47,19 @@ struct PositionVelocityFilter {
      * accelerationVariance is in (units/s^2)^2. knownShift is a displacement the caller can
      * account for exactly, such as the screen scrolling because the camera was turned, so it
      * is added to the position without being mistaken for the target's own velocity.
+     * extraPositionVariance widens the position uncertainty by an amount that does not come
+     * from the target's motion, such as the known shift itself being slightly wrong. The next
+     * measurement then corrects the position firmly instead of being blamed on speed.
      */
-    void predict(float dt, float accelerationVariance, float knownShift = 0.0f) {
+    void predict(float dt, float accelerationVariance, float knownShift = 0.0f,
+                 float extraPositionVariance = 0.0f) {
         position += velocity * dt + knownShift;
         const float dt2 = dt * dt;
         const float newPPosition = pPosition + 2.0f * dt * pCross + dt2 * pVelocity +
                                    accelerationVariance * dt2 * dt2 * 0.25f;
         const float newPCross = pCross + dt * pVelocity + accelerationVariance * dt2 * dt * 0.5f;
         const float newPVelocity = pVelocity + accelerationVariance * dt2;
-        pPosition = newPPosition;
+        pPosition = newPPosition + extraPositionVariance;
         pCross = newPCross;
         pVelocity = newPVelocity;
     }

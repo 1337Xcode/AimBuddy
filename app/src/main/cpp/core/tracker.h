@@ -63,6 +63,7 @@ struct TrackView {
     float height = 0.0f;
     float velocityX = 0.0f;   ///< Target's own speed in screen pixels per second (camera motion removed).
     float velocityY = 0.0f;
+    float velocitySigma = 0.0f; ///< How uncertain the speed estimate is (std. dev., pixels per second).
     float score = 0.0f;       ///< Smoothed detector confidence.
     float opacity = 0.0f;     ///< 1 while seen or recently seen, fading to 0 while coasting; 0 means do not draw.
     TrackPhase phase = TrackPhase::kTentative;
@@ -97,13 +98,17 @@ struct TrackerConfig {
     float coastVelocityDecayS = 0.15f;    ///< Time constant at which a missed target's velocity fades.
 
     // --- Motion model (all scaled by the target's box height, so distance does not matter) ---
-    float accelerationPerBox = 8.0f;      ///< Std. dev. of acceleration, box heights per second squared.
+    float accelerationPerBox = 10.0f;     ///< Std. dev. of acceleration, box heights per second squared.
     float positionSigmaPerBox = 0.03f;    ///< Std. dev. of the detector's centre error, in box heights.
     float sizeSigmaPerBox = 0.06f;        ///< Std. dev. of the detector's size error, as a fraction of size.
     float sizeDriftPerSecond = 0.20f;     ///< How fast the true box size may change, as a fraction per second.
     float initialSpeedPerBox = 3.0f;      ///< Std. dev. of the unknown starting speed, box heights per second.
     float maxSpeedPerBox = 15.0f;         ///< Speeds above this are treated as errors and clamped.
     float minPositionSigmaPx = 1.0f;      ///< Floor for the centre error so tiny boxes stay well behaved.
+    float egoUncertainty = 0.2f;          ///< How far off the known camera movement may be, as a fraction of it.
+                                          ///< The game's sensitivity is only estimated, so after a big camera
+                                          ///< move the position is corrected from the measurement and the error
+                                          ///< is not mistaken for target speed.
 
     /**
      * Thresholds derived from the single "minimum confidence" setting the player sees.

@@ -112,8 +112,8 @@ void Tracker::predictTrack(Track& track, int64_t toNs) const {
 
     const float boxHeight = std::max(track.height.value, 1.0f);
     const float accelerationVariance = square(config_.accelerationPerBox * boxHeight);
-    track.x.predict(dt, accelerationVariance, egoX);
-    track.y.predict(dt, accelerationVariance, egoY);
+    track.x.predict(dt, accelerationVariance, egoX, square(config_.egoUncertainty * egoX));
+    track.y.predict(dt, accelerationVariance, egoY, square(config_.egoUncertainty * egoY));
     track.width.predict(dt, square(config_.sizeDriftPerSecond * track.width.value));
     track.height.predict(dt, square(config_.sizeDriftPerSecond * track.height.value));
     track.stateNs = toNs;
@@ -443,6 +443,7 @@ void Tracker::projectTrack(const Track& track, int64_t atNs, TrackView& view) co
     view.height = track.height.value;
     view.velocityX = velocityX;
     view.velocityY = velocityY;
+    view.velocitySigma = std::sqrt(0.5f * (track.x.pVelocity + track.y.pVelocity));
     view.score = track.score;
     view.phase = track.phase;
     view.hits = track.hits;
