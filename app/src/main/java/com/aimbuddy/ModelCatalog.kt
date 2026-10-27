@@ -2,6 +2,7 @@ package com.aimbuddy
 
 import android.content.Context
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 
@@ -176,7 +177,12 @@ class ModelCatalog(context: Context) {
 
     private fun loadInstalledModels(): List<InstalledModel> {
         val raw = prefs.getString(KEY_INSTALLED_MODELS_JSON, "[]") ?: "[]"
-        val arr = JSONArray(raw)
+        // A damaged list means no models are known; the one inside the app is put back, and imported ones can be imported again.
+        val arr = try {
+            JSONArray(raw)
+        } catch (e: JSONException) {
+            return emptyList()
+        }
         val out = mutableListOf<InstalledModel>()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
