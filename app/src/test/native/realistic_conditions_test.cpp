@@ -184,3 +184,15 @@ TEST(the_assist_helps_a_person_steering_by_hand_and_never_makes_their_aim_worse)
     SimulatedGame bothRunning(truth, baseSettings(), running);
     CHECK(rmsError(bothRunning, 12.0f, 3.0f) < rmsError(aloneRunning, 12.0f, 3.0f) * 0.7);
 }
+
+TEST(a_box_stuck_to_the_screen_is_not_drawn_once_the_assist_has_found_it_out) {
+    // The player's weapon taken for an enemy is a person-sized box that never moves on the screen. Once the
+    // assist has given up on it the overlay must stop drawing it, so the screen does not show a gun outlined
+    // as a person for the rest of the match. The weapon is the only thing in reach, so the assist goes for it.
+    SimulatedGame::Truth truth = phoneInAMatch();
+    truth.falseBoxes.push_back(weaponStuckToTheScreen());
+    SimulatedGame game(truth, baseSettings(), stationary(2500.0f, 0.0f));
+    const SimulatedGame::DrawnBoxes drawn = game.judgeDrawnBoxes(14.0f, 5.0f);
+    CHECK(game.controller().telemetry().giveUps >= 1);
+    CHECK(drawn.ghostShare < 0.1);   // from the fifth second on, nothing but the weapon is there to be drawn, and it is not
+}

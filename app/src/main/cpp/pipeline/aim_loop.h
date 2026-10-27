@@ -78,6 +78,9 @@ public:
     bool isRunning() const { return running_.load(std::memory_order_acquire); }
     Stats stats() const;
 
+    /// True for a box that stays put on the screen however the camera turns (see AimController::isDecoy). Thread safe.
+    bool isDecoy(const TrackView& view, int64_t nowNs) const { return controller_.isDecoy(view, nowNs); }
+
 #ifdef AIMBUDDY_DEBUG_HOOKS
     /// Testing only: starts keeping a row for every step, with what the controller saw and did.
     void startTrace();

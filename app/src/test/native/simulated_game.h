@@ -164,7 +164,8 @@ public:
             const TrackView* nearestView = nullptr;
             bool ghost = false;
             for (int i = 0; i < count; ++i) {
-                if (views[i].opacity < kDrawnOpacity) {
+                // The overlay leaves out what the assist has found to be stuck to the screen.
+                if (views[i].opacity < kDrawnOpacity || controller_.isDecoy(views[i], nowNs)) {
                     continue;
                 }
                 const double distance = std::hypot(views[i].centerX - centerX, views[i].centerY - centerY);

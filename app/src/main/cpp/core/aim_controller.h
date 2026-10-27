@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 
 #include "aim_point.h"
 #include "camera_motion.h"
@@ -142,6 +143,13 @@ public:
     /// What the latest step saw and did. Read from the thread that calls step().
     const AimTelemetry& telemetry() const { return telemetry_; }
 
+    /**
+     * True for a box that was given up on because it stays put on the screen however the camera turns,
+     * and for as long as it is likely to be there still: the player's own weapon or character taken
+     * for an enemy. Not drawn, not aimed at. Safe to call from any thread, unlike the rest.
+     */
+    bool isDecoy(const TrackView& view, int64_t nowNs) const;
+
 private:
     /// The target being followed, as it will be when a move made now takes effect.
     struct Pursuit {
@@ -181,6 +189,7 @@ private:
     // Target choice.
     int selectTarget(int64_t nowNs, const TrackView* views, int count, const ModelProfile& profile);
     bool isGivenUp(const TrackView& view, int64_t nowNs) const;
+    static bool matchesGivenUp(const GivenUp& entry, const TrackView& view);
     bool cannotCloseOn(int64_t nowNs, const Tracker& tracker, const TrackView& body);
     void giveUpOn(int64_t nowNs, const TrackView& seen);
     void forgetWatch();
@@ -226,6 +235,7 @@ private:
     // when the target was last looked at, where it was then, how far apart its places have been, how far
     // the camera has swept, and how many looks in a row have said it is stuck.
     static constexpr int kMaxGivenUp = 6;
+    mutable std::mutex givenUpMutex_;   ///< The list is written by the aim thread and read by the overlay's.
     std::array<GivenUp, kMaxGivenUp> givenUp_{};
     std::array<TrackView, kMaxTracks> watchViews_{};
     int watchedId_ = -1;

@@ -287,18 +287,33 @@ void AimController::rankTargets(const TrackView* views, int count, const ModelPr
     }
 }
 
+/// True when the box is the one the entry was made for: the same target, or one in the same place of about the same size.
+bool AimController::matchesGivenUp(const GivenUp& entry, const TrackView& view) {
+    const float tallest = std::max(view.height, entry.height);
+    const float areaRatio = std::max(view.width * view.height, entry.width * entry.height) /
+                            std::max(1.0f, std::min(view.width * view.height, entry.width * entry.height));
+    const bool samePlace = std::hypot(view.centerX - entry.centerX, view.centerY - entry.centerY) <= kSamePlaceBoxShare * tallest &&
+                           areaRatio <= kSameBoxAreaFactor;
+    return view.id == entry.trackId || samePlace;
+}
+
 /// True when the target is one that was given up on and is still being left alone.
 bool AimController::isGivenUp(const TrackView& view, int64_t nowNs) const {
+    std::lock_guard<std::mutex> lock(givenUpMutex_);
     for (const GivenUp& entry : givenUp_) {
-        if (entry.trackId < 0 || nowNs >= entry.untilNs) {
-            continue;
+        if (entry.trackId >= 0 && nowNs < entry.untilNs && matchesGivenUp(entry, view)) {
+            return true;
         }
-        const float tallest = std::max(view.height, entry.height);
-        const float areaRatio = std::max(view.width * view.height, entry.width * entry.height) /
-                                std::max(1.0f, std::min(view.width * view.height, entry.width * entry.height));
-        const bool samePlace = std::hypot(view.centerX - entry.centerX, view.centerY - entry.centerY) <= kSamePlaceBoxShare * tallest &&
-                               areaRatio <= kSameBoxAreaFactor;
-        if (view.id == entry.trackId || samePlace) {
+    }
+    return false;
+}
+
+bool AimController::isDecoy(const TrackView& view, int64_t nowNs) const {
+    // Past the wait the assist may try the box again, but the box has not become a person: it stays hidden
+    // until the entry is forgotten, and a new giving up renews it.
+    std::lock_guard<std::mutex> lock(givenUpMutex_);
+    for (const GivenUp& entry : givenUp_) {
+        if (entry.trackId >= 0 && nowNs < entry.forgottenNs && matchesGivenUp(entry, view)) {
             return true;
         }
     }
@@ -379,6 +394,7 @@ bool AimController::cannotCloseOn(int64_t nowNs, const Tracker& tracker, const T
 
 /// Leaves the target alone for a while, longer if it is the same one as before, and lets go of the lock.
 void AimController::giveUpOn(int64_t nowNs, const TrackView& seen) {
+    std::lock_guard<std::mutex> lock(givenUpMutex_);
     GivenUp* slot = nullptr;
     for (GivenUp& entry : givenUp_) {
         if (entry.trackId >= 0 && nowNs >= entry.forgottenNs) {
