@@ -5,8 +5,6 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 
 private const val TAG = "ModelStore"
@@ -48,7 +46,7 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
     fun fetchModels(): List<StoreModelDefinition> {
         val cache = File(cacheDir, INDEX_FILE)
         return try {
-            val text = httpGetText("$baseUrl/$INDEX_FILE")
+            val text = Http.getText("$baseUrl/$INDEX_FILE")
             parseIndex(text, baseUrl).also { saveText(cache, text) }
         } catch (e: IOException) {
             fallBackToSavedList(cache, e)
@@ -130,7 +128,7 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
 
     /** Downloads one file to [destination] and checks it against the size and SHA-256 the index gave. */
     private fun download(file: StoreFile, destination: File, onBytes: (Long) -> Unit) {
-        val connection = openConnection(file.url)
+        val connection = Http.open(file.url)
         try {
             val digest = MessageDigest.getInstance("SHA-256")
             var received = 0L
@@ -160,31 +158,6 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
         }
     }
 
-    /** Reads a small text file over HTTPS. */
-    private fun httpGetText(url: String): String {
-        val connection = openConnection(url)
-        try {
-            return connection.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    /** Opens a connection to a store address; only HTTPS is accepted, and a failed answer is an error. */
-    private fun openConnection(url: String): HttpURLConnection {
-        require(url.startsWith("https://")) { "Only HTTPS addresses are used: $url" }
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = CONNECT_TIMEOUT_MS
-        connection.readTimeout = READ_TIMEOUT_MS
-        connection.setRequestProperty("User-Agent", USER_AGENT)
-        val code = connection.responseCode
-        if (code !in 200..299) {
-            connection.disconnect()
-            throw IOException("HTTP $code for $url")
-        }
-        return connection
-    }
-
     /** Saves text next to the final file first, then renames it, so a failed write never damages the old copy. */
     private fun saveText(destination: File, text: String) {
         destination.parentFile?.mkdirs()
@@ -202,9 +175,6 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
 
         private const val INDEX_FILE = "index.json"
         private const val SUPPORTED_SCHEMA = 1
-        private const val USER_AGENT = "AimBuddy-ModelStore"
-        private const val CONNECT_TIMEOUT_MS = 10_000
-        private const val READ_TIMEOUT_MS = 20_000
         private const val BUFFER_BYTES = 32 * 1024
         private const val MAX_FILE_BYTES = 64L * 1024 * 1024
 
