@@ -29,7 +29,7 @@ TEST(settings_survive_a_round_trip) {
     CHECK_NEAR(loaded.boxColor[2], 0.75, 1e-6);
     CHECK(loaded.boxThickness == 4);
     CHECK(loaded.showSnapLine && !loaded.showAimPoint);
-    CHECK(loaded.assistEnabled);
+    CHECK(!loaded.assistEnabled);   // the assist is never saved: it starts off every run
     CHECK(loaded.aimZone == 1);
     CHECK_NEAR(loaded.aimStrength, 0.8, 1e-6);
     CHECK_NEAR(loaded.sceneGain, 2.25, 1e-6);

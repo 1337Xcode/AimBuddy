@@ -20,6 +20,9 @@ int64_t steadyNowNs() {
 /**
  * Calls `visit(name, field)` for every setting. The one list drives both reading and writing, so a
  * setting added here is saved and loaded without touching anything else.
+ *
+ * `assistEnabled` is left out on purpose: the assist moves the aim by itself, so it starts off
+ * every time the app runs and the player turns it on while in the game.
  */
 template <typename Settings_, typename Visitor>
 void visitFields(Settings_& s, Visitor&& visit) {
@@ -34,7 +37,6 @@ void visitFields(Settings_& s, Visitor&& visit) {
     visit("showPerformance", s.showPerformance);
     visit("confidence", s.confidence);
     visit("detectionZoneRadius", s.detectionZoneRadius);
-    visit("assistEnabled", s.assistEnabled);
     visit("aimZone", s.aimZone);
     visit("aimStrength", s.aimStrength);
     visit("aimFovRadius", s.aimFovRadius);
