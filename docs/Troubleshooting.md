@@ -11,7 +11,8 @@ The Home screen says what is wrong in a sentence. What each one means:
 | Display over other apps is not allowed. | Open Settings, find AimBuddy in the list of apps that may display over other apps, and turn it on. Then press Start. |
 | Screen capture was not allowed. | Press Start again and accept the system's screen capture question. The assist needs to see the whole screen to see the game. |
 | Screen capture ended. | The system stopped the screen capture. Press Start again. |
-| The detection model could not be loaded. | The chosen model's files are missing or are not a valid NCNN model. Choose AimBuddy General under Models, or import the model again. |
+| The detection model could not be loaded. | The chosen model's files are missing or are not a valid NCNN model. Download AimBuddy General again under Models, or import the model again. |
+| Get a model first. | The app carries no model: the first one comes from the Store tab of the Models page (a small download) or from files you import. Press Start again once it is there. |
 | AimBuddy could not start. | Something unexpected failed. Run `adb logcat -s AssistService:W AimBuddy_Native:E` and look for the first error. |
 
 If AimBuddy stops by itself during a game, the phone's battery manager probably ended it. Exclude AimBuddy from battery optimization, see the table in [Shizuku setup](ShizukuSetup.md).
@@ -60,7 +61,7 @@ Other things you may notice:
 
 | Message | Cause and fix |
 |---------|---------------|
-| Can't reach the store. | The list is one small file on GitHub. Check the connection and try again. AimBuddy General is built in and works without it. |
+| Can't reach the store. | The list is one small file on GitHub. Check the connection and try again. Without a connection you can still import a model from files. |
 | That model could not be downloaded. | The connection dropped or a file did not match its checksum. The model you had is untouched. Try again. |
 | That model could not be imported. | Choose the `.param` file first and then the matching `.bin` file of the same export. |
 | Can't reach GitHub. (an update) | Check the connection and try again. |
@@ -91,10 +92,6 @@ Native linker errors that name NCNN symbols mean the prebuilt libraries under `a
 ### `__libcpp_verbose_abort` is undefined
 
 The NCNN libraries were built with a different libc++ than the NDK's. `esp_jni.cpp` defines the missing symbol; if you see this after updating NCNN, check that definition is still there.
-
-### The build says the model to bundle is missing
-
-The build copies `model/aimbuddy-general/` into the app and stops if `model.param`, `model.bin` or `model.json` is missing, because an app without its model cannot start. Restore the folder from the repository.
 
 ### The installer says the package is invalid or conflicts with an existing package
 

@@ -39,9 +39,10 @@ tracker -> overlay (outlines, drawn a little ahead of now)
 ## Install
 
 1. Download the latest APK from [Releases](https://github.com/1337Xcode/AimBuddy/releases) and open it.
-2. Open AimBuddy. When it asks, allow display over other apps, notifications and screen capture.
-3. For aim assist, give AimBuddy touch access with [Shizuku](docs/ShizukuSetup.md) (no root needed) or with root. Without either, AimBuddy still outlines people.
-4. Press Start, then switch to your game.
+2. Open AimBuddy. It opens on the Models page: tap Get on AimBuddy General, or import a model of your own. The app carries no model, so this comes first.
+3. When it asks, allow display over other apps, notifications and screen capture.
+4. For aim assist, give AimBuddy touch access with [Shizuku](docs/ShizukuSetup.md) (no root needed) or with root. Without either, AimBuddy still outlines people.
+5. Press Start, then switch to your game.
 
 The first release that can update itself has to be installed by hand once; after that updates arrive in the app.
 

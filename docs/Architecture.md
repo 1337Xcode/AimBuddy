@@ -76,10 +76,9 @@ A window marked `FLAG_SECURE` is drawn as solid black in any capture that is not
 
 ## Models
 
-`ModelCatalog` keeps the list of models on the phone and which one is in use. Three kinds:
+`ModelCatalog` keeps the list of models on the phone and which one is in use. The app carries no model of its own: the detector loads the two files of the one in use, and a phone with none cannot start the assist. A first run therefore opens on the models page, where a guide says how to get one, and Start on a phone with no model leads there too. A model is of one of two kinds:
 
-- **Built in.** AimBuddy General. The build copies it from `model/aimbuddy-general` into the app's assets (`app/bundled-model.gradle`), so there is one copy in the repository and a first run needs no connection.
-- **From the store.** `ModelStoreRepository` reads `model/index.json` from the `master` branch (one small request), lists the models, and installs the one the player picks into `files/models/<id>/`. Every file is checked against the size and SHA-256 in the index, and a model is swapped in only once it is complete, so a failed download never damages a model that works. A downloaded copy of the built-in model replaces it only if its version is at least as new.
+- **From the store.** `ModelStoreRepository` reads `model/index.json` from the `master` branch (one small request), lists the models, and installs the one the player picks into `files/models/<id>/`. AimBuddy General, the default, is listed there like any other. Every file is checked against the size and SHA-256 in the index, and a model is swapped in only once it is complete, so a failed download never damages a model that works.
 - **Imported.** The player picks a `.param` and a `.bin` file.
 
 The store's format and how to add a model are in [model/README.md](../model/README.md).
