@@ -410,3 +410,45 @@ TEST(tracker_survives_invalid_input_and_overload) {
     tracker.reset();
     CHECK(drawnCount(tracker, 2 * kMs) == 0);
 }
+
+TEST(tracker_thresholds_follow_the_confidence_setting) {
+    const aimbuddy::TrackerConfig low = aimbuddy::TrackerConfig::forConfidence(0.30f);
+    const aimbuddy::TrackerConfig high = aimbuddy::TrackerConfig::forConfidence(0.80f);
+    CHECK(low.birthScore < high.birthScore);
+    CHECK(low.lowScore <= low.highScore && low.highScore <= low.birthScore);
+    CHECK(high.lowScore <= high.highScore && high.highScore <= high.birthScore);
+    CHECK(high.showTentativeScore >= high.birthScore);
+    CHECK(aimbuddy::TrackerConfig::forConfidence(5.0f).birthScore <= 0.95f);   // out of range values are clamped
+    CHECK(aimbuddy::TrackerConfig::forConfidence(-1.0f).birthScore >= 0.20f);
+}
+
+TEST(tracker_does_not_slide_onto_a_neighbour_when_its_own_box_is_missed) {
+    Tracker tracker;
+    // Two people stand side by side, 80 px apart, boxes 60 px wide (a 20 px gap between them).
+    for (int frame = 0; frame < 12; ++frame) {
+        Detection d[2] = {box(300.0f, 400.0f, 60.0f, 180.0f, 0.9f), box(380.0f, 400.0f, 60.0f, 180.0f, 0.9f)};
+        tracker.update(d, 2, frame * 16 * kMs, nullptr);
+    }
+    TrackView left;
+    CHECK(viewNear(tracker, 11 * 16 * kMs, 300.0f, 400.0f, &left));
+    const int leftId = left.id;
+
+    // The left person is now missed for several frames while only the right one is detected.
+    for (int frame = 12; frame < 18; ++frame) {
+        Detection right = box(380.0f, 400.0f, 60.0f, 180.0f, 0.9f);
+        tracker.update(&right, 1, frame * 16 * kMs, nullptr);
+    }
+    TrackView views[aimbuddy::kMaxTracks];
+    const int n = tracker.snapshot(17 * 16 * kMs, views, aimbuddy::kMaxTracks);
+    for (int i = 0; i < n; ++i) {
+        if (views[i].id == leftId) {
+            CHECK_NEAR(views[i].centerX, 300.0, 12.0);   // it stayed where the person is, not between the two
+        }
+    }
+    // And a new person appearing 70 px from the missed one must not be absorbed into its track.
+    Detection fresh[2] = {box(380.0f, 400.0f, 60.0f, 180.0f, 0.9f), box(236.0f, 400.0f, 60.0f, 180.0f, 0.9f)};
+    tracker.update(fresh, 2, 18 * 16 * kMs, nullptr);
+    TrackView near;
+    CHECK(viewNear(tracker, 18 * 16 * kMs, 236.0f, 400.0f, &near));
+    CHECK(near.id != leftId);
+}

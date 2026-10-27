@@ -1,0 +1,87 @@
+package com.aimbuddy
+
+import android.content.res.AssetManager
+import android.util.Log
+import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
+import java.io.File
+import java.io.IOException
+
+/**
+ * What a model says about itself, read from a small JSON file saved next to it.
+ *
+ * Players train their own models, so the app cannot guess what the classes mean. The file
+ * has three optional fields:
+ *
+ * ```
+ * { "roles": ["body", "head"], "endToEnd": false, "inputSize": 256 }
+ * ```
+ *
+ * - `roles` lists what each class is, in class order: "body" (an enemy), "head" (an enemy's head)
+ *   or "ignore" (anything that must not be highlighted, such as teammates).
+ * - `endToEnd` is true for exports that already remove duplicate boxes (shape N x 6).
+ * - `inputSize` is the network input size in pixels; leave it out to have it detected.
+ *
+ * Without a file, one class means "body" and two classes mean "body" then "head".
+ */
+data class ModelProfileSpec(
+    val roles: String?,
+    val endToEnd: Boolean,
+    val inputSize: Int
+) {
+    companion object {
+        private const val TAG = "ModelProfileSpec"
+        private const val ASSET_PROFILE_PATH = "models/model.json"
+
+        /** Used when a model comes without a description. */
+        val UNKNOWN = ModelProfileSpec(roles = null, endToEnd = false, inputSize = 0)
+
+        /**
+         * Reads the description for the model whose `.param` file is [paramPath].
+         * `<name>.json` next to the `.param` file wins over `model.json` in the same folder.
+         */
+        fun readFor(paramPath: String?): ModelProfileSpec {
+            if (paramPath.isNullOrBlank()) return UNKNOWN
+            val param = File(paramPath)
+            val candidates = listOf(
+                File(param.parentFile, param.nameWithoutExtension + ".json"),
+                File(param.parentFile, "model.json")
+            )
+            val file = candidates.firstOrNull { it.isFile } ?: return UNKNOWN
+            return try {
+                parse(file.readText())
+            } catch (e: JSONException) {
+                Log.w(TAG, "Ignoring unreadable model description ${file.name}: ${e.message}")
+                UNKNOWN
+            }
+        }
+
+        /** Reads the description bundled with the app next to its default model, if there is one. */
+        fun readFromAssets(assets: AssetManager): ModelProfileSpec {
+            return try {
+                assets.open(ASSET_PROFILE_PATH).use { parse(it.bufferedReader().readText()) }
+            } catch (_: IOException) {
+                UNKNOWN  // no description bundled
+            } catch (e: JSONException) {
+                Log.w(TAG, "Ignoring unreadable bundled model description: ${e.message}")
+                UNKNOWN
+            }
+        }
+
+        /** Parses the JSON text of a description. Unknown fields are ignored. */
+        fun parse(json: String): ModelProfileSpec {
+            val root = JSONObject(json)
+            val roles = when (val raw = root.opt("roles")) {
+                is JSONArray -> (0 until raw.length()).joinToString(",") { raw.optString(it) }
+                is String -> raw
+                else -> null
+            }
+            return ModelProfileSpec(
+                roles = roles?.takeIf { it.isNotBlank() },
+                endToEnd = root.optBoolean("endToEnd", false),
+                inputSize = root.optInt("inputSize", 0).coerceAtLeast(0)
+            )
+        }
+    }
+}

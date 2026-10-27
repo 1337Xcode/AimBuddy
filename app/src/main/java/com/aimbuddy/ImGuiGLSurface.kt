@@ -49,6 +49,10 @@ class ImGuiGLSurface @JvmOverloads constructor(
 
         @JvmStatic
         external fun nativeSetMenuVisible(visible: Boolean)
+
+        /** Reports where this window's top-left corner is on the display, in pixels. */
+        @JvmStatic
+        external fun nativeSetOrigin(x: Int, y: Int)
         
         @JvmStatic
         external fun nativeSetIconPosition(x: Float, y: Float)
@@ -85,6 +89,19 @@ class ImGuiGLSurface @JvmOverloads constructor(
         screenWidth = width
         screenHeight = height
         nativeSurfaceChanged(width, height)
+    }
+
+    /**
+     * The overlay window can start a few pixels in from the display corner (a display cutout) or
+     * end before its edge (a navigation bar), and both change at runtime. The detector and the
+     * aim logic use display pixels, so the native side needs the window's offset to draw in the
+     * right place.
+     */
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        val location = IntArray(2)
+        getLocationOnScreen(location)
+        nativeSetOrigin(location[0], location[1])
     }
 
     override fun onDrawFrame(gl: GL10?) {

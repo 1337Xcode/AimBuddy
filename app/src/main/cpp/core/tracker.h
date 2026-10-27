@@ -79,9 +79,10 @@ struct TrackerConfig {
     int confirmHits = 2;              ///< Matches needed before a new target counts as real.
     float showTentativeScore = 0.75f; ///< A tentative target this confident is drawn right away.
     float minIou = 0.05f;             ///< Boxes overlapping less than this are matched by distance instead.
-    float centerGate = 1.5f;          ///< Largest centre distance, in mean box sizes, for non-overlapping matches.
+    float gateSigmas = 4.0f;          ///< Non-overlapping boxes match only within this many standard deviations
+                                      ///< of where the target is expected, so a neighbour is never mistaken for it.
     float lowStageIou = 0.20f;        ///< Minimum overlap in the low confidence pass.
-    float lowStageCenterGate = 0.75f; ///< Largest centre distance, in mean box sizes, in the low confidence pass.
+    float lowStageGateSigmas = 2.5f;  ///< The same limit, tighter, in the low confidence pass.
     float maxAreaRatio = 25.0f;       ///< Boxes whose areas differ by more than this never match. Wide on
                                       ///< purpose: a target peeking from cover changes area a lot at once.
     float containmentWeight = 0.6f;   ///< Counts a box lying inside the other as this fraction of a full overlap.
@@ -103,6 +104,15 @@ struct TrackerConfig {
     float initialSpeedPerBox = 3.0f;      ///< Std. dev. of the unknown starting speed, box heights per second.
     float maxSpeedPerBox = 15.0f;         ///< Speeds above this are treated as errors and clamped.
     float minPositionSigmaPx = 1.0f;      ///< Floor for the centre error so tiny boxes stay well behaved.
+
+    /**
+     * Thresholds derived from the single "minimum confidence" setting the player sees.
+     *
+     * The setting is the score a detection needs to start a new target. Weaker detections are
+     * still used, but only to keep targets that are already followed, so a higher setting means
+     * fewer false alarms without making real targets flicker.
+     */
+    static TrackerConfig forConfidence(float confidence);
 };
 
 /**
@@ -177,11 +187,12 @@ private:
     /// How strictly one matching pass pairs targets with detections.
     struct MatchGate {
         float minIou;       ///< Overlap above which a pair is scored by overlap.
-        float centerGate;   ///< Distance limit, in mean box sizes, for pairs below minIou.
+        float gateSigmas;   ///< Distance limit, in standard deviations, for pairs below minIou.
         bool fuseScore;     ///< Prefer confident detections by weighting overlap with the score.
         float maxCost;      ///< Pairs costing more than this are rejected.
     };
 
+    float measurementVariance(float boxHeight, float score) const;
     void predictTrack(Track& track, int64_t toNs) const;
     void correctTrack(Track& track, const Detection& detection) const;
     void startTrack(const Detection& detection, int64_t captureNs);

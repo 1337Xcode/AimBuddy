@@ -53,6 +53,7 @@ public:
     bool ingest(AHardwareBuffer* buffer, int64_t imageTimestampNs);
 
     LatestMailbox<RoiFrame>& mailbox() { return mailbox_; }
+    const LatestMailbox<RoiFrame>& mailbox() const { return mailbox_; }
 
 private:
     mutable std::mutex geometryMutex_;

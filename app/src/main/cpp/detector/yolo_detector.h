@@ -1,159 +1,112 @@
-#ifndef ESP_YOLO_DETECTOR_H
-#define ESP_YOLO_DETECTOR_H
+#ifndef AIMBUDDY_DETECTOR_YOLO_DETECTOR_H
+#define AIMBUDDY_DETECTOR_YOLO_DETECTOR_H
+
+#include <android/asset_manager.h>
+#include <ncnn/allocator.h>
+#include <ncnn/net.h>
 
 #include <atomic>
-#include <memory>
 #include <string>
-#include <android/asset_manager.h>
-#include <ncnn/net.h>
-#include <ncnn/gpu.h>
-#include "bounding_box.h"
+
 #include "../capture/roi_capture.h"
-#include "../settings.h"
-#include "../utils/logger.h"
-#include "../utils/memory_pool.h"
+#include "../core/detection_batch.h"
+#include "../core/detection_decoder.h"
+#include "../core/model_profile.h"
+
+namespace aimbuddy {
 
 /**
- * @file yolo_detector.h
- * @brief NCNN-based YOLOv26n inference engine with Vulkan acceleration
- * 
- * Handles model loading, preprocessing, inference, and post-processing.
- * Optimized for Adreno 660 GPU with FP16 storage.
- */
-
-namespace ESP {
-
-/**
- * @struct DetectionResult
- * @brief Container for detection results (pre-allocated, no heap allocation)
- */
-struct DetectionResult {
-    DetectionArray boxes;  // Use FixedArray for zero-allocation, auto-sized list
-    float inferenceTimeMs;
-    
-    DetectionResult() : inferenceTimeMs(0.0f) {}
-    
-    void clear() {
-        boxes.clear();
-        inferenceTimeMs = 0.0f;
-    }
-};
-
-/**
- * @class YoloDetector
- * @brief YOLOv26n detector with NCNN Vulkan backend
+ * Runs the user's detection model on the centre region of each captured frame.
+ *
+ * The model is an NCNN export of a YOLO-style detector. Because users train their own models,
+ * nothing about the model is assumed beyond what it tells us: the input size, the output layout
+ * and the coordinate units are worked out when it loads, and what each class means comes from
+ * the ModelProfile.
+ *
+ * Phones differ a lot, so the detector loads the model for both the CPU and (if present) the
+ * GPU and, on the inference thread, times both and keeps the faster. The GPU is shared with the
+ * game, so it must be clearly faster to be chosen.
+ *
+ * All methods except setMinScore() must be called from a single thread at a time.
  */
 class YoloDetector {
 public:
-    YoloDetector();
-    ~YoloDetector();
-    
-    // Non-copyable
+    enum class Backend { kCpu, kVulkan };
+
+    YoloDetector() = default;
+    ~YoloDetector() { unload(); }
     YoloDetector(const YoloDetector&) = delete;
     YoloDetector& operator=(const YoloDetector&) = delete;
-    
-    /**
-     * @brief Initialize detector with model from assets
-     * @param assetManager Android AssetManager for loading model files
-     * @return true if initialization successful
-     */
-    bool initialize(AAssetManager* assetManager,
-                    const char* modelParamPath = nullptr,
-                    const char* modelBinPath = nullptr);
-    
-    /**
-     * @brief Shutdown detector and release resources
-     */
-    void shutdown();
-    
-    /**
-     * @brief Run detection on the centre region copied out of one captured frame
-     * @param frame Region pixels plus where they came from, so boxes land in screen space
-     * @param result Output detection result (pre-allocated)
-     * @return true if detection successful
-     */
-    bool detect(const aimbuddy::RoiFrame& frame, DetectionResult& result);
 
     /**
-     * @brief Set confidence threshold
-     * @param threshold Confidence threshold (0.3 - 0.9)
+     * Loads the model, from the given files if both are set and readable, otherwise from the app's
+     * bundled assets. Works out the network input size and the output layout with a trial run.
+     * Returns false, leaving the detector unloaded, if the model cannot be used.
      */
-    void setConfidenceThreshold(float threshold) {
-        confidenceThreshold_.store(threshold, std::memory_order_relaxed);
-    }
-    
-    /**
-     * @brief Get current confidence threshold
-     * @return Current threshold
-     */
-    float getConfidenceThreshold() const {
-        return confidenceThreshold_.load(std::memory_order_relaxed);
-    }
-    
-    /**
-     * @brief Check if detector is initialized
-     * @return true if ready for inference
-     */
-    bool isInitialized() const { return initialized_; }
+    bool load(AAssetManager* assets, const char* paramPath, const char* binPath, const ModelProfile& profile);
+
+    /// Releases the model and every buffer it holds.
+    void unload();
+
+    bool isLoaded() const { return loaded_; }
 
     /**
-     * @brief Get the latest detection result thread-safely
-     * @return Copy of the latest result
+     * Times the model on the CPU and on the GPU and keeps the faster. Call it on the thread that
+     * will run detect(): it also pins that thread, and the CPU worker threads, to the fast cores.
      */
-    DetectionResult getResult() const;
+    void chooseBackend();
+
+    /**
+     * Detects targets in one captured region.
+     *
+     * Fills `batch` with boxes in screen pixels, strongest first. Returns false if the model is
+     * not loaded or the network failed.
+     */
+    bool detect(const RoiFrame& frame, DetectionBatch& batch);
+
+    /// Lowest score worth reporting; weaker candidates are dropped while decoding. Thread safe.
+    void setMinScore(float score) { minScore_.store(score, std::memory_order_relaxed); }
+
+    /// Width and height of the network input, in pixels.
+    int inputSize() const { return inputSize_; }
+
+    /// What each class means, with defaults filled in for a model that came without a description.
+    const ModelProfile& profile() const { return profile_; }
+
+    /**
+     * Switches to an already loaded backend, for example back to the CPU when the phone gets hot.
+     * Returns false if that backend is not available.
+     */
+    bool useBackend(Backend backend);
+
+    Backend backend() const { return backend_; }
+    const char* backendName() const { return backend_ == Backend::kVulkan ? "GPU (Vulkan)" : "CPU"; }
 
 private:
-    /**
-     * @brief Resize the region to the model input size and normalise it to [0, 1]
-     * @param frame Region copied out of the capture
-     * @param inputMat Output NCNN mat ready for inference
-     */
-    void preprocess(const aimbuddy::RoiFrame& frame, ncnn::Mat& inputMat);
-    
-    /**
-     * @brief Run NCNN inference
-     * @param input Preprocessed input mat
-     * @param output Raw output from network
-     * @return true if inference successful
-     */
-    bool runInference(const ncnn::Mat& input, ncnn::Mat& output);
-    
-    /**
-     * @brief Post-process: decode boxes, apply NMS, map coordinates to screen space
-     * @param output Raw network output
-     * @param frame Region the output was computed from
-     * @param result Output detection result
-     */
-    void postprocess(const ncnn::Mat& output, const aimbuddy::RoiFrame& frame, DetectionResult& result);
-    
-    /**
-     * @brief Apply Non-Maximum Suppression
-     * @param boxes Input boxes
-     * @param result Output filtered boxes
-     */
-    void applyNMS(DetectionArray& boxes);
-    
-    ncnn::Net net_;
-    ncnn::VulkanDevice* vulkanDevice_;
-    bool initialized_;
-    
-    // Configuration
-    std::atomic<float> confidenceThreshold_;
-    
-    // Cached blob names to avoid repeated lookup warnings
-    std::string inputBlobName_;
-    std::string outputBlobName_;
-    bool useInputIndex_ = false;
-    bool useOutputIndex_ = false;
-    
-    // Result storage
-    mutable std::mutex resultMutex_;
-    DetectionResult latestResult_;
-    
-    // Pre-allocated buffers (avoid heap allocation in hot path)
-    ncnn::Mat inputMat_;
+    bool loadNet(ncnn::Net& net, const char* paramPath, const char* binPath) const;
+    bool runOnce(ncnn::Net& net, const ncnn::Mat& input, ncnn::Mat& output) const;
+    bool probeOutput(ncnn::Net& net);
+    float medianLatencyMs(ncnn::Net& net);
+
+    ncnn::Net cpuNet_;
+    ncnn::Net gpuNet_;
+    ncnn::Net* active_ = nullptr;
+    ncnn::UnlockedPoolAllocator inputPool_;  ///< Recycles the per-frame input image instead of reallocating it.
+
+    bool loaded_ = false;
+    bool gpuLoaded_ = false;
+    Backend backend_ = Backend::kCpu;
+    int inputIndex_ = 0;
+    int outputIndex_ = 0;
+    int inputSize_ = 0;
+    AAssetManager* assets_ = nullptr;  ///< Owned by the Java activity; only used while loading.
+    std::string paramPath_;
+    std::string binPath_;
+    ModelProfile profile_;
+    DecodeSpec spec_;
+    std::atomic<float> minScore_{0.12f};
 };
 
-} // namespace ESP
+}  // namespace aimbuddy
 
-#endif // ESP_YOLO_DETECTOR_H
+#endif  // AIMBUDDY_DETECTOR_YOLO_DETECTOR_H

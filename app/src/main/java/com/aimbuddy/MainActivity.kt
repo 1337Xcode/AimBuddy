@@ -327,6 +327,7 @@ class MainActivity : AppCompatActivity() {
     private external fun nativeIsRunning(): Boolean
     private external fun nativeInitAimbot(): Boolean
     private external fun nativeSetModelPaths(paramPath: String?, binPath: String?)
+    private external fun nativeSetModelProfile(roles: String?, endToEnd: Boolean, inputSize: Int)
     private external fun nativeSetTouchBackend(backend: Int)
     private external fun nativeGetTouchBackend(): Int
     private external fun nativeSetShizukuBridgeAvailable(available: Boolean)
@@ -912,16 +913,24 @@ class MainActivity : AppCompatActivity() {
         installedModelsState = modelCatalog.getInstalledModels()
         if (active == null) {
             nativeSetModelPaths(null, null)
+            applyModelProfile(ModelProfileSpec.UNKNOWN)
             activeModelTextState = "Model: Missing"
             return
         }
 
         if (active.source == ModelSource.ASSET) {
             nativeSetModelPaths(null, null)
+            applyModelProfile(ModelProfileSpec.readFromAssets(assets))
         } else {
             nativeSetModelPaths(active.paramPath, active.binPath)
+            applyModelProfile(ModelProfileSpec.readFor(active.paramPath))
         }
         activeModelTextState = "Model: ${active.title} (${active.source.name.lowercase()})"
+    }
+
+    /** Tells the native detector what the active model's classes mean. */
+    private fun applyModelProfile(spec: ModelProfileSpec) {
+        nativeSetModelProfile(spec.roles, spec.endToEnd, spec.inputSize)
     }
 
     private fun reinitializeNativeIfIdle() {

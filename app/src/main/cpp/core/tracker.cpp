@@ -62,6 +62,16 @@ bool isUsable(const Detection& d) {
 
 }  // namespace
 
+TrackerConfig TrackerConfig::forConfidence(float confidence) {
+    const float birth = std::max(0.20f, std::min(confidence, 0.95f));
+    TrackerConfig config;
+    config.birthScore = birth;
+    config.highScore = std::max(0.20f, birth - 0.10f);
+    config.lowScore = std::max(0.10f, std::min(birth * 0.30f, 0.20f));
+    config.showTentativeScore = std::min(0.95f, birth + 0.25f);
+    return config;
+}
+
 Tracker::Tracker(const TrackerConfig& config) : config_(config) {}
 
 void Tracker::setConfig(const TrackerConfig& config) {
@@ -109,15 +119,19 @@ void Tracker::predictTrack(Track& track, int64_t toNs) const {
     track.stateNs = toNs;
 }
 
+float Tracker::measurementVariance(float boxHeight, float score) const {
+    // A less confident box is a noisier measurement.
+    const float scoreNoise = 1.0f + 4.0f * square(1.0f - std::min(score, 1.0f));
+    const float sigma = std::max(config_.minPositionSigmaPx, config_.positionSigmaPerBox * boxHeight);
+    return square(sigma) * scoreNoise;
+}
+
 void Tracker::correctTrack(Track& track, const Detection& detection) const {
     const float centerX = detection.x + detection.width * 0.5f;
     const float centerY = detection.y + detection.height * 0.5f;
 
-    // A less confident box is a noisier measurement.
     const float scoreNoise = 1.0f + 4.0f * square(1.0f - std::min(detection.score, 1.0f));
-    const float positionSigma =
-        std::max(config_.minPositionSigmaPx, config_.positionSigmaPerBox * track.height.value);
-    float varianceX = square(positionSigma) * scoreNoise;
+    float varianceX = measurementVariance(track.height.value, detection.score);
     float varianceY = varianceX;
     float varianceWidth = square(config_.sizeSigmaPerBox * track.width.value) * scoreNoise;
     float varianceHeight = square(config_.sizeSigmaPerBox * track.height.value) * scoreNoise;
@@ -211,15 +225,18 @@ float Tracker::pairCost(const Track& track, const Detection& detection, const Ma
         cost = 1.0f - overlap * (gate.fuseScore ? detection.score : 1.0f);
     } else {
         // Small distant boxes can move further than their own size between frames, so overlap
-        // alone would lose them. Fall back to the centre distance relative to box size.
-        const float reference = 0.5f * (std::max(track.width.value, track.height.value) +
-                                        std::max(detection.width, detection.height));
-        const float distance = std::hypot(detCenterX - track.x.position, detCenterY - track.y.position);
-        const float normalized = distance / std::max(reference, 1.0f);
-        if (normalized > gate.centerGate) {
+        // alone would lose them. Accept a box that does not overlap only if it lies where the
+        // filter expects the target, measured in standard deviations of the filter's own
+        // uncertainty. A target stays easy to find after a few missed frames (its uncertainty
+        // grows), while a neighbour a body-width away is rejected.
+        const float variance = measurementVariance(track.height.value, detection.score);
+        const float distanceSq = square((detCenterX - track.x.position)) / (track.x.pPosition + variance) +
+                                 square((detCenterY - track.y.position)) / (track.y.pPosition + variance);
+        const float sigmas = std::sqrt(distanceSq);
+        if (sigmas > gate.gateSigmas) {
             return kBlockedCost;
         }
-        cost = 1.0f + 0.5f * normalized / gate.centerGate;
+        cost = 1.0f + 0.5f * sigmas / gate.gateSigmas;
     }
     return cost <= gate.maxCost ? cost : kBlockedCost;
 }
@@ -295,7 +312,7 @@ void Tracker::update(const Detection* detections, int count, int64_t captureNs, 
             confirmed[confirmedCount++] = i;
         }
     }
-    const MatchGate strongGate{config_.minIou, config_.centerGate, true, 1.5f};
+    const MatchGate strongGate{config_.minIou, config_.gateSigmas, true, 1.5f};
     applyMatches(matchPass(confirmed, confirmedCount, strong, strongCount, detections, strongGate, matches));
 
     // Pass 2: targets seen in the previous update may still be held by weak detections (a
@@ -313,7 +330,7 @@ void Tracker::update(const Detection* detections, int count, int64_t captureNs, 
     for (int w = 0; w < weakCount; ++w) {
         weakAvailable[weakAvailableCount++] = weak[w];
     }
-    const MatchGate weakGate{config_.lowStageIou, config_.lowStageCenterGate, false, 1.5f};
+    const MatchGate weakGate{config_.lowStageIou, config_.lowStageGateSigmas, false, 1.5f};
     applyMatches(matchPass(stillTracked, stillTrackedCount, weakAvailable, weakAvailableCount,
                            detections, weakGate, matches));
 
@@ -332,7 +349,7 @@ void Tracker::update(const Detection* detections, int count, int64_t captureNs, 
             strongLeft[strongLeftCount++] = strong[s];
         }
     }
-    const MatchGate tentativeGate{config_.minIou, config_.lowStageCenterGate, true, 1.25f};
+    const MatchGate tentativeGate{config_.minIou, config_.lowStageGateSigmas, true, 1.25f};
     applyMatches(matchPass(tentative, tentativeCount, strongLeft, strongLeftCount, detections,
                            tentativeGate, matches));
 

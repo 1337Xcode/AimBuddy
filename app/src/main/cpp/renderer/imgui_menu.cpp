@@ -29,8 +29,8 @@
 #include "utils/imgui_helper.h"
 #include "renderer/render_config.h"
 #include "utils/aimbot_types.h"
-#include "renderer/box_smoothing.h"
-#include "detector/yolo_detector.h"
+#include "overlay/target_overlay.h"
+#include "pipeline/pipeline_access.h"
 #include "utils/i18n.h"
 
 using aimbuddy::i18n::T;
@@ -38,8 +38,6 @@ using aimbuddy::i18n::Key;
 
 // Forward declaration for shared config access (defined in esp_jni.cpp)
 extern "C" ESP::RenderConfig* GetRenderConfig();
-extern "C" bool GetLatestResultSnapshot(ESP::DetectionResult* out);
-extern "C" void UpdateScreenSize(int width, int height);
 extern "C" bool GetDetectionZoneScreenRect(float* left, float* top, float* right, float* bottom);
 extern UnifiedSettings g_settings;
 
@@ -53,13 +51,17 @@ static std::atomic<bool> g_rootAvailable{false};  // Track root status
 static std::atomic<bool> g_shizukuAvailable{false};
 
 // Icon position synced from Kotlin layer (existing SVG icon)
+// Where the overlay window's top-left corner sits on the display, in pixels. Game-space drawing
+// (targets, the crosshair, the detection zone) is in display pixels and is shifted by this.
+static std::atomic<int> g_overlayOriginX{0};
+static std::atomic<int> g_overlayOriginY{0};
+
 static ImVec2 g_iconPos = ImVec2(60.0f, 200.0f);  // Initial default
 static constexpr float ICON_RADIUS = 44.0f;  // Match Kotlin icon size (44dp)
 
-// Box smoothing for stable, jitter-free rendering
-static ESP::BoxSmoother g_boxSmoother;
-static std::array<ESP::BoundingBox, Config::MAX_DETECTIONS> g_smoothedBoxes;
-static int g_smoothedCount = 0;
+// How far ahead of "now" targets are drawn. A frame drawn now reaches the screen about
+// one to two refreshes later, so targets are projected that far to land on the right spot.
+static constexpr int64_t kDisplayLeadNs = 20'000'000;
 static bool g_settingsPendingSave = false;
 static double g_settingsDirtyAt = 0.0;
 static constexpr double SETTINGS_SAVE_DELAY_SEC = 0.35;
@@ -316,8 +318,15 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeInit(JNIEnv* env, jclass /* this */, jobj
 
         ImGuiIO& io = ImGui::GetIO();
         io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
+        // The overlay's size is NOT the screen's size: it shrinks while the navigation bar is
+        // showing. Detection and aiming always work in display pixels (see nativeConfigureCapture).
+    }
 
-        UpdateScreenSize(width, height);
+    // The overlay window's top-left corner on the display, reported by the Kotlin view.
+    extern "C" JNIEXPORT void JNICALL
+    Java_com_aimbuddy_ImGuiGLSurface_nativeSetOrigin(JNIEnv* /* env */, jclass /* this */, jint x, jint y) {
+        g_overlayOriginX.store(x, std::memory_order_relaxed);
+        g_overlayOriginY.store(y, std::memory_order_relaxed);
     }
 
 // Render ImGui (menu + ESP)
@@ -376,164 +385,68 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
         float displayW = displaySize.x;
         float displayH = displaySize.y;
 
+        // The game, the detector and the aim logic all use display pixels, whose centre is where the
+        // in-game crosshair is. The overlay window may be smaller than the display or offset from it.
+        const ImVec2 origin(static_cast<float>(g_overlayOriginX.load(std::memory_order_relaxed)),
+                            static_cast<float>(g_overlayOriginY.load(std::memory_order_relaxed)));
+        const aimbuddy::CaptureGeometry geometry = aimbuddy::pipeline().capture().geometry();
+        const ImVec2 gameCenter(
+            (geometry.isValid() ? static_cast<float>(geometry.screenWidth) : displayW) * 0.5f - origin.x,
+            (geometry.isValid() ? static_cast<float>(geometry.screenHeight) : displayH) * 0.5f - origin.y);
+
         // Always-visible center crosshair
         {
             ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-            const float centerX = displayW * 0.5f;
-            const float centerY = displayH * 0.5f;
+            const float centerX = gameCenter.x;
+            const float centerY = gameCenter.y;
             const float crossArm = 11.5f;
             const ImU32 crossColor = IM_COL32(58, 156, 255, 240);
             drawList->AddLine(ImVec2(centerX - crossArm, centerY), ImVec2(centerX + crossArm, centerY), crossColor, 3.0f);
             drawList->AddLine(ImVec2(centerX, centerY - crossArm), ImVec2(centerX, centerY + crossArm), crossColor, 3.0f);
         }
 
-        // Get detection results and apply smoothing if enabled
-        ESP::DetectionResult latest;
-        bool hasDetections = GetLatestResultSnapshot(&latest);
-        if (latest.inferenceTimeMs > 0.01f && std::isfinite(latest.inferenceTimeMs)) {
-            g_measuredInferenceMs = (g_measuredInferenceMs > 0.0f)
-                ? (g_measuredInferenceMs * 0.88f + latest.inferenceTimeMs * 0.12f)
-                : latest.inferenceTimeMs;
-        }
-        
-        // Apply smoothing if enabled
-        bool useSmoothing = settings->enableSmoothing.load(std::memory_order_relaxed);
-        const ESP::BoundingBox* boxesToRender = nullptr;
-        int boxCount = 0;
-        
-        // Temp buffer for BoxSmoother adaptation (FixedArray -> std::array)
-        std::array<ESP::BoundingBox, Config::MAX_DETECTIONS> tempInputs;
-        
-        if (hasDetections) {
-            if (useSmoothing) {
-                float alpha = settings->smoothingFactor.load(std::memory_order_relaxed);
-                // Copy to std::array for BoxSmoother signature compatibility
-                std::copy(latest.boxes.begin(), latest.boxes.end(), tempInputs.begin());
-                g_boxSmoother.update(tempInputs, latest.boxes.size(), g_smoothedBoxes, g_smoothedCount, alpha);
-                boxesToRender = g_smoothedBoxes.data();
-                boxCount = g_smoothedCount;
-            } else {
-                boxesToRender = latest.boxes.data();
-                boxCount = latest.boxes.size();
-            }
-        } else if (useSmoothing) {
-            // Clear immediately when detector has no boxes to avoid lingering ghosts.
-            g_boxSmoother.clear();
-            g_smoothedCount = 0;
-            boxesToRender = g_smoothedBoxes.data();
-            boxCount = g_smoothedCount;
-        }
-        
-        if (boxCount > 0 && boxesToRender) {
+        // Targets come from the tracker, projected to the moment this frame will be on screen.
+        const auto nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        aimbuddy::TrackView views[aimbuddy::kMaxTracks];
+        const int viewCount = aimbuddy::pipeline().tracker().snapshot(nowNs + kDisplayLeadNs, views,
+                                                                      aimbuddy::kMaxTracks);
+        const aimbuddy::ModelProfile& profile = aimbuddy::pipeline().profile();
+        g_measuredInferenceMs = aimbuddy::pipeline().stats().inferenceMs;
+
+        {
             ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-            float r = settings->boxColorR.load(std::memory_order_relaxed);
-            float g = settings->boxColorG.load(std::memory_order_relaxed);
-            float b = settings->boxColorB.load(std::memory_order_relaxed);
-            int thickness = settings->boxThickness.load(std::memory_order_relaxed);
-            float threshold = settings->confidenceThreshold.load(std::memory_order_relaxed);
-            bool showLabels = settings->showLabels.load(std::memory_order_relaxed);
-            bool drawLine = settings->drawLine.load(std::memory_order_relaxed);
-            bool drawDot = settings->drawDot.load(std::memory_order_relaxed);
-            float headOffset = settings->headOffset.load(std::memory_order_relaxed);
-            const float espFovRadius = settings->fovRadius.load(std::memory_order_relaxed);
+            aimbuddy::TargetStyle style;
+            style.color = ImGui::ColorConvertFloat4ToU32(ImVec4(
+                settings->boxColorR.load(std::memory_order_relaxed),
+                settings->boxColorG.load(std::memory_order_relaxed),
+                settings->boxColorB.load(std::memory_order_relaxed), 1.0f));
+            style.thickness = static_cast<float>(std::max(1, std::min(settings->boxThickness.load(std::memory_order_relaxed), 5)));
+            style.showScore = settings->showLabels.load(std::memory_order_relaxed);
+            style.showAimPoint = settings->drawDot.load(std::memory_order_relaxed);
+            style.origin = origin;
+            aimbuddy::TargetOverlay::draw(drawList, views, viewCount, profile, style);
 
-            thickness = std::max(1, std::min(thickness, 5));
-            ImU32 boxColor = ImGui::ColorConvertFloat4ToU32(ImVec4(r, g, b, 1.0f));
-            ImU32 shadowColor = IM_COL32(0, 0, 0, 150);
-            
-            // Track closest enemy for snap line
-            int closestEnemyIdx = -1;
-            float closestDistSq = espFovRadius * espFovRadius;
-            float centerX = displayW * 0.5f;
-            float centerY = displayH * 0.5f;
-
-            for (int i = 0; i < boxCount; ++i) {
-                const ESP::BoundingBox& box = boxesToRender[i];
-                if (box.confidence < threshold || box.width <= 0.0f || box.height <= 0.0f) {
-                    continue;
+            // Line from the screen centre to the target nearest to it.
+            if (settings->drawLine.load(std::memory_order_relaxed)) {
+                const float centreX = gameCenter.x + origin.x;   // compare in display pixels
+                const float centreY = gameCenter.y + origin.y;
+                const aimbuddy::TrackView* nearest = nullptr;
+                float nearestDistSq = 0.0f;
+                for (int i = 0; i < viewCount; ++i) {
+                    if (profile.roleOf(views[i].classId) != aimbuddy::ClassRole::kBody) continue;
+                    const float dx = views[i].centerX - centreX;
+                    const float dy = views[i].centerY - centreY;
+                    const float distSq = dx * dx + dy * dy;
+                    if (nearest == nullptr || distSq < nearestDistSq) {
+                        nearest = &views[i];
+                        nearestDistSq = distSq;
+                    }
                 }
-
-                float left = box.x;
-                float top = box.y;
-                float right = box.x + box.width;
-                float bottom = box.y + box.height;
-
-                // Clamp to screen bounds
-                if (left < 0.0f) left = 0.0f;
-                if (top < 0.0f) top = 0.0f;
-                if (right > displayW) right = displayW;
-                if (bottom > displayH) bottom = displayH;
-
-                // Draw box with shadow for depth
-                ESP::ImGuiHelper::DrawBox3D(
-                    drawList,
-                    ImVec2(left, top),
-                    ImVec2(right, bottom),
-                    boxColor,
-                    static_cast<float>(thickness),
-                    shadowColor
-                );
-                
-                // Calculate head position and box center
-                float boxCenterX = left + (right - left) * 0.5f;
-                float headY = top + (bottom - top) * headOffset;
-                
-                // Draw head dot if enabled
-                if (drawDot) {
-                    drawList->AddCircleFilled(
-                        ImVec2(boxCenterX, headY),
-                        5.0f + thickness * 0.5f,
-                        boxColor,
-                        12
-                    );
+                if (nearest != nullptr) {
+                    drawList->AddLine(gameCenter, ImVec2(nearest->centerX - origin.x, nearest->centerY - origin.y),
+                                      IM_COL32(255, 100, 50, static_cast<int>(255.0f * nearest->opacity)), 2.0f);
                 }
-                
-                // Track closest enemy for snap line (within FOV)
-                float dx = boxCenterX - centerX;
-                float dy = headY - centerY;
-                float distSq = dx * dx + dy * dy;
-                if (distSq < closestDistSq) {
-                    closestDistSq = distSq;
-                    closestEnemyIdx = i;
-                }
-
-                if (showLabels) {
-                    // Top-center label: "Enemy" with shadow
-                    const char* enemyLabel = "Enemy";
-                    ImVec2 enemySize = ImGui::CalcTextSize(enemyLabel);
-                    ImVec2 enemyPos(
-                        left + (right - left - enemySize.x) * 0.5f,
-                        top - enemySize.y - 4.0f
-                    );
-                    if (enemyPos.y < 0.0f) enemyPos.y = top + 2.0f;
-                    ESP::ImGuiHelper::DrawTextWithShadow(drawList, enemyPos, boxColor, enemyLabel);
-
-                    // Bottom-center accuracy with shadow
-                    char accLabel[32];
-                    snprintf(accLabel, sizeof(accLabel), "%.0f%%", box.confidence * 100.0f);
-                    ImVec2 accSize = ImGui::CalcTextSize(accLabel);
-                    ImVec2 accPos(
-                        left + (right - left - accSize.x) * 0.5f,
-                        bottom + 2.0f
-                    );
-                    if (accPos.y + accSize.y > displayH) accPos.y = bottom - accSize.y - 2.0f;
-                    ESP::ImGuiHelper::DrawTextWithShadow(drawList, accPos, boxColor, accLabel);
-                }
-            }
-            
-            // Draw snap line to closest enemy
-            if (drawLine && closestEnemyIdx >= 0) {
-                const ESP::BoundingBox& enemyBox = boxesToRender[closestEnemyIdx];
-                float boxCenterX = enemyBox.x + enemyBox.width * 0.5f;
-                float headY = enemyBox.y + enemyBox.height * headOffset;
-                
-                ImU32 snapLineColor = IM_COL32(255, 100, 50, 255);
-                drawList->AddLine(
-                    ImVec2(centerX, centerY),
-                    ImVec2(boxCenterX, headY),
-                    snapLineColor,
-                    2.5f
-                );
             }
         }
 
@@ -549,19 +462,21 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
 
             float zoneLeft = 0.0f, zoneTop = 0.0f, zoneRight = 0.0f, zoneBottom = 0.0f;
             if (espFovRadius > 0.0f && GetDetectionZoneScreenRect(&zoneLeft, &zoneTop, &zoneRight, &zoneBottom)) {
-                const float centerX = displayW * 0.5f;
-                const float centerY = displayH * 0.5f;
                 const ImU32 espFovColor = IM_COL32(40, 140, 255, 220);
-                drawList->AddRect(ImVec2(zoneLeft, zoneTop), ImVec2(zoneRight, zoneBottom), espFovColor, 0.0f, 0, 2.2f);
+                drawList->AddRect(ImVec2(zoneLeft - origin.x, zoneTop - origin.y),
+                                  ImVec2(zoneRight - origin.x, zoneBottom - origin.y), espFovColor, 0.0f, 0, 2.2f);
 
                 if (aimbotEnabled && aimFovRadius > 0.0f) {
-                    drawList->AddCircle(ImVec2(centerX, centerY), aimFovRadius, IM_COL32(255, 60, 60, 230), 64, 2.3f);
+                    drawList->AddCircle(gameCenter, aimFovRadius, IM_COL32(255, 60, 60, 230), 64, 2.3f);
                 }
             }
         }
 
         // Detection count overlay (red, centered at top with margin)
-        int detCount = latest.boxes.size();
+        int detCount = 0;
+        for (int i = 0; i < viewCount; ++i) {
+            if (profile.roleOf(views[i].classId) == aimbuddy::ClassRole::kBody) ++detCount;
+        }
         if (settings->showDetectionCount.load(std::memory_order_relaxed) && detCount > 0) {
             ImDrawList* drawList = ImGui::GetBackgroundDrawList();
             ImU32 redColor = IM_COL32(255, 50, 50, 255);
@@ -627,7 +542,6 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                         bool drawLine = settings->drawLine.load(std::memory_order_relaxed);
                         bool drawDot = settings->drawDot.load(std::memory_order_relaxed);
                         bool countOn = settings->showDetectionCount.load(std::memory_order_relaxed);
-                        bool smoothOn = settings->enableSmoothing.load(std::memory_order_relaxed);
 
                         if (ImGui::Checkbox(T(Key::EspLabels), &showLabels)) { settings->showLabels.store(showLabels, std::memory_order_relaxed); settingsDirty = true; }
                         ShowSettingHelp("Shows label text over each detected target.");
@@ -637,18 +551,6 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                         ShowSettingHelp("Marks the estimated head point for each detection.");
                         if (ImGui::Checkbox(T(Key::EspDetectionCount), &countOn)) { settings->showDetectionCount.store(countOn, std::memory_order_relaxed); settingsDirty = true; }
                         ShowSettingHelp("Shows how many targets are currently detected.");
-                        ImGui::Separator();
-
-                        if (ImGui::Checkbox(T(Key::EspEnableSmoothing), &smoothOn)) { settings->enableSmoothing.store(smoothOn, std::memory_order_relaxed); settingsDirty = true; }
-                        ShowSettingHelp("Stabilizes box movement to reduce jitter between frames.");
-                        if (smoothOn) {
-                            float smooth = settings->smoothingFactor.load(std::memory_order_relaxed);
-                            if (ImGui::SliderFloat(T(Key::EspSmoothingAmount), &smooth, 0.10f, 1.0f, "%.2f")) {
-                                settings->smoothingFactor.store(smooth, std::memory_order_relaxed);
-                                settingsDirty = true;
-                            }
-                            ShowSettingHelp("Lower values react faster; higher values are smoother but lag more.");
-                        }
 
                         ImGui::Separator();
 
@@ -949,7 +851,7 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */
                         ImGui::Text("%s", T(Key::InfoVersion));
                         ImGui::Text("%s: %.0f", T(Key::InfoOverlayFps), g_measuredOverlayFps);
                         ImGui::Text("%s: %.1f ms", T(Key::InfoInferenceMs), g_measuredInferenceMs);
-                        ImGui::Text("%s: %d", T(Key::InfoDetections), static_cast<int>(latest.boxes.size()));
+                        ImGui::Text("%s: %d", T(Key::InfoDetections), detCount);
                         ImGui::Text("%s: %dx%d", T(Key::InfoScreen), g_screenWidth, g_screenHeight);
                         ImGui::TextDisabled("github.com/1337XCode/AimBuddy");
                         ImGui::Separator();

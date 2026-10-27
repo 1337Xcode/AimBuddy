@@ -35,10 +35,8 @@ namespace std {
 
 #include "settings.h"
 #include "utils/logger.h"
-#include "utils/thread.h"
-#include "utils/timer.h"
-#include "capture/roi_capture.h"
-#include "detector/yolo_detector.h"
+#include "pipeline/detection_pipeline.h"
+#include "pipeline/pipeline_access.h"
 #include "renderer/render_config.h"
 #include "aimbot/aimbot_controller.h"
 
@@ -64,18 +62,10 @@ ESP::RenderConfig g_renderConfig;
 namespace {
 
     // Global state (managed via RAII)
-    std::unique_ptr<ESP::YoloDetector> g_detector;
-    aimbuddy::RoiCapture g_roiCapture;
+    aimbuddy::DetectionPipeline g_pipeline;
+    aimbuddy::ModelProfile g_modelProfile;
     std::unique_ptr<AimbotController> g_aimbot;
     std::unique_ptr<TouchHelper> g_touchHelper;
-
-    // Threading
-    std::unique_ptr<ESP::Thread> g_inferenceThread;
-    std::atomic<bool> g_running{false};
-
-    // Latest detection result (shared between inference and render threads)
-    ESP::DetectionResult g_latestResult;
-    std::mutex g_resultMutex;
 
     // Screen dimensions
     int g_screenWidth = 1080;
@@ -115,69 +105,24 @@ namespace {
     }
 
     /**
-     * @brief Inference thread main loop
-     *
-     * Takes the newest region from the capture mailbox, runs the detector on it
-     * and publishes the result. Frames that arrive while a detection is running
-     * are replaced by newer ones, so the detector never works on stale pixels.
+     * Bridge to the aim controller, which still tracks targets on its own.
+     * Hands it the confident body detections of each batch.
      */
-    void inferenceLoop() {
-        LOGI("=== Inference thread started ===");
-
-        ESP::DetectionResult result;
-        auto& mailbox = g_roiCapture.mailbox();
-
-        constexpr uint64_t kStatsWindow = 120;
-        uint64_t statsSamples = 0;
-        double statsInferenceMs = 0.0;
-        double statsEndToEndMs = 0.0;
-        float appliedThreshold = -1.0f;
-
-        while (g_running.load(std::memory_order_acquire)) {
-            aimbuddy::RoiFrame* frame = mailbox.waitForLatest(std::chrono::milliseconds(50));
-            if (frame == nullptr) {
+    void feedAimbot(const aimbuddy::DetectionBatch& batch) {
+        if (!g_aimbot || !g_settings.aimbotEnabled) {
+            return;
+        }
+        ESP::BoundingBox boxes[aimbuddy::kMaxDetections];
+        int count = 0;
+        for (int i = 0; i < batch.count; ++i) {
+            const aimbuddy::Detection& d = batch.detections[i];
+            if (g_pipeline.profile().roleOf(d.classId) != aimbuddy::ClassRole::kBody ||
+                d.score < g_settings.confidenceThreshold) {
                 continue;
             }
-
-            if (g_detector) {
-                const float threshold = g_settings.confidenceThreshold;
-                if (std::fabs(threshold - appliedThreshold) > 0.0001f) {
-                    g_detector->setConfidenceThreshold(threshold);
-                    appliedThreshold = threshold;
-                }
-
-                const auto inferStart = std::chrono::steady_clock::now();
-                const bool detected = g_detector->detect(*frame, result);
-                const auto inferEnd = std::chrono::steady_clock::now();
-
-                if (detected) {
-                    {
-                        std::lock_guard<std::mutex> lock(g_resultMutex);
-                        g_latestResult = result;
-                    }
-                    if (g_aimbot && g_settings.aimbotEnabled) {
-                        g_aimbot->updateTargets(result.boxes.data(), result.boxes.size());
-                    }
-
-                    statsInferenceMs += std::chrono::duration<double, std::milli>(inferEnd - inferStart).count();
-                    const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        inferEnd.time_since_epoch()).count();
-                    statsEndToEndMs += static_cast<double>(nowNs - frame->captureTimeNs) / 1'000'000.0;
-                    if (++statsSamples >= kStatsWindow) {
-                        LOGI("Pipeline: infer %.2f ms, frame age %.2f ms, replaced frames %llu",
-                             statsInferenceMs / static_cast<double>(statsSamples),
-                             statsEndToEndMs / static_cast<double>(statsSamples),
-                             static_cast<unsigned long long>(mailbox.overwrittenCount()));
-                        statsSamples = 0;
-                        statsInferenceMs = 0.0;
-                        statsEndToEndMs = 0.0;
-                    }
-                }
-            }
-            mailbox.endRead();
+            boxes[count++] = ESP::BoundingBox(d.x, d.y, d.width, d.height, d.score, Config::ENEMY_CLASS_ID);
         }
-
-        LOGI("Inference thread stopped");
+        g_aimbot->updateTargets(boxes, count);
     }
 }
 
@@ -192,45 +137,13 @@ AimbotController* GetAimbotController() {
     return g_aimbot.get();
 }
 
-void UpdateScreenSize(int width, int height) {
-    if (width <= 0 || height <= 0) {
-        return;
-    }
-
-    g_screenWidth = width;
-    g_screenHeight = height;
-    g_roiCapture.setScreenSize(width, height);
-
-    g_settings.screenWidth = width;
-    g_settings.screenHeight = height;
-    g_settings.validate();
-    SyncUnifiedSettingsToRenderConfig();
-
-    if (g_touchHelper) {
-        g_touchHelper->setScreenSize(width, height);
-    }
-    if (g_aimbot) {
-        g_aimbot->setScreenSize(width, height);
-    }
-}
-
-bool GetLatestResultSnapshot(ESP::DetectionResult* out) {
-    if (!out) {
-        return false;
-    }
-    // Copy the most recent result (thread-safe copy)
-    std::lock_guard<std::mutex> lock(g_resultMutex);
-    *out = g_latestResult;
-    return true;
-}
-
 /**
  * @brief Detection zone as a rectangle in screen pixels, for the overlay to outline
  * @return false until capture has been configured
  */
 bool GetDetectionZoneScreenRect(float* left, float* top, float* right, float* bottom) {
-    const aimbuddy::CaptureGeometry geometry = g_roiCapture.geometry();
-    const aimbuddy::RoiRect roi = g_roiCapture.currentRoi();
+    const aimbuddy::CaptureGeometry geometry = g_pipeline.capture().geometry();
+    const aimbuddy::RoiRect roi = g_pipeline.capture().currentRoi();
     if (!geometry.isValid() || roi.side <= 0 || !left || !top || !right || !bottom) {
         return false;
     }
@@ -296,15 +209,13 @@ Java_com_aimbuddy_MainActivity_nativeInit(JNIEnv* env, jobject thiz,
         return JNI_FALSE;
     }
 
-    // Create and initialize detector
-    g_detector = std::make_unique<ESP::YoloDetector>();
-    const char* modelParamPath = g_modelParamPath.empty() ? nullptr : g_modelParamPath.c_str();
-    const char* modelBinPath = g_modelBinPath.empty() ? nullptr : g_modelBinPath.c_str();
-    if (!g_detector->initialize(mgr, modelParamPath, modelBinPath)) {
-        LOGE("Failed to initialize detector");
-        g_detector.reset();
+    // Load the model. The paths are empty when the bundled model should be used.
+    if (!g_pipeline.loadModel(mgr, g_modelParamPath, g_modelBinPath, g_modelProfile)) {
+        LOGE("Failed to load the detection model");
         return JNI_FALSE;
     }
+    g_pipeline.setObserver(feedAimbot);
+    g_pipeline.setConfidenceThreshold(g_settings.confidenceThreshold);
 
     // Create TouchHelper and AimbotController (but DON'T init touch yet)
     // Touch init happens in nativeInitAimbot() AFTER root permissions are set
@@ -322,59 +233,29 @@ Java_com_aimbuddy_MainActivity_nativeInit(JNIEnv* env, jobject thiz,
 }
 
 /**
- * @brief Start inference thread
+ * @brief Start the detection pipeline
  */
 JNIEXPORT void JNICALL
 Java_com_aimbuddy_MainActivity_nativeStart(JNIEnv* env, jobject thiz) {
+    (void)env;
+    (void)thiz;
     LOGI("nativeStart called");
-
-    if (g_running.load(std::memory_order_acquire)) {
-        LOGI("Inference already running");
+    if (!g_pipeline.isModelLoaded()) {
+        LOGE("Cannot start: no model loaded");
         return;
     }
-
-    if (!g_detector) {
-        LOGE("Cannot start: components not initialized");
-        return;
-    }
-
-    // Start inference thread
-    g_roiCapture.mailbox().reopen();
-    g_running.store(true, std::memory_order_release);
-    g_inferenceThread = std::make_unique<ESP::Thread>(inferenceLoop, "InferenceThread");
-
-    if (!g_inferenceThread->start(Config::INFERENCE_THREAD_CPU_AFFINITY)) {
-        LOGE("Failed to start inference thread!");
-        g_running.store(false, std::memory_order_release);
-        g_inferenceThread.reset();
-        return;
-    }
-
-    LOGI("Inference thread started successfully");
+    g_pipeline.start();
 }
 
 /**
- * @brief Stop inference thread
+ * @brief Stop the detection pipeline
  */
 JNIEXPORT void JNICALL
 Java_com_aimbuddy_MainActivity_nativeStop(JNIEnv* env, jobject thiz) {
+    (void)env;
+    (void)thiz;
     LOGI("nativeStop called");
-
-    if (!g_running.load(std::memory_order_acquire)) {
-        LOGI("Inference not running");
-        return;
-    }
-
-    // Stop inference thread
-    g_running.store(false, std::memory_order_release);
-    g_roiCapture.mailbox().close();
-
-    if (g_inferenceThread) {
-        g_inferenceThread->join();
-        g_inferenceThread.reset();
-    }
-
-    LOGI("Inference thread stopped");
+    g_pipeline.stop();
 }
 
 /**
@@ -391,13 +272,8 @@ Java_com_aimbuddy_MainActivity_nativeShutdown(JNIEnv* env, jobject thiz) {
         LOGE("Failed to save settings");
     }
 
-    // Stop if running
-    g_running.store(false, std::memory_order_release);
-    g_roiCapture.mailbox().close();
-    if (g_inferenceThread) {
-        g_inferenceThread->join();
-        g_inferenceThread.reset();
-    }
+    // Stop the pipeline first: it feeds the aim controller
+    g_pipeline.stop();
 
     // Stop Aimbot Thread
     if (g_aimbot) {
@@ -409,9 +285,6 @@ Java_com_aimbuddy_MainActivity_nativeShutdown(JNIEnv* env, jobject thiz) {
         g_touchHelper->shutdown();
         g_touchHelper.reset();
     }
-
-    // Cleanup
-    g_detector.reset();
 
     LOGI("Native shutdown complete");
 }
@@ -425,7 +298,7 @@ Java_com_aimbuddy_ScreenCaptureService_nativeOnFrame(JNIEnv* env, jclass clazz,
                                                  jobject hardwareBuffer,
                                                  jlong timestamp) {
     (void)clazz;
-    if (!g_running.load(std::memory_order_acquire) || !hardwareBuffer) {
+    if (!g_pipeline.isRunning() || !hardwareBuffer) {
         return;
     }
 
@@ -436,8 +309,8 @@ Java_com_aimbuddy_ScreenCaptureService_nativeOnFrame(JNIEnv* env, jclass clazz,
     }
 
     // The region is copied before this call returns, so the buffer can be recycled right away.
-    g_roiCapture.setZoneRadius(g_settings.fovRadius);
-    g_roiCapture.ingest(buffer, static_cast<int64_t>(timestamp));
+    g_pipeline.capture().setZoneRadius(g_settings.fovRadius);
+    g_pipeline.capture().ingest(buffer, static_cast<int64_t>(timestamp));
 }
 
 /**
@@ -458,7 +331,7 @@ Java_com_aimbuddy_MainActivity_nativeConfigureCapture(JNIEnv* env, jobject thiz,
     geometry.screenHeight = screenHeight;
     geometry.captureWidth = captureWidth;
     geometry.captureHeight = captureHeight;
-    g_roiCapture.configure(geometry);
+    g_pipeline.capture().configure(geometry);
     LOGI("Capture configured: screen %dx%d, capture %dx%d", screenWidth, screenHeight,
          captureWidth, captureHeight);
 }
@@ -506,7 +379,7 @@ Java_com_aimbuddy_MainActivity_nativeGetFPS(JNIEnv* env, jobject thiz) {
  */
 JNIEXPORT jboolean JNICALL
 Java_com_aimbuddy_MainActivity_nativeIsRunning(JNIEnv* env, jobject thiz) {
-    return g_running.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
+    return g_pipeline.isRunning() ? JNI_TRUE : JNI_FALSE;
 }
 
 /**
@@ -628,4 +501,30 @@ Java_com_aimbuddy_MainActivity_nativeSetModelPaths(JNIEnv* env, jobject thiz,
          g_modelBinPath.c_str());
 }
 
+/**
+ * @brief Tell the detector what the model's classes mean
+ * @param roles Comma separated roles in class order, such as "body,head"; null or empty when unknown
+ * @param endToEnd True if the model already removes duplicate detections
+ * @param inputSize Width and height of the network input, or 0 to work it out
+ */
+JNIEXPORT void JNICALL
+Java_com_aimbuddy_MainActivity_nativeSetModelProfile(JNIEnv* env, jobject thiz, jstring roles,
+                                                  jboolean endToEnd, jint inputSize) {
+    (void)thiz;
+    std::string list;
+    if (roles != nullptr) {
+        const char* chars = env->GetStringUTFChars(roles, nullptr);
+        if (chars != nullptr) {
+            list.assign(chars);
+            env->ReleaseStringUTFChars(roles, chars);
+        }
+    }
+    g_modelProfile = list.empty() ? aimbuddy::ModelProfile() : aimbuddy::ModelProfile::parseRoles(list, 0);
+    g_modelProfile.endToEndOutput = endToEnd == JNI_TRUE;
+    g_modelProfile.inputSize = inputSize > 0 ? inputSize : 0;
+    LOGI("Model profile: roles='%s' endToEnd=%d inputSize=%d", list.c_str(), endToEnd == JNI_TRUE, inputSize);
+}
+
 } // extern "C"
+
+aimbuddy::DetectionPipeline& aimbuddy::pipeline() { return g_pipeline; }

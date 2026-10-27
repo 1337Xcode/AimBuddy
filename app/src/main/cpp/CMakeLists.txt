@@ -151,6 +151,8 @@ set(IMGUI_SOURCES
 set(ESP_SOURCES
     esp_jni.cpp
     capture/roi_capture.cpp
+    pipeline/detection_pipeline.cpp
+    overlay/target_overlay.cpp
     core/tracker.cpp
     core/detection_decoder.cpp
     detector/yolo_detector.cpp
