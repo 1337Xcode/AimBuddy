@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Where a model on the phone came from. */
 enum class ModelSource {
@@ -42,7 +43,19 @@ data class InstalledModel(
  * that ships inside the app is always on the list; the others are downloaded or imported.
  */
 class ModelCatalog(context: Context) {
+    private val modelsDir = File(context.filesDir, "models")
+
     companion object {
+        // Set once the first time a catalog is used in this process; see recoverInterruptedInstalls().
+        private val recovered = AtomicBoolean(false)
+
+        /**
+         * Whether a downloaded copy of the bundled model stays in place of the bundled one: only if its
+         * files are there and it is at least as new. A copy that lost its files gives way to the bundled one.
+         */
+        fun keepsDownloadedCopy(downloaded: InstalledModel?, bundled: BundledModel.Info): Boolean =
+            downloaded != null && downloaded.canUse() && downloaded.version >= bundled.version
+
         private const val PREFS_NAME = "aimbuddy_prefs"
         private const val KEY_INSTALLED_MODELS_JSON = "installed_models_json"
         private const val KEY_ACTIVE_MODEL_ID = "active_model_id"
@@ -55,6 +68,7 @@ class ModelCatalog(context: Context) {
      * A downloaded copy of the same model stays in its place as long as it is at least as new.
      */
     fun ensureBundledModel(bundled: BundledModel.Info?) {
+        recoverInterruptedInstalls()
         val models = loadInstalledModels().toMutableList()
         val downloaded = models.firstOrNull { it.id == BundledModel.ID && it.source != ModelSource.ASSET }
         // The entry is rebuilt from what the app says now. This also drops the one an older version
@@ -62,7 +76,7 @@ class ModelCatalog(context: Context) {
         models.removeAll { it.source == ModelSource.ASSET }
 
         if (bundled != null) {
-            if (downloaded == null || downloaded.version < bundled.version) {
+            if (!keepsDownloadedCopy(downloaded, bundled)) {
                 if (downloaded != null) {
                     models.remove(downloaded)
                     deleteFiles(downloaded)
@@ -90,6 +104,26 @@ class ModelCatalog(context: Context) {
             val fallback = models.firstOrNull { it.source == ModelSource.ASSET }
                 ?: models.firstOrNull { it.canUse() }
             prefs.edit().putString(KEY_ACTIVE_MODEL_ID, fallback?.id).apply()
+        }
+    }
+
+    /**
+     * Clears what an install that was killed halfway left behind: a half-downloaded folder is
+     * deleted, and an old model that was moved aside but never replaced is put back. It runs once
+     * per process, when no install of this process can be under way yet.
+     */
+    private fun recoverInterruptedInstalls() {
+        if (!recovered.compareAndSet(false, true)) {
+            return
+        }
+        modelsDir.listFiles()?.forEach { folder ->
+            when {
+                folder.name.endsWith(DOWNLOAD_SUFFIX) -> folder.deleteRecursively()
+                folder.name.endsWith(PREVIOUS_SUFFIX) -> {
+                    val target = File(modelsDir, folder.name.removeSuffix(PREVIOUS_SUFFIX))
+                    if (target.exists()) folder.deleteRecursively() else folder.renameTo(target)
+                }
+            }
         }
     }
 

@@ -9,6 +9,27 @@ import java.security.MessageDigest
 
 private const val TAG = "ModelStore"
 
+/** What an install adds to a model's folder name while it is under way: the files being downloaded, and the old ones moved aside. */
+internal const val DOWNLOAD_SUFFIX = ".download"
+internal const val PREVIOUS_SUFFIX = ".previous"
+
+/**
+ * Puts the downloaded folder in place of [targetDir], keeping the old one until the new one is there,
+ * so a failure at any step loses nothing.
+ */
+internal fun swapIn(downloaded: File, targetDir: File) {
+    val previous = File(targetDir.parentFile, targetDir.name + PREVIOUS_SUFFIX)
+    previous.deleteRecursively()
+    if (targetDir.exists() && !targetDir.renameTo(previous)) {
+        throw IOException("Could not move the old model out of the way")
+    }
+    if (!downloaded.renameTo(targetDir)) {
+        previous.renameTo(targetDir)
+        throw IOException("Could not move the model into place")
+    }
+    previous.deleteRecursively()
+}
+
 /** One file of a store model: where it is, how big it must be and the SHA-256 it must have. */
 data class StoreFile(val url: String, val sizeBytes: Long, val sha256: String)
 
@@ -71,7 +92,7 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
      */
     fun install(model: StoreModelDefinition, targetDir: File, onProgress: (Float) -> Unit): InstalledFiles {
         val parent = targetDir.parentFile ?: throw IOException("There is no place to put the model")
-        val work = File(parent, "${targetDir.name}.download")
+        val work = File(parent, targetDir.name + DOWNLOAD_SUFFIX)
         work.deleteRecursively()
         if (!work.mkdirs()) {
             throw IOException("Could not create ${work.path}")
@@ -100,20 +121,6 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
                 work.deleteRecursively()
             }
         }
-    }
-
-    /** Puts the downloaded folder in place of [targetDir], keeping the old one until the new one is there so a failure loses nothing. */
-    private fun swapIn(downloaded: File, targetDir: File) {
-        val previous = File(targetDir.parentFile, "${targetDir.name}.previous")
-        previous.deleteRecursively()
-        if (targetDir.exists() && !targetDir.renameTo(previous)) {
-            throw IOException("Could not move the old model out of the way")
-        }
-        if (!downloaded.renameTo(targetDir)) {
-            previous.renameTo(targetDir)
-            throw IOException("Could not move the model into place")
-        }
-        previous.deleteRecursively()
     }
 
     /**
