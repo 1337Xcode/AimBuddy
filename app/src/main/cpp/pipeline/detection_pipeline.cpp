@@ -88,11 +88,29 @@ void DetectionPipeline::applyConfidenceIfChanged(float& applied) {
     applied = requested;
 }
 
-void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
+/**
+ * Measures how the picture slid since the previous frame. The enemies the detector found in this
+ * frame (if it was run) move by themselves, so they are left out: a large one crossing the middle
+ * of the view would otherwise be taken for the camera turning.
+ */
+void DetectionPipeline::measureCameraMotion(const RoiFrame& frame, const DetectionBatch* detections) {
     if (cameraMotion_ == nullptr) {
         return;
     }
-    const GlobalShift shift = sceneMotion_.push(frame.rgba.data(), frame.roi.side, frame.roi.side * 4);
+    MovingBox movers[kMaxDetections];
+    int moverCount = 0;
+    if (detections != nullptr) {
+        // Detections are in screen pixels; the odometry works in pixels of the region it is given.
+        const float captureOfScreen = 1.0f / frame.geometry.screenPerCapture();
+        for (int i = 0; i < detections->count && moverCount < kMaxDetections; ++i) {
+            const Detection& d = detections->detections[i];
+            movers[moverCount++] = {d.x * captureOfScreen - static_cast<float>(frame.roi.x),
+                                    d.y * captureOfScreen - static_cast<float>(frame.roi.y),
+                                    (d.x + d.width) * captureOfScreen - static_cast<float>(frame.roi.x),
+                                    (d.y + d.height) * captureOfScreen - static_cast<float>(frame.roi.y)};
+        }
+    }
+    const GlobalShift shift = sceneMotion_.push(frame.rgba.data(), frame.roi.side, frame.roi.side * 4, movers, moverCount);
     if (lastFrameNs_ > 0 && frame.captureTimeNs > lastFrameNs_) {
         // The measurement is in capture pixels; everything else works in screen pixels.
         const float scale = frame.geometry.screenPerCapture();
@@ -106,6 +124,7 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
             row.dx = shift.dx * scale;
             row.dy = shift.dy * scale;
             row.quality = shift.quality;
+            row.movers = moverCount;
             row.grey = sceneMotion_.lastGrey();
             motionTrace_.push_back(row);
         }
@@ -144,10 +163,10 @@ bool DetectionPipeline::writeMotionTrace(const std::string& path) {
     if (file == nullptr) {
         return false;
     }
-    std::fprintf(file, "from_ns,to_ns,dx,dy,quality\n");
+    std::fprintf(file, "from_ns,to_ns,dx,dy,quality,movers\n");
     for (const MotionRow& row : motionTrace_) {
-        std::fprintf(file, "%lld,%lld,%.3f,%.3f,%.3f\n", static_cast<long long>(row.fromNs), static_cast<long long>(row.toNs),
-                     row.dx, row.dy, row.quality);
+        std::fprintf(file, "%lld,%lld,%.3f,%.3f,%.3f,%d\n", static_cast<long long>(row.fromNs), static_cast<long long>(row.toNs),
+                     row.dx, row.dy, row.quality, row.movers);
     }
     std::fclose(file);
 
@@ -248,13 +267,13 @@ void DetectionPipeline::run() {
             continue;
         }
         applyConfidenceIfChanged(appliedConfidence);
-        measureCameraMotion(*frame);
 #ifdef AIMBUDDY_DEBUG_HOOKS
         const bool detected = syntheticMode_.load(std::memory_order_acquire) ? detectSynthetic(*frame, batch)
                                                                               : detector_.detect(*frame, batch);
 #else
         const bool detected = detector_.detect(*frame, batch);
 #endif
+        measureCameraMotion(*frame, detected ? &batch : nullptr);
         capture_.mailbox().endRead();  // the pixels are consumed; let the capture thread reuse the slot
         if (!detected) {
             continue;

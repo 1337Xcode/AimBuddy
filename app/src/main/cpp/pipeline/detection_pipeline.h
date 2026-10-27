@@ -100,7 +100,7 @@ public:
 private:
     void run();
     void applyConfidenceIfChanged(float& applied);
-    void measureCameraMotion(const RoiFrame& frame);
+    void measureCameraMotion(const RoiFrame& frame, const DetectionBatch* detections);
 #ifdef AIMBUDDY_DEBUG_HOOKS
     bool detectSynthetic(const RoiFrame& frame, DetectionBatch& batch);
 #endif
@@ -136,6 +136,7 @@ private:
         float dx = 0.0f;
         float dy = 0.0f;
         float quality = 0.0f;
+        int movers = 0;   ///< How many detected enemies were left out of the measurement.
         std::array<float, GlobalMotionEstimator::kGrid * GlobalMotionEstimator::kGrid> grey{};   ///< The frame the slide ends at, reduced.
     };
     std::mutex motionTraceMutex_;

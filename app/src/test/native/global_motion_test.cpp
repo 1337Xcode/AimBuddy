@@ -291,3 +291,57 @@ TEST(global_motion_does_not_call_a_sliding_flat_picture_unchanged) {
     CHECK(!result.unchanged);
     CHECK_NEAR(result.dx, 6.0, 1.0);
 }
+
+namespace {
+
+/// A block with a picture of its own, such as an enemy standing close to the camera.
+void drawBigMover(Frame& frame, const Texture& look, int left, int top) {
+    for (int y = top; y < top + 150; ++y) {
+        for (int x = left; x < left + 90; ++x) {
+            frame.set(x, y, look.at(static_cast<float>(x - left) + 40.0f, static_cast<float>(y - top) + 40.0f) * 1.1f);
+        }
+    }
+}
+
+}  // namespace
+
+TEST(global_motion_leaves_out_the_boxes_it_is_told_move_by_themselves) {
+    // The scene slides by (6, -3) while a large, strongly textured figure runs across the view by
+    // (-30, 8). Told where the figure is in each frame, the estimator reads the scene's slide.
+    const Texture scene(12);
+    const Texture figure(13, 260);
+    int told = 0;
+    for (int trial = 0; trial < 4; ++trial) {
+        Frame first = renderScene(scene, 0.0f, 0.0f);
+        Frame second = renderScene(scene, 6.0f, -3.0f);
+        const int left = 30 + 28 * trial;
+        drawBigMover(first, figure, left + 30, 50);
+        drawBigMover(second, figure, left, 58);
+        const MovingBox before[] = {{static_cast<float>(left + 30), 50.0f, static_cast<float>(left + 120), 200.0f}};
+        const MovingBox after[] = {{static_cast<float>(left), 58.0f, static_cast<float>(left + 90), 208.0f}};
+
+        GlobalMotionEstimator estimator;
+        estimator.push(first.rgba.data(), kSide, kSide * 4, before, 1);
+        const GlobalShift result = estimator.push(second.rgba.data(), kSide, kSide * 4, after, 1);
+        if (std::fabs(result.dx - 6.0f) < 1.2f && std::fabs(result.dy + 3.0f) < 1.2f && result.quality > 0.4f) {
+            ++told;
+        }
+    }
+    CHECK(told == 4);
+}
+
+TEST(global_motion_does_not_call_a_frame_unchanged_because_only_a_mover_moved) {
+    // Nothing but the figure moves: with its box left out, the picture did not change.
+    const Texture scene(14);
+    const Texture figure(15, 260);
+    Frame first = renderScene(scene, 0.0f, 0.0f);
+    Frame second = renderScene(scene, 0.0f, 0.0f);
+    drawBigMover(first, figure, 100, 50);
+    drawBigMover(second, figure, 80, 56);
+    const MovingBox before[] = {{100.0f, 50.0f, 190.0f, 200.0f}};
+    const MovingBox after[] = {{80.0f, 56.0f, 170.0f, 206.0f}};
+    GlobalMotionEstimator estimator;
+    estimator.push(first.rgba.data(), kSide, kSide * 4, before, 1);
+    const GlobalShift result = estimator.push(second.rgba.data(), kSide, kSide * 4, after, 1);
+    CHECK(result.unchanged);
+}

@@ -92,6 +92,11 @@ constexpr int kExtraLayers = 2;
 /// Pixels the best shift explains keep this share of their weight in the next look.
 constexpr float kExplainedWeightKept = 0.1f;
 
+/// A box handed over as moving by itself is grown by this share of its size (and by the grid pixels
+/// after it) on every side, because a detector's box does not hug the body and its limbs.
+constexpr float kMoverMarginShare = 0.12f;
+constexpr float kMoverMarginCells = 1.0f;
+
 /// Wraps an index in [0, kGrid) to a signed offset in [-kGrid / 2, kGrid / 2).
 int signedOffset(int index) { return index < kGrid / 2 ? index : index - kGrid; }
 
@@ -234,8 +239,8 @@ void GlobalMotionEstimator::learnStaticPixels() {
         for (int x = 1; x < kGrid - 1; ++x) {
             const int i = y * kGrid + x;
             const float gradient = 0.5f * (std::fabs(grey_[i + 1] - grey_[i - 1]) + std::fabs(grey_[i + kGrid] - grey_[i - kGrid]));
-            if (gradient < kStaticMinGradient) {
-                continue;
+            if (gradient < kStaticMinGradient || leftOut_[i] > 0.0f) {
+                continue;   // flat pixels say nothing, and nor do those of something moving by itself
             }
             const int score = staticScore_[i];
             staticScore_[i] = static_cast<uint8_t>(std::fabs(grey_[i] - previousGrey_[i]) < kStaticMaxDifference
@@ -423,30 +428,62 @@ void GlobalMotionEstimator::keepUnexplainedPixels(float shiftX, float shiftY) {
     }
 }
 
-GlobalShift GlobalMotionEstimator::push(const uint8_t* rgba, int side, int strideBytes) {
+GlobalShift GlobalMotionEstimator::push(const uint8_t* rgba, int side, int strideBytes, const MovingBox* movers, int moverCount) {
     if (rgba == nullptr || side < kGrid / 2 || strideBytes < side * 4) {
         return GlobalShift();
     }
     reduceToGrey(rgba, side, strideBytes);
+    markMovers(movers, moverCount, side);
     return compareWithPrevious(side);
 }
 
-GlobalShift GlobalMotionEstimator::pushGrey(const float* grey) {
+GlobalShift GlobalMotionEstimator::pushGrey(const float* grey, const MovingBox* movers, int moverCount) {
     if (grey == nullptr) {
         return GlobalShift();
     }
     std::copy(grey, grey + kCells, grey_.begin());
+    markMovers(movers, moverCount, kGrid);
     return compareWithPrevious(kGrid);
+}
+
+/// Notes which grid pixels of the current frame lie in the boxes of things that move by themselves.
+void GlobalMotionEstimator::markMovers(const MovingBox* movers, int moverCount, int side) {
+    moverMask_.fill(0.0f);
+    if (movers == nullptr || moverCount <= 0) {
+        return;
+    }
+    const float toGrid = static_cast<float>(kGrid) / static_cast<float>(side);
+    for (int m = 0; m < moverCount; ++m) {
+        const MovingBox& box = movers[m];
+        const float margin = kMoverMarginShare * std::max(box.right - box.left, box.bottom - box.top) * toGrid + kMoverMarginCells;
+        const float left = box.left * toGrid - margin;
+        const float right = box.right * toGrid + margin;
+        const float top = box.top * toGrid - margin;
+        const float bottom = box.bottom * toGrid + margin;
+        const int x0 = std::max(0, static_cast<int>(std::floor(left)));
+        const int x1 = std::min(kGrid - 1, static_cast<int>(std::ceil(right)));
+        const int y0 = std::max(0, static_cast<int>(std::floor(top)));
+        const int y1 = std::min(kGrid - 1, static_cast<int>(std::ceil(bottom)));
+        for (int y = y0; y <= y1; ++y) {
+            for (int x = x0; x <= x1; ++x) {
+                moverMask_[y * kGrid + x] = 1.0f;
+            }
+        }
+    }
 }
 
 /// Measures how far the picture in `grey_` slid compared with `previousGrey_`, then keeps it as the next frame's reference.
 GlobalShift GlobalMotionEstimator::compareWithPrevious(int side) {
     GlobalShift result;
     const bool comparable = hasPrevious_ && side == previousSide_;
+    // What moves by itself, in this frame or the one before, says nothing about the camera.
+    for (int i = 0; i < kCells; ++i) {
+        leftOut_[i] = std::max(moverMask_[i], previousMoverMask_[i]);
+    }
     int changedPixels = 0;
     if (comparable) {
         for (int i = 0; i < kCells; ++i) {
-            changedPixels += std::fabs(grey_[i] - previousGrey_[i]) > kChangedLevel ? 1 : 0;
+            changedPixels += (leftOut_[i] == 0.0f && std::fabs(grey_[i] - previousGrey_[i]) > kChangedLevel) ? 1 : 0;
         }
     }
     // Whatever happens next, this frame is the one the next frame is compared with.
@@ -455,6 +492,7 @@ GlobalShift GlobalMotionEstimator::compareWithPrevious(int side) {
         int side;
         ~Remember() {
             std::swap(self->grey_, self->previousGrey_);
+            std::swap(self->moverMask_, self->previousMoverMask_);
             self->previousSide_ = side;
             self->hasPrevious_ = true;
         }
@@ -475,7 +513,7 @@ GlobalShift GlobalMotionEstimator::compareWithPrevious(int side) {
     // Every pixel counts by its place in the window, less so the more it has proved not to move with the scene.
     for (int i = 0; i < kCells; ++i) {
         const float left = static_cast<float>(staticScore_[i]) / static_cast<float>(kStaticIgnored);
-        weight_[i] = window_[i] * std::clamp(1.0f - left, 0.0f, 1.0f);
+        weight_[i] = window_[i] * std::clamp(1.0f - left, 0.0f, 1.0f) * (1.0f - leftOut_[i]);
         layerWeight_[i] = weight_[i];
     }
 

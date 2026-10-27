@@ -14,6 +14,14 @@ struct GlobalShift {
     bool unchanged = false; ///< The two frames are practically identical, so nothing moved.
 };
 
+/// A part of the frame in which something moves by itself (a detected enemy), in pixels of the frame given to push().
+struct MovingBox {
+    float left = 0.0f;
+    float top = 0.0f;
+    float right = 0.0f;
+    float bottom = 0.0f;
+};
+
 /**
  * Measures how the whole picture slides from one frame to the next.
  *
@@ -32,6 +40,10 @@ struct GlobalShift {
  * the one that explains the largest share of the picture wins; if even that explains too little,
  * what it left unexplained is looked at again.
  *
+ * Anything the caller knows moves by itself, such as the enemies the detector found, can be
+ * handed over as boxes. Those parts of the picture, in the frame and in the one before it, are
+ * left out: a large enemy crossing the middle of the view would otherwise be taken for the camera.
+ *
  * Not thread safe. One instance follows one stream of frames.
  */
 class GlobalMotionEstimator {
@@ -47,15 +59,16 @@ public:
     /**
      * Takes the next frame (RGBA, `side` by `side` pixels, rows `strideBytes` apart) and returns how
      * far its picture slid compared with the previous frame. The first frame, or the first after a
-     * change of size or a reset, returns quality 0.
+     * change of size or a reset, returns quality 0. `movers` (if any) are the parts of this frame
+     * that move by themselves.
      */
-    GlobalShift push(const uint8_t* rgba, int side, int strideBytes);
+    GlobalShift push(const uint8_t* rgba, int side, int strideBytes, const MovingBox* movers = nullptr, int moverCount = 0);
 
     /**
      * Like push(), for a frame that is already reduced to the grey picture (kGrid by kGrid values,
      * as lastGrey() returns them). It lets a recorded run be replayed through the estimator.
      */
-    GlobalShift pushGrey(const float* grey);
+    GlobalShift pushGrey(const float* grey, const MovingBox* movers = nullptr, int moverCount = 0);
 
     /// The reduced picture of the frame pushed last.
     const std::array<float, kGrid * kGrid>& lastGrey() const { return previousGrey_; }
@@ -77,6 +90,7 @@ private:
     };
 
     void reduceToGrey(const uint8_t* rgba, int side, int strideBytes);
+    void markMovers(const MovingBox* movers, int moverCount, int side);
     GlobalShift compareWithPrevious(int side);
     void transform(Grid& grid, bool inverse) const;
     void fft1d(Complex* data, int stride, bool inverse) const;
@@ -89,6 +103,9 @@ private:
     std::array<float, kGrid * kGrid> grey_{};         ///< The current frame, reduced.
     std::array<float, kGrid * kGrid> previousGrey_{};
     std::array<uint8_t, kGrid * kGrid> staticScore_{}; ///< How sure each pixel is not to move with the scene.
+    std::array<float, kGrid * kGrid> moverMask_{};     ///< 1 where something in this frame moves by itself, 0 elsewhere.
+    std::array<float, kGrid * kGrid> previousMoverMask_{};
+    std::array<float, kGrid * kGrid> leftOut_{};       ///< The two masks together: what is left out of this comparison.
     Grid current_{};
     Grid previous_{};
     std::array<float, kGrid * kGrid> window_{};       ///< Fades the border out; fixed.
