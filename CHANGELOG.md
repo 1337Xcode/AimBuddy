@@ -6,7 +6,37 @@ Dates are in ISO-8601 (YYYY-MM-DD).
 
 ## [Unreleased]
 
-Pre-release work staged for the next tag.
+Pre-release work staged for the next tag. A rebuild of the touch, aim and detection code and of every screen, plus updates from inside the app.
+
+### Added
+- Updates from inside the app. It reads the project's releases on GitHub, offers a newer one on the Home screen and in Settings, downloads it, checks the SHA-256, the package name, the version and the signing certificate, and hands it to the system installer. It opens again once the system has replaced it. The first release that has this must be installed by hand once.
+- A model store. `model/index.json` lists the models in the `model` folder. The Models screen installs them with every file checked against its size and SHA-256, keeps the old model until the new one is complete, and offers updates. AimBuddy General, the new default model, is published there and also built into the app, so the first run needs no connection.
+- A touch helper, `libaimtouch.so`, started through Shizuku or root. It takes the real touchscreen over, passes the player's touches to a virtual copy and adds the assist's finger as one more contact. It only takes the screen when no finger is on it, needs a heartbeat from the app, and gives the screen back when both volume keys are held or when it dies.
+- Measuring the game's camera while the player plays: how far the picture slid between frames, and from that the camera's gain and delay. The aim controller predicts through that delay, starts with small moves until the camera is known, and lifts and puts the finger down again when the game ignores it.
+- Ten box colors and ten accent colors, a performance readout, a Menu button in the notification, and a notice on the first run that the app is free and open source.
+- A launcher icon of TV static, drawn anew for each build (`-Paimbuddy.iconSeed` repeats one), and a floating button that is a round bubble of static.
+- Tests for the tracker, the aim controller against a simulated game, camera motion, the touch merger, the detector's decoding, the settings, the update logic and the model store.
+
+### Changed
+- Every screen is rebuilt in Compose with a top bar that carries the screen's title, settings in groups, tiles for the models and no splash screen.
+- Detection reads only a square around the crosshair, on the CPU or the GPU, whichever is faster on the phone, and the tracker follows targets through missed detections.
+- Settings live in one text file, `settings.cfg`, and are saved a moment after each change. The assist starts off on every run.
+- Streamer mode draws nothing over the game and makes the floating button invisible, and the menu is secure only while it is open. The old design blacked out the game in recordings.
+- The overlay draws in a `TextureView`.
+- Debug builds install beside the release build as `com.aimbuddy.debug`.
+- The training pipeline writes `model.param`, `model.bin` and `model.json` to `training/outputs/export/` and no longer writes into the app's assets.
+- The documentation is rewritten to match.
+
+### Removed
+- The old aim settings: presets, stabilization filters, velocity lead, anti overshoot and damping. The closed loop controller needs none of them.
+- The old ESP renderer and overlay window.
+
+### Fixed
+- Touches did not reach the game through the overlay on Android 12 and newer.
+- The app crashed when the touch helper's output was cut short.
+- The first assist touch after the touchscreen changed hands was ignored by the system. The app now waits 700 ms.
+- A model that fails to download, or a damaged model list, no longer harms the model in use.
+- Chinese text used half-width punctuation.
 
 ---
 
