@@ -27,6 +27,7 @@ Pre-release work staged for the next tag. A rebuild of the touch, aim and detect
 - The overlay draws in a `TextureView`.
 - Debug builds install beside the release build as `com.aimbuddy.debug`.
 - The training pipeline writes `model.param`, `model.bin` and `model.json` to `training/outputs/export/` and no longer writes into the app's assets.
+- The app carries no model of its own. AimBuddy General is downloaded from the model store the first time (about 9 MB), and the debug build is about 4 MB smaller.
 - The documentation is rewritten to match.
 
 ### Removed
