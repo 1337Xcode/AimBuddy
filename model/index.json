@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "id": "aimbuddy-general",
+      "title": "AimBuddy General",
+      "description": "Finds people in most 3D shooters without training for your game. The model AimBuddy starts with.",
+      "author": "AimBuddy",
+      "version": 1,
+      "param": {
+        "path": "aimbuddy-general/model.param",
+        "size": 26390,
+        "sha256": "15149911a4b27a2269038ac9d7de9620674dd6827f6fb76aeb4f6892adfa110c"
+      },
+      "bin": {
+        "path": "aimbuddy-general/model.bin",
+        "size": 9652264,
+        "sha256": "c9258526b4c1ecccf919fc79ff2484eb21c7737e159bec3dca3938565916e0c5"
+      },
+      "profile": {
+        "path": "aimbuddy-general/model.json",
+        "size": 232,
+        "sha256": "8cb763931acad19e5ee912a1160e19e32b02453ae3710524e17ec97d5295a2ea"
+      }
+    }
+  ]
+}

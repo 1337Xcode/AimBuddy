@@ -1,5 +1,0 @@
-{
-  "title": "Demo Model (No-op)",
-  "description": "This is a metadata-only demo model entry. It is listed in store and does not download or run.",
-  "demoOnly": true
-}

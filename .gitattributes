@@ -1,0 +1,2 @@
+# Model files are served as they are committed, so their bytes must not change with the platform.
+model/** -text

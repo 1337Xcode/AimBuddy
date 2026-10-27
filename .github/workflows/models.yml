@@ -1,0 +1,28 @@
+name: Check model store
+
+# Fails a change to the model folder that does not rebuild its index: the app only installs
+# files whose size and SHA-256 match model/index.json.
+on:
+  pull_request:
+    paths:
+      - 'model/**'
+  push:
+    branches: [master]
+    paths:
+      - 'model/**'
+
+jobs:
+  index:
+    name: Check model/index.json
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check the index
+        run: python model/index.py --check
