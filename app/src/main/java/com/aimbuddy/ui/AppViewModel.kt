@@ -135,10 +135,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var pendingParam: Uri? = null
     private var pendingName = "model"
 
+    /** The first read of the settings file. Reading the settings again waits for it, or it could show the defaults. */
+    private val settingsLoaded: Job
+
     init {
         refreshModels()
         // Loading the native library takes a moment, so it is not done while the first screen is drawn.
-        viewModelScope.launch(Dispatchers.Default) {
+        settingsLoaded = viewModelScope.launch(Dispatchers.Default) {
             NativeBridge.loadSettings(File(application.filesDir, SETTINGS_FILE).path)
             _settings.value = SettingsView.parse(NativeBridge.settingsSnapshot())
         }
@@ -248,6 +251,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Re-reads the settings; the assist's menu may have changed them since the screen last looked. */
     fun refreshSettings() {
         viewModelScope.launch(Dispatchers.Default) {
+            settingsLoaded.join()
             _settings.value = SettingsView.parse(NativeBridge.settingsSnapshot())
         }
     }
