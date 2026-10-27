@@ -8,9 +8,9 @@
     <string name="status_running">运行中</string>
     <string name="status_stopping">正在停止</string>
     <string name="status_failed">无法启动</string>
-    <string name="hint_ready">点按“开始”,然后切换到游戏。</string>
+    <string name="hint_ready">点按“开始”，然后切换到游戏。</string>
     <string name="hint_starting">正在准备。</string>
-    <string name="hint_running_assist">目标已高亮,瞄准辅助已就绪。</string>
+    <string name="hint_running_assist">目标已高亮，瞄准辅助已就绪。</string>
     <string name="hint_running_no_assist">目标已高亮。瞄准辅助需要 Shizuku 或 root。</string>
     <string name="hint_connecting">目标已高亮。正在连接瞄准辅助。</string>
     <string name="hint_stopping">正在归还触摸屏。</string>
@@ -23,7 +23,7 @@
     <string name="touch_root">Root</string>
     <string name="touch_not_set_up">未设置</string>
     <string name="touch_dialog_title">瞄准辅助需要更多权限</string>
-    <string name="touch_dialog_message">AimBuddy 可以独自高亮目标。要移动你的准星,它会在触摸屏上加一根手指,这需要 Shizuku 或 root。</string>
+    <string name="touch_dialog_message">AimBuddy 可以独自高亮目标。要移动你的准星，它会在触摸屏上加一根手指，这需要 Shizuku 或 root。</string>
     <string name="touch_dialog_open_shizuku">打开 Shizuku</string>
     <string name="open_source">免费开源</string>
 
@@ -42,7 +42,7 @@
 
     <!-- 启动流程 -->
     <string name="overlay_title">允许显示在其他应用上层</string>
-    <string name="overlay_message">AimBuddy 需要绘制在游戏之上。请在列表中找到 AimBuddy 并开启,然后返回并点按“开始”。</string>
+    <string name="overlay_message">AimBuddy 需要绘制在游戏之上。请在列表中找到 AimBuddy 并开启，然后返回并点按“开始”。</string>
     <string name="overlay_open_settings">打开设置</string>
     <string name="capture_denied">未允许屏幕录制。</string>
     <string name="overlay_denied">未允许显示在其他应用上层。</string>
@@ -73,10 +73,10 @@
     <string name="models_download_failed">无法下载该模型。</string>
     <string name="models_store_empty">暂无模型。</string>
     <string name="models_retry">重试</string>
-    <string name="models_delete_title">删除此模型?</string>
+    <string name="models_delete_title">删除此模型？</string>
     <string name="models_delete_message">将从此手机移除“%1$s”。</string>
     <string name="models_next_start">下次点按“开始”时生效。</string>
-    <string name="models_import_hint">先选择 .param 文件,再选择对应的 .bin 文件。</string>
+    <string name="models_import_hint">先选择 .param 文件，再选择对应的 .bin 文件。</string>
     <string name="models_import_failed">无法导入该模型。</string>
     <string name="models_none_installed">尚未安装模型。</string>
     <string name="models_missing_bundled">此版本没有内置模型。请从商店获取。</string>
@@ -114,11 +114,11 @@
     <string name="s_invert">反转垂直方向</string>
     <string name="s_auto_calibrate">自动校准</string>
     <string name="s_auto_calibrate_hint">在游玩时测量游戏对手指的反应。</string>
-    <string name="s_calibration_footer">这些数值对应游戏对手指的反应。自动校准会在游玩时测量它们;关闭后则使用你自己设定的值。</string>
+    <string name="s_calibration_footer">这些数值对应游戏对手指的反应。自动校准会在游玩时测量它们；关闭后则使用你自己设定的值。</string>
     <string name="s_access">触控方式</string>
     <string name="s_automatic">自动</string>
     <string name="s_touch_area">触控区域</string>
-    <string name="s_touch_area_footer">AimBuddy 运行时,可在游戏内菜单中移动和调整它的大小。</string>
+    <string name="s_touch_area_footer">AimBuddy 运行时，可在游戏内菜单中移动和调整它的大小。</string>
     <string name="s_language">语言</string>
     <string name="s_appearance">外观</string>
     <string name="s_system">跟随系统</string>
@@ -128,7 +128,7 @@
     <string name="s_streamer">主播模式</string>
     <string name="s_streamer_footer">不会在游戏画面上绘制任何内容，按钮也会隐藏。请从通知中打开菜单。瞄准辅助照常工作。</string>
     <string name="s_reset">重置所有设置</string>
-    <string name="s_reset_title">重置所有设置?</string>
+    <string name="s_reset_title">重置所有设置？</string>
     <string name="s_reset_message">所有内容都会恢复初始状态。语言保持不变。</string>
     <string name="s_reset_confirm">重置</string>
     <string name="color_red">红色</string>
@@ -166,7 +166,7 @@
 
     <!-- 首次运行 -->
     <string name="notice_title">免费开源</string>
-    <string name="notice_message">AimBuddy 不收费。如果你花钱买了它,说明你被骗了。</string>
+    <string name="notice_message">AimBuddy 不收费。如果你花钱买了它，说明你被骗了。</string>
     <string name="notice_open_github">打开 GitHub</string>
     <string name="notice_dismiss">知道了</string>
     <string name="no_browser">找不到浏览器。</string>
