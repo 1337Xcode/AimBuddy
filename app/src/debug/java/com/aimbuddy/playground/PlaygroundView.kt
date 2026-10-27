@@ -58,6 +58,8 @@ internal class PlaygroundView(
 
     private var yaw = 0.0f
     private var pitch = 0.0f
+    private var lookTravelX = 0.0f   // how far the looking finger has moved in all, to compare with what the assist meant to do
+    private var lookTravelY = 0.0f
     private var lookPointerId = -1
     private var fireHeld = false
 
@@ -75,7 +77,7 @@ internal class PlaygroundView(
     private var lastFlushMs = startMs
 
     init {
-        log.append("t_ms,yaw,pitch,nearest_dx,nearest_dy,nearest_dist,characters,fire\n")
+        log.append("uptime_ms,yaw,pitch,nearest_dx,nearest_dy,nearest_dist,characters,fire,look_x,look_y\n")
     }
 
     // ---------------------------------------------------------------------------------------
@@ -342,6 +344,8 @@ internal class PlaygroundView(
         if (pointer.role != Role.LOOK || (dx == 0f && dy == 0f)) {
             return
         }
+        lookTravelX += dx
+        lookTravelY += dy
         val speed = hypot(dx, dy) / elapsedMs * 1000f
         val gain = config.gain * (1f + config.curve * min(speed / 3000f, 1f))
         val ppd = pixelsPerDegree()
@@ -362,9 +366,10 @@ internal class PlaygroundView(
     // ---------------------------------------------------------------------------------------
 
     private fun record(nowMs: Long, dx: Float, dy: Float, distance: Float) {
-        log.append(nowMs - startMs).append(',').append("%.3f".format(yaw)).append(',').append("%.3f".format(pitch)).append(',')
+        log.append(nowMs).append(',').append("%.3f".format(yaw)).append(',').append("%.3f".format(pitch)).append(',')
             .append("%.1f".format(dx)).append(',').append("%.1f".format(dy)).append(',').append("%.1f".format(distance)).append(',')
-            .append(characters.size).append(',').append(if (fireHeld) 1 else 0).append('\n')
+            .append(characters.size).append(',').append(if (fireHeld) 1 else 0).append(',')
+            .append("%.1f".format(lookTravelX)).append(',').append("%.1f".format(lookTravelY)).append('\n')
         if (nowMs - lastFlushMs > FLUSH_EVERY_MS) {
             flushLog()
         }

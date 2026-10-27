@@ -4,7 +4,9 @@
 #include <atomic>
 #include <functional>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include "../core/aim_controller.h"
 #include "../core/camera_motion.h"
@@ -76,6 +78,14 @@ public:
     bool isRunning() const { return running_.load(std::memory_order_acquire); }
     Stats stats() const;
 
+#ifdef AIMBUDDY_DEBUG_HOOKS
+    /// Testing only: starts keeping a row for every step, with what the controller saw and did.
+    void startTrace();
+
+    /// Testing only: writes the rows kept since startTrace to `path` as CSV and stops keeping them.
+    bool writeTrace(const std::string& path);
+#endif
+
 private:
     struct Display {
         int width = 0;
@@ -95,6 +105,9 @@ private:
     void sendOutput(const AimOutput& output);
     void keepHeartbeat(int64_t nowNs, int64_t maxSilenceNs);
     Display currentDisplay() const;
+#ifdef AIMBUDDY_DEBUG_HOOKS
+    void recordTrace(int64_t nowNs);
+#endif
 
     Tracker* tracker_;
     const ModelProfile* profile_;
@@ -124,6 +137,19 @@ private:
 
     std::atomic<bool> fingerDown_{false};
     std::atomic<int> lockedTrack_{-1};
+
+#ifdef AIMBUDDY_DEBUG_HOOKS
+    /// One step of the controller as it was seen and done, with what was known of the camera at that moment.
+    struct TraceRow {
+        int64_t timeNs = 0;
+        AimTelemetry aim;
+        CameraResponse response;
+        float confidence = 0.0f;
+    };
+    std::mutex traceMutex_;
+    std::vector<TraceRow> trace_;
+    std::atomic<bool> tracing_{false};
+#endif
 };
 
 }  // namespace aimbuddy

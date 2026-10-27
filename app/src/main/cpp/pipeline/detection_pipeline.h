@@ -3,12 +3,14 @@
 
 #include <android/asset_manager.h>
 
+#include <array>
 #include <atomic>
 #include <deque>
 #include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "../capture/roi_capture.h"
 #include "../core/camera_motion.h"
@@ -82,6 +84,13 @@ public:
 
     /// Testing only: the scene's true targets, in screen pixels, as they are at `sceneNs` (steady clock).
     void feedSynthetic(const Detection* detections, int count, int64_t sceneNs);
+
+    /// Testing only: starts keeping every measurement of how the picture slid between frames.
+    void startMotionTrace();
+
+    /// Testing only: writes the measurements kept since startMotionTrace to `path` as CSV and stops keeping them.
+    /// The reduced pictures the measurements were made from go to `path` + ".grey" as raw floats, for replaying them.
+    bool writeMotionTrace(const std::string& path);
 #endif
 
     RoiCapture& capture() { return capture_; }
@@ -119,6 +128,19 @@ private:
     std::mutex syntheticMutex_;
     std::deque<SyntheticScene> synthetic_;
     std::atomic<bool> syntheticMode_{false};
+
+    /// One measurement of the picture's slide between two frames, in screen pixels.
+    struct MotionRow {
+        int64_t fromNs = 0;
+        int64_t toNs = 0;
+        float dx = 0.0f;
+        float dy = 0.0f;
+        float quality = 0.0f;
+        std::array<float, GlobalMotionEstimator::kGrid * GlobalMotionEstimator::kGrid> grey{};   ///< The frame the slide ends at, reduced.
+    };
+    std::mutex motionTraceMutex_;
+    std::vector<MotionRow> motionTrace_;
+    std::atomic<bool> tracingMotion_{false};
 #endif
 
     std::atomic<float> inferenceMs_{0.0f};

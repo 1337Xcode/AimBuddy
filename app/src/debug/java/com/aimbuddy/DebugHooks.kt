@@ -17,6 +17,18 @@ object DebugHooks {
     @JvmStatic
     external fun feedDetections(boxes: FloatArray, sceneNs: Long)
 
+    /** Starts keeping a row for every aim step (what the controller saw, decided and believed) and for every measured slide of the picture. */
+    @JvmStatic
+    external fun startTrace()
+
+    /** Writes what [startTrace] kept as CSV: the aim steps to `aimPath` and the measured slides to `motionPath`. */
+    @JvmStatic
+    external fun writeTrace(aimPath: String, motionPath: String): Boolean
+
+    /** Drags the assist's finger along a fixed path and writes where it was told to be to `path` as CSV. Needs the assist switched on. */
+    @JvmStatic
+    external fun runFingerScript(path: String)
+
     /** Switches the aim assist on or off, as the overlay menu does. */
     @JvmStatic
     external fun enableAssist(on: Boolean)

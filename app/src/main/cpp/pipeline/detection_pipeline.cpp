@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 
 #include "../utils/logger.h"
 
@@ -23,6 +24,9 @@ constexpr int64_t kStatsLogIntervalNs = 5'000'000'000;
 /// A test scene is shown on screen about this long after it is drawn, and no more than this many are kept.
 constexpr int64_t kSyntheticScreenLatencyNs = 8'000'000;
 constexpr size_t kSyntheticBacklog = 16;
+
+/// Rows reserved for a motion trace: a couple of minutes of frames.
+constexpr size_t kMotionTraceReserve = 8000;
 #endif
 
 int64_t steadyNowNs() {
@@ -93,6 +97,19 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
         // The measurement is in capture pixels; everything else works in screen pixels.
         const float scale = frame.geometry.screenPerCapture();
         cameraMotion_->addMeasurement(lastFrameNs_, frame.captureTimeNs, shift.dx * scale, shift.dy * scale, shift.quality);
+#ifdef AIMBUDDY_DEBUG_HOOKS
+        if (tracingMotion_.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> lock(motionTraceMutex_);
+            MotionRow row;
+            row.fromNs = lastFrameNs_;
+            row.toNs = frame.captureTimeNs;
+            row.dx = shift.dx * scale;
+            row.dy = shift.dy * scale;
+            row.quality = shift.quality;
+            row.grey = sceneMotion_.lastGrey();
+            motionTrace_.push_back(row);
+        }
+#endif
         slideSum_ += std::hypot(shift.dx, shift.dy) * scale;
         qualitySum_ += shift.quality;
         ++slideFrames_;
@@ -111,6 +128,40 @@ void DetectionPipeline::feedSynthetic(const Detection* detections, int count, in
     while (synthetic_.size() > kSyntheticBacklog) {
         synthetic_.pop_front();
     }
+}
+
+void DetectionPipeline::startMotionTrace() {
+    std::lock_guard<std::mutex> lock(motionTraceMutex_);
+    motionTrace_.clear();
+    motionTrace_.reserve(kMotionTraceReserve);
+    tracingMotion_.store(true, std::memory_order_release);
+}
+
+bool DetectionPipeline::writeMotionTrace(const std::string& path) {
+    tracingMotion_.store(false, std::memory_order_release);
+    std::lock_guard<std::mutex> lock(motionTraceMutex_);
+    FILE* file = std::fopen(path.c_str(), "w");
+    if (file == nullptr) {
+        return false;
+    }
+    std::fprintf(file, "from_ns,to_ns,dx,dy,quality\n");
+    for (const MotionRow& row : motionTrace_) {
+        std::fprintf(file, "%lld,%lld,%.3f,%.3f,%.3f\n", static_cast<long long>(row.fromNs), static_cast<long long>(row.toNs),
+                     row.dx, row.dy, row.quality);
+    }
+    std::fclose(file);
+
+    // The pictures: for each row the time it ends at, then its values.
+    FILE* pictures = std::fopen((path + ".grey").c_str(), "wb");
+    if (pictures != nullptr) {
+        for (const MotionRow& row : motionTrace_) {
+            std::fwrite(&row.toNs, sizeof(row.toNs), 1, pictures);
+            std::fwrite(row.grey.data(), sizeof(float), row.grey.size(), pictures);
+        }
+        std::fclose(pictures);
+    }
+    motionTrace_.clear();
+    return true;
 }
 
 bool DetectionPipeline::detectSynthetic(const RoiFrame& frame, DetectionBatch& batch) {

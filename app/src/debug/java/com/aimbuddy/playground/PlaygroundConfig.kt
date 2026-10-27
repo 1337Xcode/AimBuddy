@@ -32,6 +32,10 @@ internal data class PlaygroundConfig(
     val synthetic: Boolean = false,
     /** Switches the aim assist on while the scene is open. */
     val assist: Boolean = false,
+    /** Records the assist's steps and the measured slides of the picture while the scene is open (also done when [assist] is on). */
+    val trace: Boolean = false,
+    /** Has the assist drag its finger along a fixed path, to check what the app sees of it. Needs [assist]. */
+    val fingerTest: Boolean = false,
 ) {
     companion object {
         fun from(intent: Intent) = PlaygroundConfig(
@@ -46,6 +50,8 @@ internal data class PlaygroundConfig(
             seed = intent.getIntExtra("seed", 1),
             synthetic = intent.getBooleanExtra("synthetic", false),
             assist = intent.getBooleanExtra("assist", false),
+            trace = intent.getBooleanExtra("trace", false),
+            fingerTest = intent.getBooleanExtra("fingerTest", false),
         )
     }
 }

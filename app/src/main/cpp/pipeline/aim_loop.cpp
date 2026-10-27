@@ -3,6 +3,8 @@
 #include <sys/resource.h>
 #include <time.h>
 
+#include <cstdio>
+
 #include "../utils/logger.h"
 
 namespace aimbuddy {
@@ -31,6 +33,11 @@ constexpr int64_t kIdleHeartbeatNs = 1'000'000'000;
 
 /// Priority of the loop thread; a late step is a late correction. The system may refuse a value this low.
 constexpr int kThreadNice = -8;
+
+#ifdef AIMBUDDY_DEBUG_HOOKS
+/// Rows reserved for a trace: two minutes of steps.
+constexpr size_t kTraceReserve = 15000;
+#endif
 
 int64_t steadyNowNs() {
     timespec now{};
@@ -188,6 +195,9 @@ void AimLoop::stepWhileActive(int64_t nowNs) {
     if (state == touch::protocol::State::kMerging) {
         wasMerging_ = true;
         sendOutput(controller_.step(nowNs, *tracker_, *profile_, PlayerInput()));
+#ifdef AIMBUDDY_DEBUG_HOOKS
+        recordTrace(nowNs);
+#endif
         keepHeartbeat(nowNs, kHeartbeatNs);
     } else {
         if (wasMerging_) {
@@ -247,5 +257,46 @@ void AimLoop::standDown(int64_t nowNs) {
     fingerDown_.store(false, std::memory_order_relaxed);
     lockedTrack_.store(-1, std::memory_order_relaxed);
 }
+
+#ifdef AIMBUDDY_DEBUG_HOOKS
+void AimLoop::startTrace() {
+    std::lock_guard<std::mutex> lock(traceMutex_);
+    trace_.clear();
+    trace_.reserve(kTraceReserve);
+    tracing_.store(true, std::memory_order_release);
+}
+
+void AimLoop::recordTrace(int64_t nowNs) {
+    if (!tracing_.load(std::memory_order_acquire)) {
+        return;
+    }
+    TraceRow row;
+    row.timeNs = nowNs;
+    row.aim = controller_.telemetry();
+    row.response = motion_->response();
+    row.confidence = motion_->confidence();
+    std::lock_guard<std::mutex> lock(traceMutex_);
+    trace_.push_back(row);
+}
+
+bool AimLoop::writeTrace(const std::string& path) {
+    tracing_.store(false, std::memory_order_release);
+    std::lock_guard<std::mutex> lock(traceMutex_);
+    FILE* file = std::fopen(path.c_str(), "w");
+    if (file == nullptr) {
+        return false;
+    }
+    std::fprintf(file, "t_ns,target,err_x,err_y,deadzone,moving,stability,finger_x,finger_y,touching,gain_x,gain_y,delay_ms,confidence\n");
+    for (const TraceRow& row : trace_) {
+        std::fprintf(file, "%lld,%d,%.2f,%.2f,%.2f,%.3f,%.3f,%.1f,%.1f,%d,%.3f,%.3f,%.1f,%.3f\n",
+                     static_cast<long long>(row.timeNs), row.aim.targetId, row.aim.errorX, row.aim.errorY, row.aim.deadzone,
+                     row.aim.movingShare, row.aim.stability, row.aim.fingerX, row.aim.fingerY, row.aim.touching ? 1 : 0,
+                     row.response.gainX, row.response.gainY, row.response.delayS * 1000.0f, row.confidence);
+    }
+    std::fclose(file);
+    trace_.clear();
+    return true;
+}
+#endif
 
 }  // namespace aimbuddy

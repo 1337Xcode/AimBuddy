@@ -5,11 +5,14 @@
 #include <android/hardware_buffer_jni.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <string>
+#include <thread>
 
 // Fix for NDK compatibility issue usually caused by NCNN library mismatch
 // Defines the missing symbol __libcpp_verbose_abort.
@@ -120,6 +123,76 @@ void keepLearnedCamera(const aimbuddy::CameraResponse& response, float confidenc
 }
 
 }  // namespace
+
+#ifdef AIMBUDDY_DEBUG_HOOKS
+/// One stretch of the test path: the finger moves by (dx, dy) pixels over durationMs, then rests.
+struct ScriptSegment {
+    float dx;
+    float dy;
+    int durationMs;
+};
+
+/// Waits until the helper holds the touchscreen, drags the finger along the test path and writes the path as CSV.
+void RunFingerScript(const std::string& file) {
+    static const ScriptSegment kPath[] = {{150, 0, 800}, {-150, 0, 800}, {0, 100, 800}, {0, -100, 800}, {120, 80, 1000},
+                                          {-120, -80, 1000}, {200, 0, 300}, {-200, 0, 300}, {0, 120, 300}, {0, -120, 300}};
+    constexpr int64_t kStepNs = 8'000'000;
+    constexpr int64_t kRestNs = 300'000'000;
+    for (int waited = 0; waited < 300 && !g_touchLink.isMerging(); ++waited) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (!g_touchLink.isMerging()) {
+        LOGW("Finger script: the helper never held the touchscreen");
+        return;
+    }
+    const Settings settings = g_settingsStore.get();
+    const aimbuddy::CaptureGeometry geometry = g_pipeline.capture().geometry();
+    const float anchorX = settings.anchorX * static_cast<float>(geometry.screenWidth);
+    const float anchorY = settings.anchorY * static_cast<float>(geometry.screenHeight);
+
+    FILE* out = std::fopen(file.c_str(), "w");
+    if (out == nullptr) {
+        return;
+    }
+    std::fprintf(out, "t_ns,x,y,touching\n");
+    const auto steadyNs = [] {
+        timespec now{};
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        return static_cast<int64_t>(now.tv_sec) * 1'000'000'000LL + now.tv_nsec;
+    };
+    const auto note = [&](float x, float y, int touching) {
+        std::fprintf(out, "%lld,%.1f,%.1f,%d\n", static_cast<long long>(steadyNs()), x, y, touching);
+    };
+    float x = anchorX;
+    float y = anchorY;
+    g_touchLink.aimDown(x, y);
+    note(x, y, 1);
+    for (const ScriptSegment& segment : kPath) {
+        const int64_t startNs = steadyNs();
+        const int64_t endNs = startNs + static_cast<int64_t>(segment.durationMs) * 1'000'000;
+        const float fromX = x;
+        const float fromY = y;
+        for (int64_t now = steadyNs(); now < endNs; now = steadyNs()) {
+            const float share = static_cast<float>(now - startNs) / static_cast<float>(endNs - startNs);
+            g_touchLink.aimMove(fromX + segment.dx * share, fromY + segment.dy * share);
+            g_touchLink.ping();
+            note(fromX + segment.dx * share, fromY + segment.dy * share, 1);
+            std::this_thread::sleep_for(std::chrono::nanoseconds(kStepNs));
+        }
+        x = fromX + segment.dx;
+        y = fromY + segment.dy;
+        g_touchLink.aimMove(x, y);
+        note(x, y, 1);
+        for (int64_t rest = 0; rest < kRestNs; rest += kStepNs) {
+            g_touchLink.ping();
+            std::this_thread::sleep_for(std::chrono::nanoseconds(kStepNs));
+        }
+    }
+    g_touchLink.aimUp();
+    note(x, y, 0);
+    std::fclose(out);
+}
+#endif  // AIMBUDDY_DEBUG_HOOKS
 
 aimbuddy::DetectionPipeline& aimbuddy::pipeline() { return g_pipeline; }
 aimbuddy::SettingsStore& aimbuddy::settingsStore() { return g_settingsStore; }
@@ -299,6 +372,29 @@ JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_feedDetections(JNIEnv* env, 
     }
     env->ReleaseFloatArrayElements(boxes, values, JNI_ABORT);
     g_pipeline.feedSynthetic(detections, count, static_cast<int64_t>(sceneNs));
+}
+
+/**
+ * @brief Drags the assist's finger along a fixed path and writes where it was told to be as CSV, to be
+ * compared with how far the app under test saw its looking finger move.
+ */
+JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_runFingerScript(JNIEnv* env, jclass /* clazz */, jstring path) {
+    const std::string file = toStdString(env, path);
+    std::thread([file] { RunFingerScript(file); }).detach();
+}
+
+/** @brief Starts keeping a row for every aim step and for every measured slide of the picture. */
+JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_startTrace(JNIEnv* /* env */, jclass /* clazz */) {
+    g_aimLoop.startTrace();
+    g_pipeline.startMotionTrace();
+}
+
+/** @brief Writes what startTrace kept: the aim steps to one file and the measured slides to the other, as CSV. */
+JNIEXPORT jboolean JNICALL Java_com_aimbuddy_DebugHooks_writeTrace(JNIEnv* env, jclass /* clazz */, jstring aimPath,
+                                                                   jstring motionPath) {
+    const bool aim = g_aimLoop.writeTrace(toStdString(env, aimPath));
+    const bool motion = g_pipeline.writeMotionTrace(toStdString(env, motionPath));
+    return aim && motion ? JNI_TRUE : JNI_FALSE;
 }
 
 /** @brief Switches the aim assist on or off, as the overlay menu does. */
