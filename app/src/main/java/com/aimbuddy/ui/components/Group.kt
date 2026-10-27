@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -25,7 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aimbuddy.ui.theme.AppTheme
@@ -33,6 +36,9 @@ import com.aimbuddy.ui.theme.Space
 
 /** The height of one row in a group: tall enough for a thumb. */
 val RowHeight = Space.xxl
+
+/** The most of a row's width that what sits at its end may take, so a long value never squeezes the title. */
+private const val TRAILING_SHARE = 0.45f
 
 /** Collects the rows of a [Group] so the group can put a hairline between them. */
 class GroupScope {
@@ -116,6 +122,8 @@ fun ListRow(
     onClick: (() -> Unit)? = null,
 ) {
     val clickable = if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier
+    // A row is about as wide as the screen on a phone, which is where a long value is a problem.
+    val trailingMax = (LocalConfiguration.current.screenWidthDp * TRAILING_SHARE).dp
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -148,7 +156,11 @@ fun ListRow(
         }
         if (trailing != null) {
             Spacer(Modifier.width(Space.m))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+            Row(
+                modifier = Modifier.widthIn(max = trailingMax),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.s),
+            ) {
                 trailing()
             }
         }
@@ -162,7 +174,8 @@ fun RowValue(text: String) {
         text = text,
         style = MaterialTheme.typography.bodyMedium,
         color = AppTheme.palette.textDim,
-        maxLines = 1,
+        textAlign = TextAlign.End,
+        maxLines = 2,
         overflow = TextOverflow.Ellipsis,
     )
 }
