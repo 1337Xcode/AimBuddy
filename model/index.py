@@ -15,7 +15,7 @@ STORE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(STORE, "index.json")
 
 SCHEMA = 1
-ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
+ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$")
 MAX_FILE_BYTES = 64 * 1024 * 1024
 MAX_ICON_BYTES = 128 * 1024
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -42,7 +42,7 @@ def describe(folder, name):
 def entry_for(folder):
     """Builds the index entry of one model folder."""
     if not ID_PATTERN.match(folder):
-        raise Problem(f"{folder}: the folder name is the model's id: lowercase letters, digits and dashes, 2 to 40 characters")
+        raise Problem(f"{folder}: the folder name is the model's id: lowercase letters, digits and dashes, 2 to 40 characters, not ending in a dash")
     meta_file, meta_bytes = describe(folder, "model.json")
     try:
         meta = json.loads(meta_bytes.decode("utf-8"))

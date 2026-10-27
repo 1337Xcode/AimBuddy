@@ -198,8 +198,8 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
         private const val BUFFER_BYTES = 32 * 1024
         private const val MAX_FILE_BYTES = 64L * 1024 * 1024
 
-        /** A model's id: what its folder is called in the store. */
-        private val ID_PATTERN = Regex("[a-z0-9][a-z0-9-]{1,39}")
+        /** A model's id: what its folder is called in the store. Two to 40 characters, and a dash is never the last. */
+        private val ID_PATTERN = Regex("[a-z0-9][a-z0-9-]{0,38}[a-z0-9]")
 
         /** A path inside the store: lowercase words joined by slashes, never leading out of it. */
         private val PATH_PATTERN = Regex("[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*")

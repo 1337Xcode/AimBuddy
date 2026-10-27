@@ -181,6 +181,11 @@ android {
         }
     }
 
+    testOptions {
+        // The code under test logs with android.util.Log, which does nothing on the computer.
+        unitTests.returnDefaultValues = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

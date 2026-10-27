@@ -8,7 +8,7 @@ that `index.json` gives, so a model only installs if its files are exactly the o
 
 ## Add a model
 
-1. Make a folder named for the model's id: lowercase letters, digits and dashes, 2 to 40 characters.
+1. Make a folder named for the model's id: lowercase letters, digits and dashes, 2 to 40 characters, not ending in a dash.
 2. Put these files in it:
 
    | File | What it is |
