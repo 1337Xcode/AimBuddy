@@ -1,6 +1,6 @@
 {
   "title": "AimBuddy General",
-  "description": "Finds people in most 3D shooters without training for your game. The model AimBuddy starts with.",
+  "description": "Finds people in most 3D shooters without training for your game.",
   "author": "AimBuddy",
   "version": 1,
   "roles": ["body"],
