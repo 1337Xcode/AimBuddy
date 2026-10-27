@@ -29,7 +29,7 @@ flowchart LR
 ```
 
 1. **Capture.** `CaptureSession` mirrors the display with MediaProjection into an `ImageReader`. Each frame goes to `RoiCapture`, which copies out only the square region the detector needs (set by the "Detection area" setting) and publishes it. The mailbox keeps one frame, the newest, so a slow phone drops frames instead of falling behind.
-2. **Detect.** `DetectionPipeline` runs on its own thread. `YoloDetector` runs an NCNN model on the region. At start it times the model on the CPU and on the GPU (Vulkan) and keeps the faster one, because the GPU is shared with the game. What each class of the model means comes from the model's `model.json` (see `ModelProfile`).
+2. **Detect.** `DetectionPipeline` runs on its own thread. `YoloDetector` runs an NCNN model on the region. At start it times the model on the CPU and on the GPU (Vulkan) and keeps the faster one, because the GPU is shared with the game. What each class of the model means comes from the model's `model.json` (see `ModelProfile`). While the phone reports that it is warm or hot, `ThermalGovernor` asks the pipeline for fewer detections a second, and `FrameThinner` skips the frames over that limit.
 3. **Measure the camera.** Before the boxes are used, `GlobalMotion` measures how far the whole picture slid since the previous frame. It reduces both frames to 64 by 64 grey values and finds the shift by phase correlation, leaving out the boxes of detected enemies, the game's fixed interface and AimBuddy's own boxes. The result goes into `CameraMotion`.
 4. **Track.** `Tracker` pairs the boxes with the targets it already follows (strong detections first, then weaker ones, in the manner of ByteTrack), smooths each target with a Kalman filter and measures its speed, free of the camera's own movement. A target that goes unseen for a few frames keeps moving along its path, so a box never blinks because of one missed detection.
 5. **Aim.** `AimLoop` runs `AimController` at a steady rate. The controller picks a target (nearest the crosshair, biggest, or most certain), predicts where it will be when this step's move takes effect, and decides how far to drag the extra finger. Each move is recorded in `CameraMotion`, so the next frames are judged knowing what the assist itself did.
@@ -120,6 +120,7 @@ The tracker is shared by the pipeline thread, the aim loop and the overlay, and 
 | What runs while the assist is on | `AssistService.kt` |
 | Screen capture | `CaptureSession.kt`, `capture/roi_capture.*` |
 | Detection and the models | `detector/`, `core/detection_decoder.*`, `core/model_profile.h` |
+| Easing off when the phone is hot | `ThermalGovernor.kt`, `core/frame_thinner.h` |
 | How the picture's motion is measured | `core/global_motion.*`, `core/camera_motion.*`, `core/response_estimator.*` |
 | Following targets | `core/tracker.*` |
 | How the aim moves | `core/aim_controller.*`, `pipeline/aim_loop.*` |
