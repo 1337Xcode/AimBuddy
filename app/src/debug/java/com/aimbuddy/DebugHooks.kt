@@ -29,6 +29,10 @@ object DebugHooks {
     @JvmStatic
     external fun runFingerScript(path: String)
 
+    /** True once the assist knows the display is this size, which it learns a moment after the screen turns. */
+    @JvmStatic
+    external fun knowsDisplaySize(width: Int, height: Int): Boolean
+
     /** Switches the aim assist on or off, as the overlay menu does. */
     @JvmStatic
     external fun enableAssist(on: Boolean)

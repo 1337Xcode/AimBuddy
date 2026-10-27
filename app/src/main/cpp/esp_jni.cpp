@@ -397,6 +397,12 @@ JNIEXPORT jboolean JNICALL Java_com_aimbuddy_DebugHooks_writeTrace(JNIEnv* env, 
     return aim && motion ? JNI_TRUE : JNI_FALSE;
 }
 
+/** @brief True once the assist knows the display is this size, which it learns a moment after the screen turns. */
+JNIEXPORT jboolean JNICALL Java_com_aimbuddy_DebugHooks_knowsDisplaySize(JNIEnv* /* env */, jclass /* clazz */, jint width, jint height) {
+    const aimbuddy::CaptureGeometry geometry = g_pipeline.capture().geometry();
+    return geometry.screenWidth == width && geometry.screenHeight == height ? JNI_TRUE : JNI_FALSE;
+}
+
 /** @brief Switches the aim assist on or off, as the overlay menu does. */
 JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_enableAssist(JNIEnv* /* env */, jclass /* clazz */, jboolean on) {
     Settings settings = g_settingsStore.get();
