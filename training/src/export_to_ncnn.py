@@ -18,13 +18,24 @@ except ImportError:
 
 
 def write_model_description(path: Path, input_size: int) -> None:
-    """Writes the model.json the app and the model store read, unless one is already there.
+    """Writes the model.json the app and the model store read, or brings an existing one up to date.
 
     The pipeline trains one class (an enemy), so the description says so. The title, description and
     author are for the person who publishes the model: the store refuses a model without an author.
+    An existing file keeps everything its author wrote, except the input size, which is a fact about
+    the export that was just made.
     """
     if path.exists():
-        print(f"Kept the existing {path.name}; raise its version if the model's files changed")
+        try:
+            description = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError as error:
+            raise SystemExit(f"ERROR: {path} is not valid JSON ({error}). Fix it or delete it, then export again.")
+        if description.get("inputSize") != input_size:
+            description["inputSize"] = input_size
+            path.write_text(json.dumps(description, indent=2) + "\n", encoding="utf-8")
+            print(f"Set inputSize in {path.name} to {input_size}; raise its version, the model's files changed")
+        else:
+            print(f"Kept the existing {path.name}; raise its version if the model's files changed")
         return
     description = {
         "title": "Custom model",

@@ -286,7 +286,7 @@ flowchart LR
     D --> E["model.param + model.bin + model.json"]
 ```
 
-The export writes its files to `training/outputs/export/` and leaves the app alone. `model.json` is only written when there is none yet, so the edits you make to it survive the next export.
+The export writes its files to `training/outputs/export/` and leaves the app alone. An existing `model.json` keeps what you wrote in it, except `inputSize`, which follows the export.
 
 ### Using the model
 
