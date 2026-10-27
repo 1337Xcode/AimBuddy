@@ -40,6 +40,22 @@ struct FalseBox {
  */
 class SimulatedGame {
 public:
+    /**
+     * A person steering the camera with their thumb towards the target. What they see is a little
+     * old, they pull the camera towards the target in proportion to how far off it looks, and, like
+     * anyone following something that moves, they match part of its speed. Off unless `aims` is set.
+     */
+    struct Human {
+        bool aims = false;
+        float reactionMs = 200.0f;     ///< From the picture to the thumb.
+        float pullPerSecond = 4.0f;    ///< Turn speed asked for per pixel of error seen, in 1/s.
+        float followShare = 0.7f;      ///< Share of the target's own speed that is matched.
+        float maxSpeedPxS = 1500.0f;   ///< The fastest the thumb can turn the scene.
+        float smoothingMs = 70.0f;     ///< The thumb's inertia: how long it takes to get to a speed asked for.
+        float tremorPxS = 60.0f;       ///< Std. dev. of the noise on the turn speed.
+        float deadbandPx = 8.0f;       ///< Errors seen below this are left alone.
+    };
+
     struct Truth {
         float gain = 1.5f;            ///< How much the scene really slides per finger pixel.
         float delayS = 0.05f;         ///< How long the game really takes to show a finger move.
@@ -60,6 +76,7 @@ public:
         int cameraLatencyMs = 8;                                 ///< From such a frame to its measurement being ready.
         int cameraJitterMs = 0;                                  ///< Such frames come this much earlier or later than their period says, evenly.
         float unreadableRate = 0.0f;                             ///< Share of those measurements that could not be made (reported with no quality).
+        Human human{};                                           ///< A person steering the camera by hand towards the target.
     };
 
     /// What the controller believes before it has measured anything.
@@ -245,6 +262,9 @@ private:
                 cameraY_ += m.dy / static_cast<float>(truth_.gameFrameMs);
             }
         }
+        if (truth_.human.aims) {
+            steerByHand(nowNs);
+        }
         // The player turns the camera too, by hand, a millisecond at a time.
         if (truth_.playerTurn) {
             float speedX = 0.0f;
@@ -253,6 +273,42 @@ private:
             cameraX_ += speedX * 0.001f;
             cameraY_ += speedY * 0.001f;
         }
+    }
+
+    /// The person's thumb for this millisecond: pulls the scene according to the error they saw a moment ago.
+    void steerByHand(int64_t nowNs) {
+        const Human& human = truth_.human;
+        float x, y;
+        aimPointOnScreen(&x, &y);
+        seenErrors_.push_back({x - kCrosshairX, y - kCrosshairY});
+        const size_t lag = static_cast<size_t>(human.reactionMs);
+        if (seenErrors_.size() <= lag) {
+            return;
+        }
+        const std::pair<float, float> seen = seenErrors_[seenErrors_.size() - 1 - lag];
+
+        // The target's own speed as it was a reaction time ago.
+        const float seenAtS = static_cast<float>(nowNs - kStartMs * kMs) * 1e-9f - human.reactionMs * 1e-3f;
+        float x0, y0, x1, y1;
+        path_(seenAtS, &x0, &y0);
+        path_(seenAtS + 0.001f, &x1, &y1);
+        float wantedX = -human.followShare * (x1 - x0) / 0.001f;
+        float wantedY = -human.followShare * (y1 - y0) / 0.001f;
+        if (std::fabs(seen.first) > human.deadbandPx) {
+            wantedX -= human.pullPerSecond * seen.first;
+        }
+        if (std::fabs(seen.second) > human.deadbandPx) {
+            wantedY -= human.pullPerSecond * seen.second;
+        }
+        wantedX += static_cast<float>(random_.gaussian(human.tremorPxS));
+        wantedY += static_cast<float>(random_.gaussian(human.tremorPxS));
+        wantedX = std::clamp(wantedX, -human.maxSpeedPxS, human.maxSpeedPxS);
+        wantedY = std::clamp(wantedY, -human.maxSpeedPxS, human.maxSpeedPxS);
+        const float follow = 1.0f / std::max(human.smoothingMs, 1.0f);
+        handSpeedX_ += (wantedX - handSpeedX_) * follow;
+        handSpeedY_ += (wantedY - handSpeedY_) * follow;
+        cameraX_ += handSpeedX_ * 0.001f;
+        cameraY_ += handSpeedY_ * 0.001f;
     }
 
     void captureFrame(int64_t nowNs) {
@@ -381,6 +437,9 @@ private:
     std::vector<PendingMotion> pending_;
     std::vector<PendingFrame> queue_;
     std::vector<PendingFrame> cameraQueue_;
+    std::vector<std::pair<float, float>> seenErrors_;
+    float handSpeedX_ = 0.0f;
+    float handSpeedY_ = 0.0f;
     int64_t nextCameraMs_ = 0;
     int64_t lastCameraFrameNs_ = 0;
     float lastCameraFrameX_ = 0, lastCameraFrameY_ = 0;

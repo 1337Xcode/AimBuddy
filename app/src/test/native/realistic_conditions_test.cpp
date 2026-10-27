@@ -159,3 +159,28 @@ TEST(the_camera_is_calibrated_while_the_player_turns_it_by_hand) {
         CHECK(game.camera().confidence() > 0.6f);
     }
 }
+
+TEST(the_assist_helps_a_person_steering_by_hand_and_never_makes_their_aim_worse) {
+    // The person turns the camera towards the target with their thumb: what they see is 200 ms old, they
+    // pull in proportion to how far off it looks and match most of the target's speed. On their own they
+    // trail a strafing target by about 60 px and a runner by about 20. The assist and the thumb steer the
+    // same camera, and each could fight the other.
+    const SimulatedGame::Path running = [](float t, float* x, float* y) {
+        *x = 1100.0f + 300.0f * t;
+        *y = 540.0f;
+    };
+    SimulatedGame::Truth truth = phoneInAMatch();
+    truth.human.aims = true;
+
+    SimulatedGame aloneStill(truth, assistOff(), stationary(170.0f, -40.0f));
+    SimulatedGame bothStill(truth, baseSettings(), stationary(170.0f, -40.0f));
+    CHECK(rmsError(bothStill, 12.0f, 3.0f) < rmsError(aloneStill, 12.0f, 3.0f) * 1.1 + 1.0);
+
+    SimulatedGame aloneStrafing(truth, assistOff(), strafingPath(0.5f, 100.0f));
+    SimulatedGame bothStrafing(truth, baseSettings(), strafingPath(0.5f, 100.0f));
+    CHECK(rmsError(bothStrafing, 12.0f, 3.0f) < rmsError(aloneStrafing, 12.0f, 3.0f) * 0.7);
+
+    SimulatedGame aloneRunning(truth, assistOff(), running);
+    SimulatedGame bothRunning(truth, baseSettings(), running);
+    CHECK(rmsError(bothRunning, 12.0f, 3.0f) < rmsError(aloneRunning, 12.0f, 3.0f) * 0.7);
+}
