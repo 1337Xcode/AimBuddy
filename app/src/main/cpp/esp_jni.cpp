@@ -5,12 +5,14 @@
 #include <android/hardware_buffer_jni.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -58,7 +60,8 @@ aimbuddy::AimLoop g_aimLoop(&g_pipeline.tracker(), &g_pipeline.profile(), &g_tou
 
 JavaVM* g_jvm = nullptr;
 std::string g_settingsPath;
-bool g_settingsLoaded = false;
+std::once_flag g_settingsOnce;
+std::atomic<bool> g_settingsReady{false};   ///< The path is known and the file has been read; set once, after both.
 bool g_modelLoaded = false;
 
 /// Copies a Java string, or returns an empty one for null.
@@ -244,16 +247,16 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* /* vm */, void* /* reserved */) {
  */
 JNIEXPORT void JNICALL
 Java_com_aimbuddy_NativeBridge_loadSettings(JNIEnv* env, jclass /* clazz */, jstring settingsPath) {
-    if (g_settingsLoaded) {
-        return;
-    }
-    g_settingsLoaded = true;
-    g_settingsPath = toStdString(env, settingsPath);
-    if (g_settingsStore.load(g_settingsPath)) {
-        LOGI("Loaded settings from %s", g_settingsPath.c_str());
-    } else {
-        LOGI("Using default settings");
-    }
+    // A second caller waits here until the first has finished, so it never sees half the work.
+    std::call_once(g_settingsOnce, [&] {
+        g_settingsPath = toStdString(env, settingsPath);
+        if (g_settingsStore.load(g_settingsPath)) {
+            LOGI("Loaded settings from %s", g_settingsPath.c_str());
+        } else {
+            LOGI("Using default settings");
+        }
+        g_settingsReady.store(true, std::memory_order_release);
+    });
 }
 
 /// All settings as `name=value` lines, for the app's screens.
@@ -270,7 +273,7 @@ JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_setSetting(JNIEnv* env, jc
 
 /// Writes the settings to their file now, if anything changed. The overlay saves them while it runs; this is for edits made in the app while it does not.
 JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_saveSettings(JNIEnv* /* env */, jclass /* clazz */) {
-    if (!g_settingsPath.empty() && !g_settingsStore.saveIfChanged(g_settingsPath)) {
+    if (g_settingsReady.load(std::memory_order_acquire) && !g_settingsStore.saveIfChanged(g_settingsPath)) {
         LOGE("Failed to save the settings");
     }
 }
@@ -440,7 +443,7 @@ JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_shutdown(JNIEnv* /* env */
     g_aimLoop.stop();
     g_pipeline.stop();
     g_touchLink.disconnect();
-    if (!g_settingsPath.empty() && !g_settingsStore.saveIfChanged(g_settingsPath)) {
+    if (g_settingsReady.load(std::memory_order_acquire) && !g_settingsStore.saveIfChanged(g_settingsPath)) {
         LOGE("Failed to save the settings");
     }
     LOGI("Native shutdown complete");
