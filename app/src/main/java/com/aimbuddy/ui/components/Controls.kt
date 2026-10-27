@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,10 +36,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.aimbuddy.ui.theme.AppTheme
 import com.aimbuddy.ui.theme.Space
@@ -50,7 +53,8 @@ fun SwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Uni
     ListRow(
         title = title,
         subtitle = subtitle,
-        onClick = { onCheckedChange(!checked) },
+        // The row is the switch for a screen reader: it announces the title, "switch" and on or off.
+        modifier = Modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
         trailing = {
             Switch(
                 checked = checked,
@@ -85,7 +89,8 @@ fun SliderRow(
             .fillMaxWidth()
             .padding(horizontal = Space.l, vertical = Space.s),
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // The slider below carries the title and the value for a screen reader, so this line is only drawn.
+        Row(modifier = Modifier.fillMaxWidth().clearAndSetSemantics { }, verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
@@ -104,6 +109,10 @@ fun SliderRow(
         Slider(
             value = value,
             onValueChange = onValueChange,
+            modifier = Modifier.semantics {
+                contentDescription = title
+                stateDescription = valueText
+            },
             valueRange = range,
             steps = steps,
             colors = colors,
