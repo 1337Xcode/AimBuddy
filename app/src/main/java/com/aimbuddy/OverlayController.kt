@@ -250,6 +250,8 @@ class OverlayController(
             contentDescription = context.getString(R.string.overlay_button_description)
             // Invisible, not gone, in streamer mode: it still takes touches.
             alpha = if (streamerMode) 0f else 1f
+            // A tap on a stream must not click out loud.
+            isSoundEffectsEnabled = false
         }
         val params = WindowManager.LayoutParams(
             sizePx, sizePx, overlayType(),
@@ -262,7 +264,13 @@ class OverlayController(
             x = iconX
             y = iconY
         }
-        view.setOnTouchListener { _, event -> onIconTouch(event, params) }
+        view.setOnTouchListener { touched, event -> onIconTouch(touched, event, params) }
+        // Touch exploration, switch access and voice control press the button without touches: they come through these two.
+        view.setOnClickListener { toggleMenu() }
+        view.setOnLongClickListener {
+            onStopRequested()
+            true
+        }
         windowManager.addView(view, params)
         icon = view
         iconParams = params
@@ -277,7 +285,7 @@ class OverlayController(
         iconParams = null
     }
 
-    private fun onIconTouch(event: MotionEvent, params: WindowManager.LayoutParams): Boolean {
+    private fun onIconTouch(view: View, event: MotionEvent, params: WindowManager.LayoutParams): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downRawX = event.rawX
@@ -307,7 +315,7 @@ class OverlayController(
             MotionEvent.ACTION_UP -> {
                 handler.removeCallbacks(holdToStop)
                 if (!moved && !held) {
-                    toggleMenu()
+                    view.performClick()
                 }
             }
             MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(holdToStop)

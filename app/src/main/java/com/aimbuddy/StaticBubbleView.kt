@@ -35,6 +35,9 @@ class StaticBubbleView(context: Context) : View(context) {
         color = EDGE_COLOR
     }
 
+    // A tap makes OverlayController call this, and so does an accessibility service pressing the button.
+    override fun performClick(): Boolean = super.performClick()
+
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         val shader = BitmapShader(noise, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
         shader.setLocalMatrix(Matrix().apply { setScale(width / GRAINS.toFloat(), height / GRAINS.toFloat()) })
