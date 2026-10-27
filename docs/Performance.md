@@ -1,162 +1,67 @@
-# Performance Guide
+# Performance
 
-How to measure, evaluate, and improve AimBuddy runtime performance.
+What AimBuddy costs a phone, how to read the numbers it shows, and what to do when it is too much.
 
-## Pipeline Architecture
+## Where the time goes
 
-```mermaid
-flowchart LR
-    A["Capture (ImageReader, 1280x720 RGBA)"] --> B["Ring Buffer (4 slots, SPSC)"]
-    B --> C["Drain to Latest"]
-    C --> D["Center Crop (adaptive 224-320)"]
-    D --> E["Resize to 256, NCNN Vulkan FP16"]
-    E --> F["Decode + NMS (IoU 0.45)"]
-    F --> G["Target Tracker (DeepSORT-style)"]
-    G --> H["Aim Controller (event-driven CV)"]
-    H --> I["Touch Injection (uinput or Shizuku)"]
-    G --> J["ESP Overlay (BoxSmoother)"]
-    J --> K["ImGui Render (60-90 FPS cap)"]
-```
+| Stage | What it costs | What you can do about it |
+|-------|---------------|--------------------------|
+| Capture | The system draws a second copy of the screen, at most 1600 pixels on the long edge. Only a small square around the crosshair is copied out of each frame. | Nothing in AimBuddy. A lower game frame rate or lower game graphics frees the GPU for it. |
+| Detection | One run of the model on that square for every frame it can keep up with. This is the biggest cost. | A lighter model, if one is listed under Models. The CPU or the GPU is chosen for you, see below. |
+| Camera motion | Both pictures are reduced to 64 by 64 grey values and compared. Small. | Nothing. |
+| Tracking and aim | Small next to the detector. | Nothing. |
+| Overlay | Boxes and text drawn with ImGui, at most 60 frames a second (90 while the menu is open). Streamer mode draws nothing. | Turn off what you do not need: labels, lines, count. |
 
-## Performance Targets
+## A slow phone drops frames, it does not fall behind
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Inference cycle | < 8 ms | kTargetCycleMs in inference loop |
-| End-to-end latency | < 20 ms | Capture timestamp to detection output |
-| Aim loop rate | 60 Hz | Configurable via aimbotFps (30 to 120) |
-| Overlay frame rate | 60 FPS | GLSurfaceView render rate |
-| Frame drops (push) | 0 | Ring buffer should absorb capture bursts |
-| Memory usage | < 100 MB | Includes NCNN model and buffers |
+The capture hands each frame to the detector through a mailbox that keeps only the newest one. If the detector is still busy when the next frame arrives, the older frame is replaced. The targets AimBuddy reports are therefore never older than one detection, whatever the phone's speed, and a slow phone sees fewer updates a second instead of a growing delay.
 
-## Critical Runtime Paths
+## CPU or GPU
 
-These paths run every frame and must avoid allocations, locks, and unnecessary work:
+When the assist starts, the model is timed on the CPU and on the GPU (Vulkan), three warm-up runs and twelve timed ones each, and the median counts. The GPU is used only if it takes less than 80% of the CPU's time, because the game needs the GPU too. A phone without a working Vulkan driver uses the CPU.
 
-1. **Inference loop** (`esp_jni.cpp: inferenceLoop`): Frame pop, drain, YOLO detect, result copy, aimbot update.
-2. **Target tracker** (`target_tracker.cpp: update`): Detection-to-track association, velocity estimation, track lifecycle.
-3. **Aim control** (`aimbot_controller.cpp: aimLoop`): Target selection, filter reads, movement calculation, touch injection.
-4. **Overlay render** (`imgui_menu.cpp: nativeTick`): Detection snapshot, box smoothing, ImGui draw submission.
+On the CPU the model runs on at most three of the fast cores, and the little cores stay free for the game and the system. Idle worker threads sleep after one millisecond instead of spinning, which keeps the phone cooler between frames.
 
-## Key Optimizations
+## Reading the performance readout
 
-### Triple Buffering
+Switch it on under Settings, Overlay, Performance readout. It sits at the top right of the screen and reads like `42/s  21 ms  GPU`.
 
-ImageReader uses 3 buffers (triple buffering) to prevent capture stalls:
-- With 2 buffers, the producer blocks when both are in use (one being captured, one being consumed by inference), limiting throughput to ~30 FPS.
-- With 3 buffers, the capture can always write while inference consumes, achieving 60+ FPS.
+| Part | Meaning |
+|------|---------|
+| `42/s` | Detections finished each second. The rate at which the screen updates is the ceiling, because a picture that did not change is not captured again. |
+| `21 ms` | The age of a result when it is ready, counted from the moment its frame was on screen. This is the delay the aim has to make up for. Lower is better. |
+| `GPU` | Which processor runs the model. |
 
-### Adaptive Crop Sizing
+If the rate is low or the age is high, the detector is the bottleneck. Close other apps, lower the game's graphics, or try a lighter model. The detection area has little effect on speed: the model always reads the same number of pixels, so a smaller area only makes targets larger in its eyes, and the area is never smaller than the model's input or larger than 1.75 times it.
 
-The inference loop dynamically adjusts the center crop size:
+## Reading the log
 
-| Condition | Action |
-|-----------|--------|
-| EMA inference > 8ms or end-to-end > 20ms | Shrink crop by 16px (min 224) |
-| Backlog frames drained > 0 | Shrink crop by 16px |
-| Both pressure signals clear | Grow crop by 8px (up to FOV-based target) |
+Debug builds log what the pipeline is doing every five seconds. Release builds log errors only.
 
-This automatically adapts to different GPU speeds. Faster GPUs get larger crop areas for better detection coverage.
-
-Crop ceiling is `Config::CROP_SIZE = 320` (was 480). The smaller ceiling cuts resize work (320->256 = 1.25x vs 480->256 = 1.875x) and matches the FOV the runtime model actually resolves well at imgsz=256.
-
-### Zero-Allocation Hot Paths
-
-- `DetectionResult` uses `FixedArray` (stack-allocated, max 50 detections).
-- `TargetArray` uses `FixedArray` (stack-allocated, max 50 tracks).
-- `FrameBuffer` is a lock-free SPSC ring buffer with no heap allocation (`Config::RING_BUFFER_CAPACITY = 4`).
-- NCNN input mat is pre-allocated and reused.
-
-### Pipeline memory budget
-
-| Component | Approx. peak | Notes |
-|-----------|--------------|-------|
-| AHardwareBuffer ring (4 x 1280x720x4) | ~14 MB | Was ~28 MB at capacity 8. |
-| NCNN model + workspace (yolo26n FP16) | ~6-10 MB | Depends on Vulkan workspace pool. |
-| Render-side smoothing & detection state | < 1 MB | Stack/FixedArray, zero alloc per frame. |
-| ImGui font atlas | 1-6 MB | Up to ~20 MB if a full CJK font is bundled. |
-| **Total runtime** | **~25-35 MB** | Excluding OS/GPU driver overhead. |
-
-### Overlay render cap
-
-`nativeTick` in `renderer/imgui_menu.cpp` caps overlay redraw at 60 FPS when the menu is hidden, 90 FPS when the menu is open. On 120/144 Hz panels this prevents the GL surface from redrawing twice per inference frame for no perceptual gain.
-
-### NCNN Vulkan Configuration
-
-Optimized for Adreno 660 (Snapdragon 888):
-
-| Setting | Value | Impact |
-|---------|-------|--------|
-| FP16 packed | Enabled | 2x throughput on Adreno FP16 ALUs |
-| FP16 storage | Enabled | Halved memory bandwidth |
-| FP16 arithmetic | Enabled | Native FP16 compute |
-| Packing layout | Enabled | Better GPU register utilization |
-| Light mode | Enabled | Reduced memory footprint |
-| Vulkan compute | Enabled | Uses GPU compute shaders (`NCNN_USE_VULKAN_COMPUTE`) |
-| CPU threads fallback | 4 | Fallback path (`NCNN_NUM_THREADS`) |
-
-### Thread Affinity
-
-| Thread | Core | CPU |
-|--------|------|-----|
-| Inference | 7 | Cortex-X1 (big core) |
-| Render | GLSurfaceView managed | Constant exists (`RENDERING_THREAD_CPU_AFFINITY = 6`), not forced by current startup path |
-| Aim loop | OS-scheduled | Any available |
-| Capture | OS-scheduled (Handler thread) | Any available |
-
-## Measuring Performance
-
-### Built-in Telemetry
-
-The inference loop logs pipeline stats every 120 frames:
-
-```
-Pipeline stats: avg infer=X.XXms avg e2e=X.XXms ema infer=X.XXms ema e2e=X.XXms crop=XXX drained=X dropped_push=X
-```
-
-Filter in logcat:
-
-```
+```sh
 adb logcat -s AimBuddy_Native:I
 ```
 
-### Key Counters
+| Line | Meaning |
+|------|---------|
+| `Backend: ...` | Once, at start: the choice between CPU and GPU, with the time each took. |
+| `Pipeline: ...` | Detections a second, inference time, frame age, how many frames were replaced by newer ones, and the processor in use. |
+| `Last frame: ...` | How many targets the last frame had and the best score. |
+| `Camera: ...` | How far the picture slid per frame on average, how well that could be measured, and what the assist has learned about the game's response. |
 
-| Counter | Meaning | Healthy Value |
-|---------|---------|---------------|
-| avg infer | Mean inference time per frame | < 10ms |
-| avg e2e | Mean capture-to-result latency | < 20ms |
-| crop | Current adaptive crop size | 224 to 320 |
-| drained | Frames skipped to catch up | < 2 per window |
-| dropped_push | Frames dropped because ring buffer was full | 0 |
+## Memory
 
-### ImGui Info Tab
+The memory AimBuddy holds follows from a few fixed buffers: two capture buffers of the screen's size (at most 1600 pixels on the long edge, 4 bytes a pixel), three slots for the square around the crosshair (at most 448 by 448 pixels for the standard model), the model itself (about 10 MB for AimBuddy General) and the font atlas of the menu.
 
-The in-app Info tab shows:
-- Overlay FPS (render rate)
-- Inference time (ms)
-- Detection count
-- Screen resolution
+## Changing performance code
 
-## Performance Change Policy
+1. Measure before and after, with the readout on the same phone, in the same scene.
+2. Reject a speed gain that costs tracking quality or steadiness. The tests in `app/src/test/native` show whether the aim still settles.
+3. Keep logging out of the hot loops. The detection loop and the aim loop run every frame.
+4. Check on at least one slow phone and one fast one.
 
-1. Every optimization requires before and after measurements.
-2. Reject speed improvements that reduce tracking quality or stability.
-3. Avoid visual complexity additions unless measured benefit is clear.
-4. Keep logs out of hot loops in release builds (NDEBUG suppresses all but errors).
-5. Test on at least one mid-range and one high-end arm64 device.
-
-## Build Check
-
-```powershell
-./gradlew.bat clean assembleDebug
-```
-
-Run with on-device logcat profiling to validate runtime impact.
-
-## Related Documentation
+## Related
 
 - [Architecture](Architecture.md)
-- [Settings Guide](SettingsGuide.md)
-- [Training](Training.md)
+- [Settings guide](SettingsGuide.md)
 - [Troubleshooting](Troubleshooting.md)

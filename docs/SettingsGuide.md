@@ -23,7 +23,7 @@ The guides for setting up (the crosshair, the detection square and the reach cir
 | Setting | Default | What it does |
 |---------|---------|--------------|
 | Detection confidence | 50% | The lowest score that starts a target, 10% to 95%. Lower finds more targets and more false ones. |
-| Detection area | 200 px | The radius around the crosshair that the detector looks at, 100 to 650 px. A smaller area is faster; targets outside it are not seen. |
+| Detection area | 200 px | The radius around the crosshair that the detector looks at, 100 to 650 px. A smaller area makes targets look larger to the detector, so far ones are easier to find; targets outside it are not seen. The square it makes is never smaller than the model's input or larger than 1.75 times it, so the ends of the slider can look alike. |
 
 ## Aim assist
 
@@ -76,7 +76,7 @@ One file, `settings.cfg`, in the app's private storage, with a `name=value` line
 
 ## Tuning
 
-1. Start with the defaults and use the performance readout. If detections per second are low, make the detection area smaller before anything else.
+1. Start with the defaults and use the performance readout. If detections per second are low, read [Performance](Performance.md) first: the detection area does not change how fast the detector runs.
 2. Raise the confidence if boxes appear on things that are not enemies; lower it if enemies are missed.
 3. Pick the target pick and aim point that suit the game, then set the strength to taste.
 4. Leave calibration on. Turn it off only if the aim keeps missing after a minute of aiming.
