@@ -29,6 +29,15 @@ struct SceneShift {
  * Statistics fade slowly, so the estimate follows a change of scope or sensitivity within a few
  * seconds. Quiet moments, when the finger did not move, teach nothing and change nothing.
  *
+ * Two fits are kept from the same measurements. The straight one relates each slide to the finger
+ * travel that could have caused it, which is exact while the finger is the only thing turning the
+ * camera. When the player turns the camera too, and the assist's finger mostly reacts to that
+ * turning, it ties slide and finger together by more than the camera's response and misses both the
+ * gain and the delay. The second fit relates how the slide changes from one measurement to the next
+ * to how the finger travel changes, which drops a smooth turn out and keeps the camera's response.
+ * It is the less exact of the two when nobody else turns the camera, so it is used only while the
+ * straight fit cannot pin its delay down.
+ *
  * Not thread safe: callers lock.
  */
 class ResponseEstimator {
@@ -40,7 +49,7 @@ public:
         bool hasGainY = false;    ///< The finger moved far enough up and down to say.
         float delayS = 0.0f;
         bool hasDelay = false;    ///< The fit clearly prefers one delay over its neighbours.
-        float confidence = 0.0f;  ///< 0 to 1: how much of the measured slide the fit explains, and how exactly the gain is pinned down.
+        float confidence = 0.0f;  ///< 0 to 1: how exactly the gain is pinned down, and how many measurements stand behind it.
         bool valid = false;       ///< Something can be said about the gain.
     };
 
@@ -71,11 +80,35 @@ private:
         double weight = 0.0;                                  ///< How many measurements these sums stand for.
     };
 
-    void fade(Axis& axis, double keep) const;
+    /// The sums of one fit, for each axis.
+    struct Statistics {
+        Axis x;
+        Axis y;
+    };
+
+    /// The rates (per second) of the slide that was seen and of the finger travel that would reach it for each delay, of the sample before this one.
+    struct Rates {
+        bool valid = false;
+        int64_t toNs = 0;
+        float quality = 0.0f;
+        double slideX = 0.0;
+        double slideY = 0.0;
+        std::array<double, kDelayCount> fingerX{};
+        std::array<double, kDelayCount> fingerY{};
+    };
+
+    using FingerRates = std::array<double, kDelayCount>;
+
+    /// Fades what was gathered, then adds one pair of slide and finger rates (or of changes in them) of the given weight.
+    static void accumulate(Statistics& statistics, double slideX, double slideY, const FingerRates& fingerX, const FingerRates& fingerY, double weight);
+
+    /// What one fit says.
+    Estimate fit(const Statistics& statistics) const;
 
     bool invertY_ = false;
-    Axis x_;
-    Axis y_;
+    Statistics straight_;   ///< Each slide against the finger travel that could have caused it.
+    Statistics changes_;    ///< How each slide differs from the one before against how the finger travel differs.
+    Rates previous_;
     int samples_ = 0;
 };
 

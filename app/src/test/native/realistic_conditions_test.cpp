@@ -132,3 +132,30 @@ TEST(the_box_of_a_strafing_target_keeps_up_with_it) {
     CHECK(drawn.errorRms < 20.0);
     CHECK(drawn.missingShare < 0.01);
 }
+
+TEST(the_camera_is_calibrated_while_the_player_turns_it_by_hand) {
+    // The player swings the camera, up to 700 px/s, and the assist's finger mostly reacts to that swing, so
+    // slide and finger travel move together for a reason that has nothing to do with the camera's response.
+    // A straight fit of one on the other found the wrong gain and the wrong delay, with a confidence of
+    // about a third, and the assist stayed as timid as it is for a camera it knows nothing about. The camera
+    // is looked at on frames that come a little early or late, and one in seven cannot be read.
+    for (float gain : {1.0f, 2.5f, 5.0f}) {
+        SimulatedGame::Truth truth = phoneInAMatch();
+        truth.gain = gain;
+        truth.delayS = 0.09f;
+        truth.measureNoisePx = 1.5f;
+        truth.cameraJitterMs = 12;
+        truth.unreadableRate = 0.15f;
+        truth.playerTurn = [](float t, float* speedX, float* speedY) {
+            *speedX = 500.0f * std::sin(6.283185f * 0.7f * t) + 200.0f * std::sin(6.283185f * 1.9f * t);
+            *speedY = 120.0f * std::sin(6.283185f * 0.4f * t);
+        };
+        SimulatedGame game(truth, baseSettings(), strafingPath(0.5f, 100.0f));
+        game.run(12.0f, [](float, float, float) {});
+        const CameraResponse response = game.camera().response();
+        CHECK_NEAR(response.gainX, gain, 0.15 * gain);
+        CHECK_NEAR(response.gainY, gain, 0.15 * gain);
+        CHECK_NEAR(response.delayS, 0.09, 0.02);
+        CHECK(game.camera().confidence() > 0.6f);
+    }
+}

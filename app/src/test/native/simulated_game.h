@@ -58,6 +58,8 @@ public:
         float strayRate = 0.0f;                                  ///< Chance, per frame, of one more false box that appears in that frame only.
         int cameraPeriodMs = 0;                                  ///< Time between measurements of the scene's slide on their own; 0 measures it with the detector's frames.
         int cameraLatencyMs = 8;                                 ///< From such a frame to its measurement being ready.
+        int cameraJitterMs = 0;                                  ///< Such frames come this much earlier or later than their period says, evenly.
+        float unreadableRate = 0.0f;                             ///< Share of those measurements that could not be made (reported with no quality).
     };
 
     /// What the controller believes before it has measured anything.
@@ -89,8 +91,13 @@ public:
             if (ms % truth_.detectionPeriodMs == 0) {
                 captureFrame(nowNs);
             }
-            if (truth_.cameraPeriodMs > 0 && ms % truth_.cameraPeriodMs == 0) {
+            if (truth_.cameraPeriodMs > 0 && ms >= nextCameraMs_) {
                 captureCameraFrame(nowNs);
+                int gapMs = truth_.cameraPeriodMs;
+                if (truth_.cameraJitterMs > 0) {
+                    gapMs += static_cast<int>(std::lround(random_.uniform() * 2.0 * truth_.cameraJitterMs - truth_.cameraJitterMs));
+                }
+                nextCameraMs_ = ms + std::max(gapMs, 4);
             }
             deliverCameraMeasurements(nowNs);
             deliverDetections(nowNs);
@@ -314,7 +321,8 @@ private:
             if (lastCameraFrameNs_ > 0) {
                 const float slideX = frame.cameraX - lastCameraFrameX_ + static_cast<float>(random_.gaussian(truth_.measureNoisePx));
                 const float slideY = frame.cameraY - lastCameraFrameY_ + static_cast<float>(random_.gaussian(truth_.measureNoisePx));
-                motion_.addMeasurement(lastCameraFrameNs_, frame.captureNs, slideX, slideY, truth_.measureCamera ? 1.0f : 0.0f);
+                const bool unreadable = truth_.unreadableRate > 0.0f && random_.uniform() < truth_.unreadableRate;
+                motion_.addMeasurement(lastCameraFrameNs_, frame.captureNs, slideX, slideY, truth_.measureCamera && !unreadable ? 1.0f : 0.0f);
             }
             lastCameraFrameNs_ = frame.captureNs;
             lastCameraFrameX_ = frame.cameraX;
@@ -373,6 +381,7 @@ private:
     std::vector<PendingMotion> pending_;
     std::vector<PendingFrame> queue_;
     std::vector<PendingFrame> cameraQueue_;
+    int64_t nextCameraMs_ = 0;
     int64_t lastCameraFrameNs_ = 0;
     float lastCameraFrameX_ = 0, lastCameraFrameY_ = 0;
     float assistTravelPx_ = 0;
