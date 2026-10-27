@@ -219,3 +219,75 @@ TEST(global_motion_learns_to_ignore_large_panels_that_stay_put) {
     CHECK_NEAR(result.dx, 15.0, 1.2);
     CHECK_NEAR(result.dy, 0.0, 1.2);
 }
+
+namespace {
+
+/// A picture of the kind the sky and open ground make: a gradient sky over flat ground, and a few
+/// plain shapes with soft edges. There is little to follow, and a shift of any size is still exact.
+class SparseScene {
+public:
+    explicit SparseScene(uint32_t seed, int shapes) {
+        testing::Random random(seed);
+        for (int i = 0; i < shapes; ++i) {
+            shapes_.push_back({static_cast<float>(20.0 + random.uniform() * 220.0), static_cast<float>(40.0 + random.uniform() * 150.0),
+                               static_cast<float>(8.0 + random.uniform() * 12.0), static_cast<float>(8.0 + random.uniform() * 12.0),
+                               static_cast<float>(110.0 + random.uniform() * 60.0)});
+        }
+    }
+
+    float at(float x, float y) const {
+        constexpr float kHorizon = 128.0f;
+        float value = y < kHorizon ? 200.0f - 0.25f * y : 70.0f;
+        for (const Shape& shape : shapes_) {
+            const float inside = edge(shape.halfWidth - std::fabs(x - shape.x)) * edge(shape.halfHeight - std::fabs(y - shape.y));
+            value += inside * (shape.tone - value);
+        }
+        return value;
+    }
+
+private:
+    struct Shape {
+        float x, y, halfWidth, halfHeight, tone;
+    };
+
+    /// 0 outside, 1 inside, with a soft edge about two pixels wide.
+    static float edge(float distanceInside) { return std::clamp(0.5f + distanceInside / 2.0f, 0.0f, 1.0f); }
+
+    std::vector<Shape> shapes_;
+};
+
+Frame renderSparse(const SparseScene& scene, float shiftX, float shiftY) {
+    Frame frame;
+    for (int y = 0; y < kSide; ++y) {
+        for (int x = 0; x < kSide; ++x) {
+            frame.set(x, y, scene.at(static_cast<float>(x) - shiftX, static_cast<float>(y) - shiftY));
+        }
+    }
+    return frame;
+}
+
+}  // namespace
+
+TEST(global_motion_follows_a_mostly_flat_picture) {
+    // Two shapes under a horizon: the horizon says nothing about a sideways slide, so the whole
+    // answer rests on a few edges. Most slides must still be found, and none may be wrong with confidence.
+    for (const uint32_t seed : {2u, 3u, 4u}) {
+        const SparseScene scene(seed, 2);
+        const Frame first = renderSparse(scene, 0.0f, 0.0f);
+        int found = 0;
+        for (const float shift : {-45.0f, -30.0f, -12.0f, 6.0f, 20.0f, 36.0f}) {
+            const GlobalShift result = measureShift(first, renderSparse(scene, shift, 0.0f));
+            const bool right = std::fabs(result.dx - shift) <= 1.5f && std::fabs(result.dy) <= 1.5f;
+            found += (right && result.quality > 0.45f) ? 1 : 0;
+            CHECK(right || result.quality <= 0.45f);
+        }
+        CHECK(found >= 5);
+    }
+}
+
+TEST(global_motion_does_not_call_a_sliding_flat_picture_unchanged) {
+    const SparseScene scene(2, 2);
+    const GlobalShift result = measureShift(renderSparse(scene, 0.0f, 0.0f), renderSparse(scene, 6.0f, 0.0f));
+    CHECK(!result.unchanged);
+    CHECK_NEAR(result.dx, 6.0, 1.0);
+}

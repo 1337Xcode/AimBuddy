@@ -51,6 +51,15 @@ public:
      */
     GlobalShift push(const uint8_t* rgba, int side, int strideBytes);
 
+    /**
+     * Like push(), for a frame that is already reduced to the grey picture (kGrid by kGrid values,
+     * as lastGrey() returns them). It lets a recorded run be replayed through the estimator.
+     */
+    GlobalShift pushGrey(const float* grey);
+
+    /// The reduced picture of the frame pushed last.
+    const std::array<float, kGrid * kGrid>& lastGrey() const { return previousGrey_; }
+
     /// Forgets the previous frame.
     void reset();
 
@@ -68,11 +77,13 @@ private:
     };
 
     void reduceToGrey(const uint8_t* rgba, int side, int strideBytes);
+    GlobalShift compareWithPrevious(int side);
     void transform(Grid& grid, bool inverse) const;
     void fft1d(Complex* data, int stride, bool inverse) const;
     void learnStaticPixels();
     int findCandidates(Candidate* candidates);
-    float refineShift(float* shiftX, float* shiftY, int steps) const;
+    float refineShift(float* shiftX, float* shiftY, int steps, float frameTextured) const;
+    float measureFrameTexture() const;
     void keepUnexplainedPixels(float shiftX, float shiftY);
 
     std::array<float, kGrid * kGrid> grey_{};         ///< The current frame, reduced.

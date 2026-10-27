@@ -18,12 +18,17 @@ constexpr float kWindowTaper = 0.4f;
 /// Standard deviation, in frequency bins, of the low-pass weight applied to the cross-power spectrum.
 constexpr float kLowPassSigma = 12.0f;
 
-/// Frames whose grey values differ by less than this on average (0 to 255) are taken to be the same.
-constexpr float kUnchangedLevel = 0.6f;
+/// A pixel has changed between two frames when its grey value (0 to 255) differs by more than this.
+constexpr float kChangedLevel = 4.0f;
 
-/// When the frames differ by more than this on average the picture has really moved, and the
-/// pixels that did not change are noted as not belonging to the moving scene.
-constexpr float kMotionLevel = 3.0f;
+/// Frames in which fewer than this share of the pixels changed are taken to be the same. Counting
+/// the changed pixels, rather than averaging the difference over all of them, keeps a picture that
+/// is mostly flat (sky, plain ground) from looking unchanged when its few edges slide.
+constexpr float kUnchangedShare = 0.003f;
+
+/// When more than this share of the pixels changed the picture has really moved, and the pixels
+/// that did not change are noted as not belonging to the moving scene.
+constexpr float kMotionShare = 0.012f;
 
 /// A pixel with an edge or texture (a grey step of at least this much per grid pixel) that differs
 /// by less than the second value between two such frames did not move with the scene. Flat pixels
@@ -57,6 +62,24 @@ constexpr float kRejectLevel = 24.0f;
 constexpr float kTextureMinGradient = 3.0f;
 constexpr float kMinAgreement = 0.3f;
 constexpr float kFullAgreement = 0.8f;
+
+/// Share of the picture that must be textured for a match to count at all, and for it to count in full.
+/// With less than the second (a mostly flat picture) the agreement is trusted proportionally less.
+constexpr float kMinTexturedShare = 0.01f;
+constexpr float kFullTexturedShare = 0.05f;
+
+/// A shift is only believed when the textured pixels it can compare (those that stay inside the
+/// picture) are at least this share of all the textured pixels, and at least this many matched.
+constexpr float kMinOverlapShare = 0.25f;
+constexpr float kMinMatchedWeight = 20.0f;
+
+/// Two shifts further apart than this (grid pixels) are different answers.
+constexpr float kDistinctShift = 1.5f;
+
+/// A rival shift that fits nearly as well as the best one makes the answer doubtful: the quality
+/// falls to this share of itself when the rival ties with the best, starting when it is within the range.
+constexpr float kAmbiguousKeep = 0.3f;
+constexpr float kAmbiguityRange = 0.2f;
 
 /// A pixel counts as matched in the next look at the picture when the frames agree to within this many grey levels.
 constexpr float kExplainedDifference = 9.0f;
@@ -296,7 +319,7 @@ int GlobalMotionEstimator::findCandidates(Candidate* candidates) {
     return count;
 }
 
-float GlobalMotionEstimator::refineShift(float* shiftX, float* shiftY, int steps) const {
+float GlobalMotionEstimator::refineShift(float* shiftX, float* shiftY, int steps, float frameTextured) const {
     // Gauss-Newton on the sum of squared differences between the current frame and the previous one
     // moved by the shift, over the pixels that count. A large difference (something moving by
     // itself) counts for less, and beyond a limit for nothing. With no steps it only measures how
@@ -346,7 +369,13 @@ float GlobalMotionEstimator::refineShift(float* shiftX, float* shiftY, int steps
         if (weights < 0.1 * kCells) {
             return 0.0f;   // too little of the picture overlaps to say
         }
-        explained = textured > 0.05 * kCells ? static_cast<float>(matched / textured) : 0.0f;
+        // How well the compared pixels agree, trusted less when the picture as a whole has few edges.
+        // The amount of texture that counts is the picture's, not the part this shift overlaps: a
+        // large slide leaves less to compare, and that must not make the right shift look weak.
+        const float evidence = std::min(1.0f, frameTextured / (kFullTexturedShare * static_cast<float>(kCells)));
+        const bool enough = frameTextured > kMinTexturedShare * kCells && textured >= kMinOverlapShare * frameTextured &&
+                            matched >= kMinMatchedWeight;
+        explained = enough ? static_cast<float>(matched / textured * std::sqrt(evidence)) : 0.0f;
         if (step == steps) {
             break;
         }
@@ -366,6 +395,22 @@ float GlobalMotionEstimator::refineShift(float* shiftX, float* shiftY, int steps
     return explained;
 }
 
+/// How much textured picture there is to compare: the weight of the pixels of the current frame that have an edge.
+float GlobalMotionEstimator::measureFrameTexture() const {
+    double textured = 0.0;
+    for (int y = 1; y < kGrid - 1; ++y) {
+        for (int x = 1; x < kGrid - 1; ++x) {
+            const int i = y * kGrid + x;
+            const float gx = 0.5f * (grey_[i + 1] - grey_[i - 1]);
+            const float gy = 0.5f * (grey_[i + kGrid] - grey_[i - kGrid]);
+            if (std::hypot(gx, gy) >= kTextureMinGradient) {
+                textured += weight_[i];
+            }
+        }
+    }
+    return static_cast<float>(textured);
+}
+
 void GlobalMotionEstimator::keepUnexplainedPixels(float shiftX, float shiftY) {
     for (int y = 0; y < kGrid; ++y) {
         for (int x = 0; x < kGrid; ++x) {
@@ -379,19 +424,30 @@ void GlobalMotionEstimator::keepUnexplainedPixels(float shiftX, float shiftY) {
 }
 
 GlobalShift GlobalMotionEstimator::push(const uint8_t* rgba, int side, int strideBytes) {
-    GlobalShift result;
     if (rgba == nullptr || side < kGrid / 2 || strideBytes < side * 4) {
-        return result;
+        return GlobalShift();
     }
     reduceToGrey(rgba, side, strideBytes);
+    return compareWithPrevious(side);
+}
 
+GlobalShift GlobalMotionEstimator::pushGrey(const float* grey) {
+    if (grey == nullptr) {
+        return GlobalShift();
+    }
+    std::copy(grey, grey + kCells, grey_.begin());
+    return compareWithPrevious(kGrid);
+}
+
+/// Measures how far the picture in `grey_` slid compared with `previousGrey_`, then keeps it as the next frame's reference.
+GlobalShift GlobalMotionEstimator::compareWithPrevious(int side) {
+    GlobalShift result;
     const bool comparable = hasPrevious_ && side == previousSide_;
-    double difference = 0.0;
+    int changedPixels = 0;
     if (comparable) {
         for (int i = 0; i < kCells; ++i) {
-            difference += std::fabs(grey_[i] - previousGrey_[i]);
+            changedPixels += std::fabs(grey_[i] - previousGrey_[i]) > kChangedLevel ? 1 : 0;
         }
-        difference /= kCells;
     }
     // Whatever happens next, this frame is the one the next frame is compared with.
     struct Remember {
@@ -406,13 +462,13 @@ GlobalShift GlobalMotionEstimator::push(const uint8_t* rgba, int side, int strid
     if (!comparable) {
         return result;
     }
-    if (difference < kUnchangedLevel) {
+    if (static_cast<float>(changedPixels) < kUnchangedShare * kCells) {
         result.unchanged = true;
         result.quality = 1.0f;
         return result;
     }
     // When the picture as a whole has clearly moved, whatever stayed the same is not part of the scene.
-    if (difference > kMotionLevel) {
+    if (static_cast<float>(changedPixels) > kMotionShare * kCells) {
         learnStaticPixels();
     }
 
@@ -427,17 +483,23 @@ GlobalShift GlobalMotionEstimator::push(const uint8_t* rgba, int side, int strid
     // scene's motion; something moving by itself, or the parts that stay put, explain far less.
     // When even the best explains too little, the pixels it did not explain are looked at again by themselves.
     const float block = static_cast<float>(side) / static_cast<float>(kGrid);
+    const float frameTextured = measureFrameTexture();
     bool found = false;
     float bestX = 0.0f;
     float bestY = 0.0f;
     float bestFit = 0.0f;
+    std::array<Candidate, kMaxCandidates * (kExtraLayers + 1)> tried{};
+    std::array<float, kMaxCandidates * (kExtraLayers + 1)> triedFit{};
+    int triedCount = 0;
     for (int layer = 0; layer <= kExtraLayers; ++layer) {
         Candidate candidates[kMaxCandidates];
         const int count = findCandidates(candidates);
         for (int i = 0; i < count; ++i) {
             float x = candidates[i].x;
             float y = candidates[i].y;
-            const float fit = refineShift(&x, &y, kRefineSteps);
+            const float fit = refineShift(&x, &y, kRefineSteps, frameTextured);
+            tried[triedCount] = {x, y};
+            triedFit[triedCount++] = fit;
             if (fit > bestFit) {
                 bestX = x;
                 bestY = y;
@@ -457,10 +519,19 @@ GlobalShift GlobalMotionEstimator::push(const uint8_t* rgba, int side, int strid
         return result;
     }
 
+    // A different shift that fits almost as well means the picture does not say which is right.
+    float rivalFit = 0.0f;
+    for (int i = 0; i < triedCount; ++i) {
+        if (std::hypot(tried[i].x - bestX, tried[i].y - bestY) > kDistinctShift) {
+            rivalFit = std::max(rivalFit, triedFit[i]);
+        }
+    }
+    const float doubt = std::clamp((rivalFit - (bestFit - kAmbiguityRange)) / kAmbiguityRange, 0.0f, 1.0f);
+
     result.dx = bestX * block;
     result.dy = bestY * block;
     const float fit = std::clamp((bestFit - kMinAgreement) / (kFullAgreement - kMinAgreement), 0.0f, 1.0f);
-    result.quality = fit;
+    result.quality = fit * (1.0f - (1.0f - kAmbiguousKeep) * doubt);
     return result;
 }
 
