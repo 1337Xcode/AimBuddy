@@ -10,7 +10,8 @@ plugins {
 def aimbuddyVersionName = providers.gradleProperty('aimbuddy.versionName').getOrElse('0.0.0-dev')
 def aimbuddyVersionCode = providers.gradleProperty('aimbuddy.versionCode').getOrElse('1').toInteger()
 
-// The default model is copied into the app's assets at build time.
+// The launcher icon is made at build time, and the default model is copied into the app's assets.
+apply from: 'static-icon.gradle'
 apply from: 'bundled-model.gradle'
 
 // ---------------------------------------------------------------------------
