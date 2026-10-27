@@ -75,8 +75,7 @@ class CaptureSession(
         mirror.resize(width, height, densityDpi)
         mirror.surface = newReader.surface
         reader = newReader
-        oldReader?.setOnImageAvailableListener(null, null)
-        oldReader?.close()
+        closeReader(oldReader)
         imageSize = width to height
         Log.i(TAG, "Capture resized to ${width}x$height")
         return imageSize
@@ -88,37 +87,55 @@ class CaptureSession(
             return
         }
         stopped = true
-        reader?.setOnImageAvailableListener(null, null)
         runCatching { display?.release() }
         display = null
-        runCatching { reader?.close() }
+        closeReader(reader)
         reader = null
         runCatching { projection.unregisterCallback(callback) }
         runCatching { projection.stop() }
-        thread.quitSafely()
+        thread.quitSafely()   // lets the queued close run first
         Log.i(TAG, "Capture stopped")
     }
 
+    /**
+     * Closes a reader on the capture thread, where its frames are handled. Closed from any other
+     * thread it could be closed while a frame from it is in use, and that frame would then fail
+     * ("Image is already closed") and take the app down whenever the display changed shape.
+     */
+    private fun closeReader(old: ImageReader?) {
+        old ?: return
+        old.setOnImageAvailableListener(null, null)
+        handler.post { runCatching { old.close() } }
+    }
+
+    /** A reader of the given size whose frames go to the native detector as they arrive. */
     private fun createReader(width: Int, height: Int): ImageReader =
         ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, MAX_IMAGES).apply {
-            setOnImageAvailableListener({ source ->
-                val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-                try {
-                    // Native code copies the detector's region before returning, so the buffer
-                    // can be handed straight back to the compositor afterwards.
-                    val buffer = image.hardwareBuffer
-                    if (buffer != null) {
-                        try {
-                            NativeBridge.onFrame(buffer, image.timestamp)
-                        } finally {
-                            buffer.close()
-                        }
-                    }
-                } finally {
-                    image.close()
-                }
-            }, handler)
+            setOnImageAvailableListener({ source -> handleFrame(source) }, handler)
         }
+
+    /** Passes the newest frame of `source` to the native detector. A frame that arrives as its reader closes is dropped. */
+    private fun handleFrame(source: ImageReader) {
+        try {
+            val image = source.acquireLatestImage() ?: return
+            try {
+                // Native code copies the detector's region before returning, so the buffer
+                // can be handed straight back to the compositor afterwards.
+                val buffer = image.hardwareBuffer
+                if (buffer != null) {
+                    try {
+                        NativeBridge.onFrame(buffer, image.timestamp)
+                    } finally {
+                        buffer.close()
+                    }
+                }
+            } finally {
+                image.close()
+            }
+        } catch (e: IllegalStateException) {
+            Log.d(TAG, "Dropped a frame from a reader that was closing: ${e.message}")
+        }
+    }
 
     /** Image size with the display's shape and a long edge of at most [MAX_LONG_EDGE]; both sides even. */
     private fun captureSize(displayWidth: Int, displayHeight: Int): Pair<Int, Int> {
