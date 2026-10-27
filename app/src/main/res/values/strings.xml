@@ -50,7 +50,7 @@
     <string name="models_use">Use</string>
     <string name="models_get">Get</string>
     <string name="models_update">Update</string>
-    <string name="models_version">Version %1$d</string>
+    <string name="models_version" translatable="false">v%1$d</string>
     <string name="models_delete">Delete</string>
     <string name="models_built_in">Built in</string>
     <string name="models_from_store">From the store</string>

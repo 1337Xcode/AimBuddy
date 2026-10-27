@@ -50,7 +50,6 @@
     <string name="models_use">Выбрать</string>
     <string name="models_get">Скачать</string>
     <string name="models_update">Обновить</string>
-    <string name="models_version">Версия %1$d</string>
     <string name="models_delete">Удалить</string>
     <string name="models_built_in">Встроена</string>
     <string name="models_from_store">Из магазина</string>

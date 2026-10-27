@@ -50,7 +50,6 @@
     <string name="models_use">使用</string>
     <string name="models_get">获取</string>
     <string name="models_update">更新</string>
-    <string name="models_version">版本 %1$d</string>
     <string name="models_delete">删除</string>
     <string name="models_built_in">内置</string>
     <string name="models_from_store">来自商店</string>

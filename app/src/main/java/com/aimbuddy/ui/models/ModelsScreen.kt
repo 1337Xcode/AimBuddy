@@ -310,12 +310,13 @@ private fun ModelRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            lines.forEach { line ->
+            // The first line may take two lines of text; the ones after it, such as the details, stay on one.
+            lines.forEachIndexed { index, line ->
                 Text(
                     text = line,
                     style = MaterialTheme.typography.bodySmall,
                     color = AppTheme.palette.textDim,
-                    maxLines = 2,
+                    maxLines = if (index == 0) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
