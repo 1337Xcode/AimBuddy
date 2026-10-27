@@ -8,8 +8,8 @@ Where the settings are kept, and the limits each value is held to, are in `app/s
 
 | Setting | Default | What it does |
 |---------|---------|--------------|
-| Box color | Red | The color of the outline around each target. Ten colors. |
-| Line thickness | 2 px | 1 to 6 px. |
+| Box color | Red | The color of the corner marks around each target. Ten colors. |
+| Line thickness | 2 px | 1 to 6 px. Thicker lines are easier to see, and change what the detector sees a little more. |
 | Confidence labels | On | The detector's confidence next to each box. |
 | Aim point | On | A marker where the assist aims. |
 | Detection area outline | On | A blue square around the area the detector looks at, so you can see what it can see. It is drawn just outside that area, so it is never part of the picture the detector reads. |
@@ -17,6 +17,8 @@ Where the settings are kept, and the limits each value is held to, are in `app/s
 | Line to nearest target | Off | A line from the crosshair to the nearest target. |
 | Target count | Off | How many targets are in view, at the top of the screen. |
 | Performance readout | Off | Top right: how many detections finish each second, how old the picture is when its targets are ready, and whether the CPU or the GPU runs the model. Use it to judge whether a setting is too heavy for the phone. |
+
+Targets are marked with corners a little way off the target, not a full box. The overlay is part of the picture the detector reads, and a full box close to a target made the model's confidence in it jump two to three times as much as the corners do.
 
 The two outlines are drawn while you play when their switches are on, and always while the menu or the touch area editor is open, so that the sliders that set them have something to show. The crosshair guide for setting up is drawn only while the menu or the touch area editor is open. In streamer mode nothing is drawn over the game, so neither outline shows.
 
