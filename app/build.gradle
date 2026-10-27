@@ -176,12 +176,15 @@ android {
         compose = true
         prefab = true
         buildConfig = true
+        // IHelperHost: how the app talks to the touch helper service that Shizuku starts.
+        aidl = true
     }
 
     packaging {
         jniLibs {
-            // Map JNI libs directly from the APK without extraction — saves RAM at runtime
-            useLegacyPackaging = false
+            // Extract the native libraries to disk at install. libaimtouch.so is a program that
+            // Shizuku or root must be able to execute, and only a file on disk can be executed.
+            useLegacyPackaging = true
             pickFirsts += ['**/libc++_shared.so']
         }
         resources {
@@ -241,6 +244,8 @@ dependencies {
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.material:material-icons-extended'
     implementation 'androidx.documentfile:documentfile:1.0.1'
+    // StateFlow, which carries the assist's state from the service to the screen
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
     // Debug-only: keep tooling preview off the release build
     debugImplementation 'androidx.compose.ui:ui-tooling-preview'
     debugImplementation 'androidx.compose.ui:ui-tooling'

@@ -3,27 +3,32 @@
 
     <!-- Overlay permission for drawing over other apps -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-    
+
     <!-- Foreground service for screen capture -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
-    
-    <!-- Wake lock to prevent CPU throttling during active use -->
-    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- Android 13+: lets the notification with the Stop button be shown -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <!-- Network access for GitHub-backed model store -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <!-- Optional non-root input backend (Shizuku) -->
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
-    
+
     <!-- Vulkan GPU feature — optional so the app still runs on devices without Vulkan -->
     <uses-feature android:name="android.hardware.vulkan.level" android:version="1" android:required="false"/>
     <uses-feature android:name="android.hardware.vulkan.version" android:version="0x00401000" android:required="false"/>
-    
+
     <!-- OpenGL ES 3.1 required for the overlay renderer -->
     <uses-feature android:glEsVersion="0x00030001" android:required="true"/>
 
+    <!--
+      The touch helper (libaimtouch.so) is a program, not a library: it has to exist as a real file
+      in the app's native library directory so that Shizuku or root can run it. The build makes that
+      happen with packaging.jniLibs.useLegacyPackaging = true in app/build.gradle.
+    -->
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -32,20 +37,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AimBuddy"
         android:hardwareAccelerated="true">
-        <!--
-          extractNativeLibs="false": the OS memory-maps .so files directly from
-          the APK instead of extracting them to disk. This reduces install size,
-          speeds up first-launch and — critically — lowers resident memory because
-          the OS can page-share mapped pages across processes.
-
-          largeHeap="true" has been intentionally removed: NCNN/ImGui/Vulkan all
-          use native (non-Java) heap, so enlarging the Java heap only increases GC
-          overhead without benefiting the native side.
-        -->
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:theme="@style/Theme.AimBuddy.Fullscreen">
@@ -55,8 +51,9 @@
             </intent-filter>
         </activity>
 
+        <!-- Runs the assist: capture, detection, the overlay and the touch helper. -->
         <service
-            android:name=".ScreenCaptureService"
+            android:name=".AssistService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />

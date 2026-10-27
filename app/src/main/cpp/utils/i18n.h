@@ -54,6 +54,7 @@ enum class Key : int {
     TabAim,
     TabInfo,
     Close,
+    StopService,
 
     // Visuals tab
     ShowLabels,
@@ -128,6 +129,7 @@ inline const char* kTranslations[static_cast<int>(Key::Count)][static_cast<int>(
     /* TabAim */               {"Aim assist", "瞄准辅助", "Помощь"},
     /* TabInfo */              {"Info", "信息", "Инфо"},
     /* Close */                {"Close", "关闭", "Закрыть"},
+    /* StopService */          {"Stop AimBuddy", "停止 AimBuddy", "Остановить AimBuddy"},
 
     /* ShowLabels */           {"Confidence labels", "置信度标签", "Метки уверенности"},
     /* ShowSnapLine */         {"Line to nearest target", "指向最近目标的连线", "Линия к ближайшей цели"},

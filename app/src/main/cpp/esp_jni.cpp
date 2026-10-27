@@ -50,6 +50,7 @@ aimbuddy::AimLoop g_aimLoop(&g_pipeline.tracker(), &g_pipeline.profile(), &g_tou
 
 JavaVM* g_jvm = nullptr;
 std::string g_settingsPath;
+bool g_settingsLoaded = false;
 bool g_modelLoaded = false;
 
 /// Copies a Java string, or returns an empty one for null.
@@ -126,11 +127,19 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* /* vm */, void* /* reserved */) {
 }
 
 /**
- * @brief Loads the player's settings. Call once, before anything else.
+ * @brief Loads the player's settings, once per process; later calls do nothing.
+ *
+ * The app's screen and the assist service both call it. Reading the file again while the assist
+ * runs would undo changes the player just made in the menu, so the first read wins.
+ *
  * @param settingsPath File the settings are read from and written to (in the app's private storage)
  */
 JNIEXPORT void JNICALL
 Java_com_aimbuddy_NativeBridge_loadSettings(JNIEnv* env, jclass /* clazz */, jstring settingsPath) {
+    if (g_settingsLoaded) {
+        return;
+    }
+    g_settingsLoaded = true;
     g_settingsPath = toStdString(env, settingsPath);
     if (g_settingsStore.load(g_settingsPath)) {
         LOGI("Loaded settings from %s", g_settingsPath.c_str());
@@ -204,6 +213,10 @@ JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_start(JNIEnv* /* env *
         LOGE("Cannot start: no model loaded");
         return JNI_FALSE;
     }
+    // The assist starts off on every run. It moves the aim by itself, so the player turns it on in the game.
+    Settings settings = g_settingsStore.get();
+    settings.assistEnabled = false;
+    g_settingsStore.set(settings);
     g_pipeline.start();
     g_aimLoop.setConfigSource(makeAimLoopConfig);
     g_aimLoop.start();
@@ -273,6 +286,11 @@ Java_com_aimbuddy_NativeBridge_touchConnect(JNIEnv* env, jclass /* clazz */, jin
     return static_cast<jint>(g_touchLink.connect(port, token, kConnectTimeoutMs));
 }
 
+/** @brief The player's choice of route to the touchscreen: 0 automatic, 1 Shizuku, 2 root. */
+JNIEXPORT jint JNICALL Java_com_aimbuddy_NativeBridge_touchBackend(JNIEnv* /* env */, jclass /* clazz */) {
+    return static_cast<jint>(g_settingsStore.get().touchBackend);
+}
+
 /** @brief Lets the touch helper go; it gives the touchscreen back and stops. */
 JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_touchDisconnect(JNIEnv* /* env */, jclass /* clazz */) {
     g_touchLink.disconnect();
@@ -288,10 +306,10 @@ JNIEXPORT jint JNICALL Java_com_aimbuddy_NativeBridge_touchStatus(JNIEnv* /* env
 }
 
 /**
- * Tells Kotlin the player changed the streamer mode setting, so the overlay windows can be marked
- * secure or not. Called from the overlay's render thread.
+ * Calls a static method of NativeBridge from native code, attaching the calling thread to the
+ * JVM if it is not already. `argument` is passed when the method takes one boolean.
  */
-void NotifyStreamerModeChanged(bool enabled) {
+static void callBridge(const char* method, const char* signature, bool hasArgument, bool argument) {
     if (!g_jvm) return;
     JNIEnv* env = nullptr;
     bool attached = false;
@@ -303,14 +321,27 @@ void NotifyStreamerModeChanged(bool enabled) {
     }
     jclass bridge = env->FindClass("com/aimbuddy/NativeBridge");
     if (bridge) {
-        jmethodID method = env->GetStaticMethodID(bridge, "onStreamerModeChanged", "(Z)V");
-        if (method) {
-            env->CallStaticVoidMethod(bridge, method, static_cast<jboolean>(enabled));
+        jmethodID id = env->GetStaticMethodID(bridge, method, signature);
+        if (id) {
+            if (hasArgument) {
+                env->CallStaticVoidMethod(bridge, id, static_cast<jboolean>(argument));
+            } else {
+                env->CallStaticVoidMethod(bridge, id);
+            }
         }
         if (env->ExceptionCheck()) env->ExceptionClear();
         env->DeleteLocalRef(bridge);
     }
     if (attached) g_jvm->DetachCurrentThread();
 }
+
+/**
+ * Tells Kotlin the player changed the streamer mode setting, so the overlay windows can be marked
+ * secure or not. Called from the overlay's render thread.
+ */
+void NotifyStreamerModeChanged(bool enabled) { callBridge("onStreamerModeChanged", "(Z)V", true, enabled); }
+
+/** Tells Kotlin the player pressed "Stop" in the overlay menu. Called from the overlay's render thread. */
+void NotifyStopRequested() { callBridge("onStopRequested", "()V", false, false); }
 
 }  // extern "C"
