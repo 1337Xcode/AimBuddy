@@ -148,7 +148,7 @@ inline const char* kTranslations[static_cast<int>(Key::Count)][static_cast<int>(
     /* DetectionZone */        {"Detection zone", "检测区域", "Зона обнаружения"},
     /* ShowAnchor */           {"Show touch area", "显示触控区域", "Показать зону касания"},
     /* AnchorOpacity */        {"Touch area opacity", "触控区域透明度", "Прозрачность зоны"},
-    /* StreamerMode */         {"Hide overlay from recordings", "对录屏隐藏悬浮层", "Скрыть оверлей при записи"},
+    /* StreamerMode */         {"Streamer mode", "主播模式", "Режим стримера"},
     /* Language */             {"Language", "语言", "Язык"},
 
     /* AssistEnable */         {"Enable aim assist", "启用瞄准辅助", "Включить помощь"},

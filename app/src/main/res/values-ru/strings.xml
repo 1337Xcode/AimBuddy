@@ -110,8 +110,8 @@
     <string name="s_dark">Тёмное</string>
     <string name="s_light">Светлое</string>
     <string name="s_accent">Цвет акцента</string>
-    <string name="s_streamer">Скрывать оверлей при записи</string>
-    <string name="s_streamer_footer">Оверлей не попадает в скриншоты и трансляции, а также в изображение, которое анализирует AimBuddy.</string>
+    <string name="s_streamer">Режим стримера</string>
+    <string name="s_streamer_footer">Поверх игры ничего не рисуется, кнопка скрыта. Открывайте меню из уведомления. Помощь в прицеливании продолжает работать.</string>
     <string name="s_reset">Сбросить все настройки</string>
     <string name="s_reset_title">Сбросить все настройки?</string>
     <string name="s_reset_message">Всё вернётся к начальному состоянию. Язык сохранится.</string>
@@ -139,6 +139,7 @@
     <string name="notification_channel">AimBuddy</string>
     <string name="notification_title">AimBuddy работает</string>
     <string name="notification_text">Нажмите, чтобы открыть. «Стоп» завершает работу в любой момент.</string>
+    <string name="notification_menu">Меню</string>
     <string name="notification_stop">Стоп</string>
 
     <!-- Первый запуск -->

@@ -31,6 +31,11 @@ import kotlin.math.abs
  *  - If the menu is open but nothing is being drawn, the window stops taking touches after a short
  *    while, so a broken renderer cannot leave an invisible layer over the screen.
  *  - Holding the icon for a moment stops AimBuddy, whatever state the menu is in.
+ *  - A secure window shows as solid black in a recording, and AimBuddy's own picture of the screen is
+ *    a recording too. So streamer mode never makes a window secure while the game is being played:
+ *    the full screen window draws nothing and the icon is taken away, and the menu is opened from the
+ *    notification instead. The full screen window is secure only while the menu is open (see
+ *    [setStreamerMode]).
  *  - Every window is removed in [hide], which cannot fail halfway: each step is guarded.
  *
  * Use it from the main thread only.
@@ -47,10 +52,14 @@ class OverlayController(
     private var icon: ImageView? = null
     private var iconParams: WindowManager.LayoutParams? = null
 
-    private var secure = false
+    private var streamerMode = false
     private var touchable = false
     private var lastFrameCount = -1L
     private var lastFrameChangeMs = 0L
+
+    // Where the icon sits, kept so it comes back to the same place after streamer mode.
+    private var iconX = ICON_START_X
+    private var iconY = ICON_START_Y
 
     // Dragging and holding the icon.
     private var downRawX = 0f
@@ -75,11 +84,11 @@ class OverlayController(
     val isShown: Boolean get() = surface != null
 
     /** Adds both windows. Needs the overlay permission. */
-    fun show(secure: Boolean) {
+    fun show(streamerMode: Boolean) {
         if (isShown) {
             return
         }
-        this.secure = secure
+        this.streamerMode = streamerMode
         touchable = false
         lastFrameCount = -1L
         lastFrameChangeMs = SystemClock.uptimeMillis()
@@ -102,7 +111,9 @@ class OverlayController(
         surfaceParams = params
 
         try {
-            addIcon()
+            if (!streamerMode) {
+                addIcon()
+            }
         } catch (e: Exception) {
             hide()
             throw e
@@ -114,10 +125,7 @@ class OverlayController(
     /** Removes both windows. Safe to call at any time, any number of times. */
     fun hide() {
         handler.removeCallbacks(monitor)
-        handler.removeCallbacks(holdToStop)
-        icon?.let { removeQuietly(it, "icon") }
-        icon = null
-        iconParams = null
+        removeIcon()
         surface?.let {
             runCatching { OverlayNative.showMenu(false) }
             removeQuietly(it, "overlay")
@@ -128,17 +136,44 @@ class OverlayController(
         Log.i(TAG, "Overlay hidden")
     }
 
-    /** Hides the overlay from screenshots and screen recordings, or shows it to them again. */
-    fun setSecure(enabled: Boolean) {
-        secure = enabled
+    /**
+     * Turns streamer mode on or off: nothing of AimBuddy may show in a screenshot or a recording.
+     *
+     * A secure window is drawn as solid black in a recording, so it cannot sit over the game: it
+     * would black out the game and the picture AimBuddy detects targets in. So while streamer mode
+     * is on, the icon is taken away (the notification opens the menu instead), the full screen window
+     * draws nothing (see the native overlay), and that window is secure only while the menu or the
+     * touch area editor is open, which is a few moments in which the recording shows black.
+     */
+    fun setStreamerMode(enabled: Boolean) {
+        streamerMode = enabled
         surfaceParams?.let { params ->
-            params.flags = if (enabled) params.flags or FLAG_SECURE else params.flags and FLAG_SECURE.inv()
+            params.flags = surfaceFlags(touchable)
             update(surface, params)
         }
-        iconParams?.let { params ->
-            params.flags = if (enabled) params.flags or FLAG_SECURE else params.flags and FLAG_SECURE.inv()
-            update(icon, params)
+        if (!isShown) {
+            return
         }
+        if (enabled) {
+            removeIcon()
+        } else if (icon == null) {
+            try {
+                addIcon()
+            } catch (e: Exception) {
+                Log.w(TAG, "The icon could not be shown again: ${e.message}")
+            }
+        }
+    }
+
+    /** Opens the menu, or closes it if it is open. */
+    fun toggleMenu() {
+        if (!isShown) {
+            return
+        }
+        val show = !OverlayNative.wantsTouches()
+        lastFrameChangeMs = SystemClock.uptimeMillis()
+        OverlayNative.showMenu(show)
+        setTouchable(show)
     }
 
     private fun overlayType(): Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -152,7 +187,7 @@ class OverlayController(
         if (!touchable) {
             flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
-        if (secure) {
+        if (streamerMode && touchable) {
             flags = flags or FLAG_SECURE
         }
         return flags
@@ -204,13 +239,6 @@ class OverlayController(
         setTouchable(wanted)
     }
 
-    private fun toggleMenu() {
-        val show = !OverlayNative.wantsTouches()
-        lastFrameChangeMs = SystemClock.uptimeMillis()
-        OverlayNative.showMenu(show)
-        setTouchable(show)
-    }
-
     private fun addIcon() {
         val sizePx = (ICON_SIZE_DP * context.resources.displayMetrics.density).toInt()
         val view = ImageView(context).apply {
@@ -223,19 +251,26 @@ class OverlayController(
             sizePx, sizePx, overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                (if (secure) FLAG_SECURE else 0),
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 40
-            y = 120
+            x = iconX
+            y = iconY
         }
         view.setOnTouchListener { _, event -> onIconTouch(event, params) }
         windowManager.addView(view, params)
         icon = view
         iconParams = params
         OverlayNative.setIconPosition(params.x.toFloat(), params.y.toFloat())
+    }
+
+    /** Takes the icon off the screen, keeping where it was. */
+    private fun removeIcon() {
+        handler.removeCallbacks(holdToStop)
+        icon?.let { removeQuietly(it, "icon") }
+        icon = null
+        iconParams = null
     }
 
     private fun onIconTouch(event: MotionEvent, params: WindowManager.LayoutParams): Boolean {
@@ -259,6 +294,8 @@ class OverlayController(
                 if (moved) {
                     params.x = startX + dx
                     params.y = startY + dy
+                    iconX = params.x
+                    iconY = params.y
                     update(icon, params)
                     OverlayNative.setIconPosition(params.x.toFloat(), params.y.toFloat())
                 }
@@ -313,6 +350,8 @@ class OverlayController(
         const val OPACITY_MARGIN = 0.01f
         const val MIN_PASS_THROUGH_ALPHA = 0.05f
         const val ICON_SIZE_DP = 44
+        const val ICON_START_X = 40
+        const val ICON_START_Y = 120
         const val MONITOR_INTERVAL_MS = 100L
         const val STALL_MS = 1500L
         const val HOLD_TO_STOP_MS = 1500L

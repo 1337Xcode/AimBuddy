@@ -956,7 +956,12 @@ Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */)
         const ImVec2 origin(static_cast<float>(g_overlayOriginX.load(std::memory_order_relaxed)),
                             static_cast<float>(g_overlayOriginY.load(std::memory_order_relaxed)));
         int bodyCount = 0;
-        drawGameOverlay(settings, origin, &bodyCount);
+        // Streamer mode draws nothing over the game, so a recording, and AimBuddy's own capture, see it
+        // as it is. The menu and the touch area editor still show what is behind them.
+        const bool controlsOpen = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed);
+        if (!settings.streamerMode || controlsOpen) {
+            drawGameOverlay(settings, origin, &bodyCount);
+        }
 
         if (g_zoneEditing.load(std::memory_order_relaxed)) {
             drawZoneEditor(settings, origin);

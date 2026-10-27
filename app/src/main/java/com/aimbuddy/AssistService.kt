@@ -69,6 +69,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
                 shutdown()
                 stopSelf()   // also covers a stop that reaches a service which was not running
             }
+            ACTION_MENU -> overlay?.toggleMenu()
         }
         return START_NOT_STICKY
     }
@@ -180,7 +181,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
 
         val controller = OverlayController(this) { mainHandler.post { shutdown() } }
         overlay = controller
-        controller.show(secure = false)
+        controller.show(streamerMode = false)
 
         displayManager = (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager).also {
             it.registerDisplayListener(displayListener, mainHandler)
@@ -304,7 +305,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     // ---------------------------------------------------------------------------------------
 
     override fun onStreamerModeChanged(enabled: Boolean) {
-        mainHandler.post { overlay?.setSecure(enabled) }
+        mainHandler.post { overlay?.setStreamerMode(enabled) }
     }
 
     override fun onStopRequested() {
@@ -326,12 +327,16 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         val stop = PendingIntent.getService(
             this, 1, Intent(this, AssistService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE
         )
+        val menu = PendingIntent.getService(
+            this, 2, Intent(this, AssistService::class.java).setAction(ACTION_MENU), PendingIntent.FLAG_IMMUTABLE
+        )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(getString(R.string.notification_text))
             .setSmallIcon(R.drawable.ic_stat_aim)
             .setOngoing(true)
             .setContentIntent(open)
+            .addAction(0, getString(R.string.notification_menu), menu)
             .addAction(0, getString(R.string.notification_stop), stop)
             .build()
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, foregroundType())
@@ -357,6 +362,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
 
         const val ACTION_START = "com.aimbuddy.action.START"
         const val ACTION_STOP = "com.aimbuddy.action.STOP"
+        const val ACTION_MENU = "com.aimbuddy.action.MENU"
         private const val EXTRA_RESULT_CODE = "resultCode"
         private const val EXTRA_RESULT_DATA = "resultData"
 
