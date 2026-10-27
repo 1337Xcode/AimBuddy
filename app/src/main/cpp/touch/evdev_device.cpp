@@ -43,8 +43,11 @@ std::string readText(int fd, unsigned long request) {
     return buffer;
 }
 
-/// Describes the device at `path` if it is a touchscreen the multiplexer can copy.
-bool describeTouchscreen(const std::string& path, TouchscreenInfo* out) {
+/**
+ * Describes the device at `path` if it is a touchscreen the multiplexer can copy, and says how
+ * well it fits (see classifyTouchscreen).
+ */
+bool describeTouchscreen(const std::string& path, TouchscreenInfo* out, TouchscreenFit* fit) {
     const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd < 0) {
         return false;
@@ -55,11 +58,17 @@ bool describeTouchscreen(const std::string& path, TouchscreenInfo* out) {
     const bool readable = ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absBits)), absBits) >= 0 &&
                           ioctl(fd, EVIOCGPROP(sizeof(propBits)), propBits) >= 0 &&
                           ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keyBits)), keyBits) >= 0;
-    // A direct (on-screen) multi-touch device that numbers its contacts in slots and has a touch button.
-    const bool isTouchscreen = readable && isBitSet(propBits, INPUT_PROP_DIRECT) && isBitSet(keyBits, BTN_TOUCH) &&
-                               isBitSet(absBits, ABS_MT_SLOT) && isBitSet(absBits, ABS_MT_POSITION_X) &&
-                               isBitSet(absBits, ABS_MT_POSITION_Y) && isBitSet(absBits, ABS_MT_TRACKING_ID);
-    if (!isTouchscreen) {
+    DeviceTraits traits;
+    if (readable) {
+        traits.direct = isBitSet(propBits, INPUT_PROP_DIRECT);
+        traits.pointer = isBitSet(propBits, INPUT_PROP_POINTER);
+        traits.touchButton = isBitSet(keyBits, BTN_TOUCH);
+        traits.slots = isBitSet(absBits, ABS_MT_SLOT);
+        traits.positions = isBitSet(absBits, ABS_MT_POSITION_X) && isBitSet(absBits, ABS_MT_POSITION_Y);
+        traits.trackingId = isBitSet(absBits, ABS_MT_TRACKING_ID);
+    }
+    *fit = classifyTouchscreen(traits);
+    if (*fit == TouchscreenFit::kNone) {
         ::close(fd);
         return false;
     }
@@ -127,17 +136,22 @@ int64_t TouchscreenInfo::area() const {
 }
 
 std::vector<TouchscreenInfo> findTouchscreens(int* deniedNodes) {
-    std::vector<TouchscreenInfo> found;
+    std::vector<TouchscreenInfo> likely;
+    std::vector<TouchscreenInfo> possible;
     for (const std::string& path : listEventNodes()) {
         if (access(path.c_str(), R_OK) != 0 && errno == EACCES && deniedNodes != nullptr) {
             ++*deniedNodes;
             continue;
         }
         TouchscreenInfo info;
-        if (describeTouchscreen(path, &info)) {
-            found.push_back(info);
+        TouchscreenFit fit = TouchscreenFit::kNone;
+        if (describeTouchscreen(path, &info, &fit)) {
+            (fit == TouchscreenFit::kLikely ? likely : possible).push_back(info);
         }
     }
+    // A device that looks like a phone's touchscreen wins; the looser matches are only for devices
+    // that leave out what phones have (an emulator's screen, some old drivers).
+    std::vector<TouchscreenInfo> found = likely.empty() ? possible : likely;
     // The main screen is the largest; a phone may also have small ones for a fingerprint reader or a pen.
     std::stable_sort(found.begin(), found.end(),
                      [](const TouchscreenInfo& a, const TouchscreenInfo& b) { return a.area() > b.area(); });

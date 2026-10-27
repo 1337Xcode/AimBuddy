@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/touch_mux.h"
+#include "core/touchscreen_fit.h"
 
 namespace aimbuddy::touch {
 
