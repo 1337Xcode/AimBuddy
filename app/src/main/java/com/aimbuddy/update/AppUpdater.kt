@@ -64,9 +64,12 @@ class AppUpdater(
                             if (count < 0) {
                                 break
                             }
+                            received += count
+                            if (received > MAX_UPDATE_BYTES) {
+                                throw IOException("The download is larger than any update")
+                            }
                             digest.update(buffer, 0, count)
                             output.write(buffer, 0, count)
-                            received += count
                             val percent = (received * 100 / total).toInt().coerceAtMost(100)
                             if (percent != reported) {
                                 reported = percent
@@ -74,6 +77,9 @@ class AppUpdater(
                             }
                         }
                     }
+                }
+                if (info.sizeBytes > 0 && received != info.sizeBytes) {
+                    throw IOException("The download is not the size GitHub lists")
                 }
             } finally {
                 connection.disconnect()
@@ -138,10 +144,7 @@ class AppUpdater(
                 }
                 session.commit(resultIntentSender(sessionId))
             }
-        } catch (e: IOException) {
-            installer.abandonSession(sessionId)
-            throw e
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             installer.abandonSession(sessionId)
             throw e
         }
@@ -161,5 +164,6 @@ class AppUpdater(
     private companion object {
         const val UPDATE_FOLDER = "updates"
         const val BUFFER_BYTES = 32 * 1024
+        const val MAX_UPDATE_BYTES = 250L * 1024 * 1024
     }
 }
