@@ -1,19 +1,13 @@
 #include <jni.h>
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 #include <android/hardware_buffer.h>
 #include <android/hardware_buffer_jni.h>
-#include <atomic>
-#include <memory>
-#include <thread>
-#include <chrono>
-#include <string>
+
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
-#include <cstdarg>
-#include <cmath>
+#include <string>
 
 // Fix for NDK compatibility issue usually caused by NCNN library mismatch
 // Defines the missing symbol __libcpp_verbose_abort.
@@ -33,114 +27,78 @@ namespace std {
 }
 #pragma clang diagnostic pop
 
-#include "settings.h"
+#include "app_state.h"
 #include "utils/logger.h"
-#include "pipeline/detection_pipeline.h"
-#include "pipeline/pipeline_access.h"
-#include "renderer/render_config.h"
-#include "aimbot/aimbot_controller.h"
 
 /**
  * @file esp_jni.cpp
- * @brief JNI entry point and thread orchestration
+ * @brief The native side of the app's Kotlin code.
  *
- * Manages the lifecycle of detector, renderer, and worker threads.
- * Provides JNI bindings for Kotlin code.
- * Coordinates frame ingestion, inference, and rendering handoff.
+ * Creates the app's long-lived parts (detection pipeline, settings, touch link, aim loop) and
+ * exposes them to Kotlin through NativeBridge. Nothing here decides anything: it passes
+ * requests to the part that owns the decision.
  */
-
-#include <mutex>
-#include "input/touch_helper.h"
-#include "utils/aimbot_types.h"
-
-// Global unified settings (ALL settings in one place)
-UnifiedSettings g_settings;
-
-// Shared render configuration (legacy - now part of g_settings)
-ESP::RenderConfig g_renderConfig;
 
 namespace {
 
-    // Global state (managed via RAII)
-    aimbuddy::DetectionPipeline g_pipeline;
-    aimbuddy::ModelProfile g_modelProfile;
-    std::unique_ptr<AimbotController> g_aimbot;
-    std::unique_ptr<TouchHelper> g_touchHelper;
+using aimbuddy::Settings;
 
-    // Screen dimensions
-    int g_screenWidth = 1080;
-    int g_screenHeight = 2400;
+aimbuddy::DetectionPipeline g_pipeline;
+aimbuddy::SettingsStore g_settingsStore;
+aimbuddy::touch::TouchLink g_touchLink;
+aimbuddy::AimLoop g_aimLoop(&g_pipeline.tracker(), &g_pipeline.profile(), &g_touchLink);
 
-    // Cached JNI references
-    JavaVM* g_jvm = nullptr;
-    std::string g_modelParamPath;
-    std::string g_modelBinPath;
+JavaVM* g_jvm = nullptr;
+std::string g_settingsPath;
+bool g_modelLoaded = false;
 
-    void SyncUnifiedSettingsToRenderConfig() {
-        g_renderConfig.boxColorR.store(g_settings.boxColorR, std::memory_order_relaxed);
-        g_renderConfig.boxColorG.store(g_settings.boxColorG, std::memory_order_relaxed);
-        g_renderConfig.boxColorB.store(g_settings.boxColorB, std::memory_order_relaxed);
-        g_renderConfig.boxThickness.store(g_settings.boxThickness, std::memory_order_relaxed);
-        g_renderConfig.confidenceThreshold.store(g_settings.confidenceThreshold, std::memory_order_relaxed);
-        g_renderConfig.fovRadius.store(g_settings.fovRadius, std::memory_order_relaxed);
-        g_renderConfig.showFPS.store(g_settings.showFPS, std::memory_order_relaxed);
-        g_renderConfig.showDetectionCount.store(g_settings.showDetectionCount, std::memory_order_relaxed);
-        g_renderConfig.showLabels.store(g_settings.showLabels, std::memory_order_relaxed);
-        g_renderConfig.drawLine.store(g_settings.drawLine, std::memory_order_relaxed);
-        g_renderConfig.drawDot.store(g_settings.drawDot, std::memory_order_relaxed);
-        g_renderConfig.enableSmoothing.store(g_settings.enableSmoothing, std::memory_order_relaxed);
-        g_renderConfig.smoothingFactor.store(g_settings.smoothingFactor, std::memory_order_relaxed);
-
-        g_renderConfig.aimbotEnabled.store(g_settings.aimbotEnabled, std::memory_order_relaxed);
-        g_renderConfig.headOffset.store(g_settings.headOffset, std::memory_order_relaxed);
-
-        if (g_settings.screenWidth > 0 && g_settings.screenHeight > 0) {
-            float centerX = g_settings.touchX / static_cast<float>(g_settings.screenWidth);
-            float centerY = g_settings.touchY / static_cast<float>(g_settings.screenHeight);
-            g_renderConfig.touchCenterX.store(centerX, std::memory_order_relaxed);
-            g_renderConfig.touchCenterY.store(centerY, std::memory_order_relaxed);
-        }
-        g_renderConfig.touchRadius.store(g_settings.touchRadius, std::memory_order_relaxed);
-        g_renderConfig.aimDelay.store(g_settings.aimDelay, std::memory_order_relaxed);
+/// Copies a Java string, or returns an empty one for null.
+std::string toStdString(JNIEnv* env, jstring text) {
+    if (text == nullptr) {
+        return std::string();
     }
-
-    /**
-     * Bridge to the aim controller, which still tracks targets on its own.
-     * Hands it the confident body detections of each batch.
-     */
-    void feedAimbot(const aimbuddy::DetectionBatch& batch) {
-        if (!g_aimbot || !g_settings.aimbotEnabled) {
-            return;
-        }
-        ESP::BoundingBox boxes[aimbuddy::kMaxDetections];
-        int count = 0;
-        for (int i = 0; i < batch.count; ++i) {
-            const aimbuddy::Detection& d = batch.detections[i];
-            if (g_pipeline.profile().roleOf(d.classId) != aimbuddy::ClassRole::kBody ||
-                d.score < g_settings.confidenceThreshold) {
-                continue;
-            }
-            boxes[count++] = ESP::BoundingBox(d.x, d.y, d.width, d.height, d.score, Config::ENEMY_CLASS_ID);
-        }
-        g_aimbot->updateTargets(boxes, count);
+    const char* chars = env->GetStringUTFChars(text, nullptr);
+    if (chars == nullptr) {
+        return std::string();
     }
+    std::string copy(chars);
+    env->ReleaseStringUTFChars(text, chars);
+    return copy;
 }
+
+/// Turns the player's settings into what the aim loop works from.
+aimbuddy::AimLoopConfig makeAimLoopConfig() {
+    const Settings settings = g_settingsStore.get();
+    const aimbuddy::CaptureGeometry geometry = g_pipeline.capture().geometry();
+    const float displayWidth = geometry.isValid() ? static_cast<float>(geometry.screenWidth) : 0.0f;
+    const float displayHeight = geometry.isValid() ? static_cast<float>(geometry.screenHeight) : 0.0f;
+
+    aimbuddy::AimLoopConfig config;
+    config.enabled = settings.assistEnabled;
+    config.aim.zone = static_cast<aimbuddy::AimZone>(settings.aimZone);
+    config.aim.strength = settings.aimStrength;
+    config.aim.fovRadiusPx = settings.aimFovRadius;
+    config.aim.priority = settings.aimPriority;
+    config.aim.sceneGain = settings.sceneGain;
+    config.aim.actuationDelayS = settings.actuationDelayMs * 0.001f;
+    config.aim.invertY = settings.invertY;
+    config.aim.anchorX = settings.anchorX * displayWidth;
+    config.aim.anchorY = settings.anchorY * displayHeight;
+    config.aim.anchorRadiusPx = settings.anchorRadius;
+    return config;
+}
+
+}  // namespace
+
+aimbuddy::DetectionPipeline& aimbuddy::pipeline() { return g_pipeline; }
+aimbuddy::SettingsStore& aimbuddy::settingsStore() { return g_settingsStore; }
+aimbuddy::touch::TouchLink& aimbuddy::touchLink() { return g_touchLink; }
+aimbuddy::AimLoop& aimbuddy::aimLoop() { return g_aimLoop; }
+const std::string& aimbuddy::settingsPath() { return g_settingsPath; }
 
 extern "C" {
 
-// Accessors for GLSurfaceView renderer (imgui_menu.cpp)
-ESP::RenderConfig* GetRenderConfig() {
-    return &g_renderConfig;
-}
-
-AimbotController* GetAimbotController() {
-    return g_aimbot.get();
-}
-
-/**
- * @brief Detection zone as a rectangle in screen pixels, for the overlay to outline
- * @return false until capture has been configured
- */
+/// The part of the screen the detector is looking at, as a rectangle in display pixels.
 bool GetDetectionZoneScreenRect(float* left, float* top, float* right, float* bottom) {
     const aimbuddy::CaptureGeometry geometry = g_pipeline.capture().geometry();
     const aimbuddy::RoiRect roi = g_pipeline.capture().currentRoi();
@@ -155,292 +113,183 @@ bool GetDetectionZoneScreenRect(float* left, float* top, float* right, float* bo
     return true;
 }
 
-/**
- * @brief JNI_OnLoad - Called when native library is loaded
- */
-JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /* reserved */) {
     LOGI("Native library loaded");
     g_jvm = vm;
-
-    // Initialize NCNN for Vulkan
     ncnn::create_gpu_instance();
-
     return JNI_VERSION_1_6;
 }
 
-/**
- * @brief JNI_OnUnload - Called when native library is unloaded
- */
-JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved) {
+JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* /* vm */, void* /* reserved */) {
     LOGI("Native library unloading");
     ncnn::destroy_gpu_instance();
 }
 
 /**
- * @brief Initialize native components
+ * @brief Loads the player's settings. Call once, before anything else.
+ * @param settingsPath File the settings are read from and written to (in the app's private storage)
  */
-JNIEXPORT jboolean JNICALL
-Java_com_aimbuddy_MainActivity_nativeInit(JNIEnv* env, jobject thiz,
-                                      jobject assetManager,
-                                      jint screenWidth, jint screenHeight) {
-    LOGI("nativeInit: screen %dx%d", screenWidth, screenHeight);
-
-    g_screenWidth = screenWidth;
-    g_screenHeight = screenHeight;
-
-    // Load unified settings from disk
-    if (g_settings.load()) {
-        LOGI("Loaded settings from disk");
-        g_settings.validate();
+JNIEXPORT void JNICALL
+Java_com_aimbuddy_NativeBridge_loadSettings(JNIEnv* env, jclass /* clazz */, jstring settingsPath) {
+    g_settingsPath = toStdString(env, settingsPath);
+    if (g_settingsStore.load(g_settingsPath)) {
+        LOGI("Loaded settings from %s", g_settingsPath.c_str());
     } else {
         LOGI("Using default settings");
-        g_settings.setDefaultTouchPosition(screenWidth, screenHeight);
     }
+}
 
-    // Set runtime values
-    g_settings.screenWidth = screenWidth;
-    g_settings.screenHeight = screenHeight;
-    SyncUnifiedSettingsToRenderConfig();
-
-    // Get native asset manager
-    AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
-    if (!mgr) {
-        LOGE("Failed to get AssetManager");
+/**
+ * @brief Loads the detection model and tells the detector what its classes mean
+ * @param paramPath Path of the .param file, or null to use the model bundled in the app
+ * @param binPath Path of the .bin file, or null
+ * @param roles Comma separated roles in class order, such as "body,head"; null or empty when unknown
+ * @param endToEnd True if the model already removes duplicate detections
+ * @param inputSize Width and height of the network input, or 0 to work it out
+ * @return false if the model could not be used
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_aimbuddy_NativeBridge_loadModel(JNIEnv* env, jclass /* clazz */, jobject assetManager, jstring paramPath,
+                                         jstring binPath, jstring roles, jboolean endToEnd, jint inputSize) {
+    if (g_pipeline.isRunning()) {
+        LOGE("Cannot load a model while running");
+        return JNI_FALSE;
+    }
+    AAssetManager* assets = AAssetManager_fromJava(env, assetManager);
+    if (assets == nullptr) {
+        LOGE("Failed to get the asset manager");
         return JNI_FALSE;
     }
 
-    // Load the model. The paths are empty when the bundled model should be used.
-    if (!g_pipeline.loadModel(mgr, g_modelParamPath, g_modelBinPath, g_modelProfile)) {
+    const std::string roleList = toStdString(env, roles);
+    aimbuddy::ModelProfile profile =
+        roleList.empty() ? aimbuddy::ModelProfile() : aimbuddy::ModelProfile::parseRoles(roleList, 0);
+    profile.endToEndOutput = endToEnd == JNI_TRUE;
+    profile.inputSize = inputSize > 0 ? inputSize : 0;
+    LOGI("Model profile: roles='%s' endToEnd=%d inputSize=%d", roleList.c_str(), endToEnd == JNI_TRUE, inputSize);
+
+    g_modelLoaded = g_pipeline.loadModel(assets, toStdString(env, paramPath), toStdString(env, binPath), profile);
+    if (!g_modelLoaded) {
         LOGE("Failed to load the detection model");
+    }
+    return g_modelLoaded ? JNI_TRUE : JNI_FALSE;
+}
+
+/**
+ * @brief Tells the native side how large the screen and the capture image are
+ * @param displayWidth Display width in pixels, in the orientation the player sees
+ * @param displayHeight Display height in pixels
+ * @param captureWidth ImageReader width in pixels
+ * @param captureHeight ImageReader height in pixels
+ * @param rotation Display rotation, 0 to 3, as Android numbers it
+ */
+JNIEXPORT void JNICALL
+Java_com_aimbuddy_NativeBridge_configureDisplay(JNIEnv* /* env */, jclass /* clazz */, jint displayWidth,
+                                                jint displayHeight, jint captureWidth, jint captureHeight,
+                                                jint rotation) {
+    aimbuddy::CaptureGeometry geometry;
+    geometry.screenWidth = displayWidth;
+    geometry.screenHeight = displayHeight;
+    geometry.captureWidth = captureWidth;
+    geometry.captureHeight = captureHeight;
+    g_pipeline.capture().configure(geometry);
+    g_aimLoop.setDisplay(displayWidth, displayHeight, rotation);
+    LOGI("Display %dx%d rotation %d, capture %dx%d", displayWidth, displayHeight, rotation, captureWidth,
+         captureHeight);
+}
+
+/** @brief Starts detection and, if the assist is switched on, the aim loop. */
+JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_start(JNIEnv* /* env */, jclass /* clazz */) {
+    if (!g_pipeline.isModelLoaded()) {
+        LOGE("Cannot start: no model loaded");
         return JNI_FALSE;
     }
-    g_pipeline.setObserver(feedAimbot);
-    g_pipeline.setConfidenceThreshold(g_settings.confidenceThreshold);
-
-    // Create TouchHelper and AimbotController (but DON'T init touch yet)
-    // Touch init happens in nativeInitAimbot() AFTER root permissions are set
-    g_touchHelper = std::make_unique<TouchHelper>();
-    g_touchHelper->setJniBridge(g_jvm, env, thiz);
-    g_touchHelper->setBackend(g_settings.touchBackend == 1 ? TouchBackend::SHIZUKU : TouchBackend::UINPUT);
-    g_touchHelper->setScreenSize(screenWidth, screenHeight);
-
-    // Create aimbot controller with touch helper
-    // NOTE: We don't call init() or start() here - that happens after root
-    g_aimbot = std::make_unique<AimbotController>(g_touchHelper.get(), screenWidth, screenHeight);
-
-    LOGI("Native components initialized");
+    g_pipeline.start();
+    g_aimLoop.setConfigSource(makeAimLoopConfig);
+    g_aimLoop.start();
     return JNI_TRUE;
 }
 
-/**
- * @brief Start the detection pipeline
- */
-JNIEXPORT void JNICALL
-Java_com_aimbuddy_MainActivity_nativeStart(JNIEnv* env, jobject thiz) {
-    (void)env;
-    (void)thiz;
-    LOGI("nativeStart called");
-    if (!g_pipeline.isModelLoaded()) {
-        LOGE("Cannot start: no model loaded");
-        return;
-    }
-    g_pipeline.start();
-}
-
-/**
- * @brief Stop the detection pipeline
- */
-JNIEXPORT void JNICALL
-Java_com_aimbuddy_MainActivity_nativeStop(JNIEnv* env, jobject thiz) {
-    (void)env;
-    (void)thiz;
-    LOGI("nativeStop called");
+/** @brief Stops the aim loop (the finger comes off and the touchscreen goes back), then detection. */
+JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_stop(JNIEnv* /* env */, jclass /* clazz */) {
+    g_aimLoop.stop();
     g_pipeline.stop();
 }
 
-/**
- * @brief Shutdown and cleanup all native resources
- */
-JNIEXPORT void JNICALL
-Java_com_aimbuddy_MainActivity_nativeShutdown(JNIEnv* env, jobject thiz) {
-    LOGI("Shutting down native components");
+JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_isRunning(JNIEnv* /* env */, jclass /* clazz */) {
+    return g_pipeline.isRunning() ? JNI_TRUE : JNI_FALSE;
+}
 
-    // Save unified settings to disk
-    if (g_settings.save()) {
-        LOGI("Settings saved successfully");
-    } else {
-        LOGE("Failed to save settings");
-    }
-
-    // Stop the pipeline first: it feeds the aim controller
+/** @brief Stops everything, closes the touch connection and saves the settings. */
+JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_shutdown(JNIEnv* /* env */, jclass /* clazz */) {
+    g_aimLoop.stop();
     g_pipeline.stop();
-
-    // Stop Aimbot Thread
-    if (g_aimbot) {
-        g_aimbot->stop();
-        g_aimbot.reset();
+    g_touchLink.disconnect();
+    if (!g_settingsPath.empty() && !g_settingsStore.saveIfChanged(g_settingsPath)) {
+        LOGE("Failed to save the settings");
     }
-
-    if (g_touchHelper) {
-        g_touchHelper->shutdown();
-        g_touchHelper.reset();
-    }
-
     LOGI("Native shutdown complete");
 }
 
 /**
- * @brief Handle incoming frame from screen capture
+ * @brief Handles one frame from screen capture
  * @param hardwareBuffer AHardwareBuffer from ImageReader; only valid during this call
  */
 JNIEXPORT void JNICALL
-Java_com_aimbuddy_ScreenCaptureService_nativeOnFrame(JNIEnv* env, jclass clazz,
-                                                 jobject hardwareBuffer,
-                                                 jlong timestamp) {
-    (void)clazz;
+Java_com_aimbuddy_NativeBridge_onFrame(JNIEnv* env, jclass /* clazz */, jobject hardwareBuffer, jlong timestamp) {
     if (!g_pipeline.isRunning() || !hardwareBuffer) {
         return;
     }
-
     AHardwareBuffer* buffer = AHardwareBuffer_fromHardwareBuffer(env, hardwareBuffer);
     if (!buffer) {
         LOGW("Failed to get AHardwareBuffer");
         return;
     }
-
+    const Settings settings = g_settingsStore.get();
+    g_pipeline.setConfidenceThreshold(settings.confidence);
     // The region is copied before this call returns, so the buffer can be recycled right away.
-    g_pipeline.capture().setZoneRadius(g_settings.fovRadius);
+    g_pipeline.capture().setZoneRadius(settings.detectionZoneRadius);
     g_pipeline.capture().ingest(buffer, static_cast<int64_t>(timestamp));
 }
 
 /**
- * @brief Tell the native side how large the screen and the capture image are
- * @param screenWidth Overlay width in pixels (landscape)
- * @param screenHeight Overlay height in pixels (landscape)
- * @param captureWidth ImageReader width in pixels
- * @param captureHeight ImageReader height in pixels
+ * @brief Connects to the touch helper the app started
+ * @param port Loopback port the helper listens on
+ * @param tokenHex The helper's secret, 16 hexadecimal digits
+ * @return 0 when connected, otherwise a touch::protocol::Reason saying why not
  */
-JNIEXPORT void JNICALL
-Java_com_aimbuddy_MainActivity_nativeConfigureCapture(JNIEnv* env, jobject thiz,
-                                                   jint screenWidth, jint screenHeight,
-                                                   jint captureWidth, jint captureHeight) {
-    (void)env;
-    (void)thiz;
-    aimbuddy::CaptureGeometry geometry;
-    geometry.screenWidth = screenWidth;
-    geometry.screenHeight = screenHeight;
-    geometry.captureWidth = captureWidth;
-    geometry.captureHeight = captureHeight;
-    g_pipeline.capture().configure(geometry);
-    LOGI("Capture configured: screen %dx%d, capture %dx%d", screenWidth, screenHeight,
-         captureWidth, captureHeight);
-}
-
-/**
- * @brief Render one frame (called from render thread)
- */
-JNIEXPORT void JNICALL
-Java_com_aimbuddy_MainActivity_nativeRender(JNIEnv* env, jobject thiz) {
-    (void)env;
-    (void)thiz;
-    // Rendering handled by GLSurfaceView (imgui_menu.cpp)
-}
-
-/**
- * @brief Handle touch event
- * @param action Touch action (0=down, 1=up, 2=move)
- * @param x X coordinate
- * @param y Y coordinate
- * @return true if event was consumed by ImGui
- */
-JNIEXPORT jboolean JNICALL
-Java_com_aimbuddy_MainActivity_nativeOnTouch(JNIEnv* env, jobject thiz,
-                                         jint action, jfloat x, jfloat y) {
-    (void)env;
-    (void)thiz;
-    (void)action;
-    (void)x;
-    (void)y;
-    return JNI_FALSE;
-}
-
-/**
- * @brief Get current FPS
- */
-JNIEXPORT jfloat JNICALL
-Java_com_aimbuddy_MainActivity_nativeGetFPS(JNIEnv* env, jobject thiz) {
-    (void)env;
-    (void)thiz;
-    return 0.0f;
-}
-
-/**
- * @brief Check if ESP is running
- */
-JNIEXPORT jboolean JNICALL
-Java_com_aimbuddy_MainActivity_nativeIsRunning(JNIEnv* env, jobject thiz) {
-    return g_pipeline.isRunning() ? JNI_TRUE : JNI_FALSE;
-}
-
-/**
- * @brief Initialize/Re-initialize aimbot components (called after root grant)
- * This is where TouchHelper.init() actually happens - AFTER root permissions
- */
-JNIEXPORT jboolean JNICALL
-Java_com_aimbuddy_MainActivity_nativeInitAimbot(JNIEnv* env, jobject thiz) {
-    LOGI("nativeInitAimbot called - initializing TouchHelper with root");
-
-    if (!g_touchHelper) {
-        LOGE("TouchHelper is null, creating new one");
-        g_touchHelper = std::make_unique<TouchHelper>();
-    }
-
-    g_touchHelper->setJniBridge(g_jvm, env, thiz);
-    g_touchHelper->setBackend(g_settings.touchBackend == 1 ? TouchBackend::SHIZUKU : TouchBackend::UINPUT);
-    g_touchHelper->setScreenSize(g_screenWidth, g_screenHeight);
-
-    // THIS is where we actually init the touch device (needs root)
-    if (g_touchHelper->init()) {
-        LOGI("TouchHelper initialized successfully!");
-        LOGI("Touch device opened, uinput created, grab active");
-
-        // Now start aimbot controller since touch is working
-        if (g_aimbot) {
-            g_aimbot->start();
-            LOGI("AimbotController started with working touch");
-        } else {
-            g_aimbot = std::make_unique<AimbotController>(g_touchHelper.get(), g_screenWidth, g_screenHeight);
-            g_aimbot->start();
-            LOGI("AimbotController created and started");
-        }
-        return JNI_TRUE;
-    }
-
-    LOGE("TouchHelper init FAILED for backend=%d", g_settings.touchBackend);
-    LOGE("Check: uinput requires root, Shizuku requires active service + permission");
-    return JNI_FALSE;
-}
-
-JNIEXPORT void JNICALL
-Java_com_aimbuddy_MainActivity_nativeSetTouchBackend(JNIEnv* /* env */, jobject /* thiz */, jint backend) {
-    const int clamped = std::max(0, std::min(1, static_cast<int>(backend)));
-    g_settings.touchBackend = clamped;
-    g_settings.validate();
-
-    if (g_touchHelper) {
-        g_touchHelper->setBackend(clamped == 1 ? TouchBackend::SHIZUKU : TouchBackend::UINPUT);
-    }
-    LOGI("Touch backend set to %d", clamped);
-}
-
 JNIEXPORT jint JNICALL
-Java_com_aimbuddy_MainActivity_nativeGetTouchBackend(JNIEnv* /* env */, jobject /* thiz */) {
-    return g_settings.touchBackend;
+Java_com_aimbuddy_NativeBridge_touchConnect(JNIEnv* env, jclass /* clazz */, jint port, jstring tokenHex) {
+    const std::string text = toStdString(env, tokenHex);
+    char* end = nullptr;
+    const unsigned long long value = std::strtoull(text.c_str(), &end, 16);
+    if (text.size() != 16 || end == nullptr || *end != '\0') {
+        return static_cast<jint>(aimbuddy::touch::protocol::Reason::kBadClient);
+    }
+    aimbuddy::touch::protocol::Token token;
+    token.first = static_cast<int32_t>(static_cast<uint32_t>(value >> 32));
+    token.second = static_cast<int32_t>(static_cast<uint32_t>(value & 0xFFFFFFFFu));
+    constexpr int kConnectTimeoutMs = 6000;
+    return static_cast<jint>(g_touchLink.connect(port, token, kConnectTimeoutMs));
+}
+
+/** @brief Lets the touch helper go; it gives the touchscreen back and stops. */
+JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_touchDisconnect(JNIEnv* /* env */, jclass /* clazz */) {
+    g_touchLink.disconnect();
 }
 
 /**
- * Push streamer-mode (FLAG_SECURE) state to MainActivity via JNI.
- * Called from imgui_menu.cpp whenever the user toggles the setting.
+ * @brief What the touch helper last reported
+ * @return state in the low byte (touch::protocol::State), reason in the next 16 bits; 1 << 24 is set while connected
+ */
+JNIEXPORT jint JNICALL Java_com_aimbuddy_NativeBridge_touchStatus(JNIEnv* /* env */, jclass /* clazz */) {
+    const int connected = g_touchLink.isConnected() ? 1 : 0;
+    return (connected << 24) | (static_cast<int>(g_touchLink.reason()) << 8) | static_cast<int>(g_touchLink.state());
+}
+
+/**
+ * Tells Kotlin the player changed the streamer mode setting, so the overlay windows can be marked
+ * secure or not. Called from the overlay's render thread.
  */
 void NotifyStreamerModeChanged(bool enabled) {
     if (!g_jvm) return;
@@ -452,79 +301,16 @@ void NotifyStreamerModeChanged(bool enabled) {
         }
         attached = true;
     }
-    jclass cls = env->FindClass("com/aimbuddy/MainActivity");
-    if (cls) {
-        jmethodID method = env->GetStaticMethodID(cls, "nativeApplyStreamerMode", "(Z)V");
+    jclass bridge = env->FindClass("com/aimbuddy/NativeBridge");
+    if (bridge) {
+        jmethodID method = env->GetStaticMethodID(bridge, "onStreamerModeChanged", "(Z)V");
         if (method) {
-            env->CallStaticVoidMethod(cls, method, static_cast<jboolean>(enabled));
+            env->CallStaticVoidMethod(bridge, method, static_cast<jboolean>(enabled));
         }
         if (env->ExceptionCheck()) env->ExceptionClear();
-        env->DeleteLocalRef(cls);
+        env->DeleteLocalRef(bridge);
     }
     if (attached) g_jvm->DetachCurrentThread();
 }
 
-JNIEXPORT void JNICALL
-Java_com_aimbuddy_MainActivity_nativeSetShizukuBridgeAvailable(JNIEnv* /* env */, jobject /* thiz */, jboolean available) {
-    if (g_touchHelper) {
-        g_touchHelper->setShizukuBridgeAvailable(available == JNI_TRUE);
-    }
-}
-
-JNIEXPORT void JNICALL
-Java_com_aimbuddy_MainActivity_nativeSetModelPaths(JNIEnv* env, jobject thiz,
-                                                   jstring paramPath,
-                                                   jstring binPath) {
-    (void)thiz;
-
-    g_modelParamPath.clear();
-    g_modelBinPath.clear();
-
-    if (paramPath != nullptr) {
-        const char* chars = env->GetStringUTFChars(paramPath, nullptr);
-        if (chars != nullptr) {
-            g_modelParamPath.assign(chars);
-            env->ReleaseStringUTFChars(paramPath, chars);
-        }
-    }
-
-    if (binPath != nullptr) {
-        const char* chars = env->GetStringUTFChars(binPath, nullptr);
-        if (chars != nullptr) {
-            g_modelBinPath.assign(chars);
-            env->ReleaseStringUTFChars(binPath, chars);
-        }
-    }
-
-    LOGI("Updated model paths: param='%s' bin='%s'",
-         g_modelParamPath.c_str(),
-         g_modelBinPath.c_str());
-}
-
-/**
- * @brief Tell the detector what the model's classes mean
- * @param roles Comma separated roles in class order, such as "body,head"; null or empty when unknown
- * @param endToEnd True if the model already removes duplicate detections
- * @param inputSize Width and height of the network input, or 0 to work it out
- */
-JNIEXPORT void JNICALL
-Java_com_aimbuddy_MainActivity_nativeSetModelProfile(JNIEnv* env, jobject thiz, jstring roles,
-                                                  jboolean endToEnd, jint inputSize) {
-    (void)thiz;
-    std::string list;
-    if (roles != nullptr) {
-        const char* chars = env->GetStringUTFChars(roles, nullptr);
-        if (chars != nullptr) {
-            list.assign(chars);
-            env->ReleaseStringUTFChars(roles, chars);
-        }
-    }
-    g_modelProfile = list.empty() ? aimbuddy::ModelProfile() : aimbuddy::ModelProfile::parseRoles(list, 0);
-    g_modelProfile.endToEndOutput = endToEnd == JNI_TRUE;
-    g_modelProfile.inputSize = inputSize > 0 ? inputSize : 0;
-    LOGI("Model profile: roles='%s' endToEnd=%d inputSize=%d", list.c_str(), endToEnd == JNI_TRUE, inputSize);
-}
-
-} // extern "C"
-
-aimbuddy::DetectionPipeline& aimbuddy::pipeline() { return g_pipeline; }
+}  // extern "C"

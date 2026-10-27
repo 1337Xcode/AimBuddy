@@ -1,10 +1,10 @@
 /**
- * imgui_menu.cpp - Native ImGui menu implementation for GLSurfaceView
- * 
- * This provides the JNI bridge for ImGuiGLSurface.kt, handling:
- * - ImGui initialization with Android backend
- * - Menu rendering with settings controls
- * - Touch event processing
+ * imgui_menu.cpp - The overlay: draws the targets and the settings menu with ImGui and hands the
+ * touches that land on the menu to it.
+ *
+ * Kotlin owns the window (ImGuiGLSurface) and calls the functions at the bottom of this file. The
+ * window passes every touch through to the game except while the menu is open; a tap anywhere
+ * outside the menu closes it, so the overlay can never keep blocking the screen.
  */
 
 #include <jni.h>
@@ -13,258 +13,163 @@
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 #include <GLES3/gl3.h>
+
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <thread>
-#include <vector>
 
+#include "app_state.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_android.h"
 #include "imgui/imgui_impl_opengl3.h"
-#include "settings.h"
-#include "utils/logger.h"
-#include "utils/vector2.h"
-#include "utils/imgui_helper.h"
-#include "renderer/render_config.h"
-#include "utils/aimbot_types.h"
 #include "overlay/target_overlay.h"
-#include "pipeline/pipeline_access.h"
 #include "utils/i18n.h"
+#include "utils/logger.h"
 
-using aimbuddy::i18n::T;
+using aimbuddy::Settings;
 using aimbuddy::i18n::Key;
+using aimbuddy::i18n::T;
 
-// Forward declaration for shared config access (defined in esp_jni.cpp)
-extern "C" ESP::RenderConfig* GetRenderConfig();
 extern "C" bool GetDetectionZoneScreenRect(float* left, float* top, float* right, float* bottom);
-extern UnifiedSettings g_settings;
-
-// Global state for ImGui menu
-static ANativeWindow* g_menuWindow = nullptr;
-static bool g_imguiInitialized = false;
-static int g_screenWidth = 0;
-static int g_screenHeight = 0;
-static bool g_menuVisible = false;
-static std::atomic<bool> g_rootAvailable{false};  // Track root status
-static std::atomic<bool> g_shizukuAvailable{false};
-
-// Icon position synced from Kotlin layer (existing SVG icon)
-// Where the overlay window's top-left corner sits on the display, in pixels. Game-space drawing
-// (targets, the crosshair, the detection zone) is in display pixels and is shifted by this.
-static std::atomic<int> g_overlayOriginX{0};
-static std::atomic<int> g_overlayOriginY{0};
-
-static ImVec2 g_iconPos = ImVec2(60.0f, 200.0f);  // Initial default
-static constexpr float ICON_RADIUS = 44.0f;  // Match Kotlin icon size (44dp)
-
-// How far ahead of "now" targets are drawn. A frame drawn now reaches the screen about
-// one to two refreshes later, so targets are projected that far to land on the right spot.
-static constexpr int64_t kDisplayLeadNs = 20'000'000;
-static bool g_settingsPendingSave = false;
-static double g_settingsDirtyAt = 0.0;
-static constexpr double SETTINGS_SAVE_DELAY_SEC = 0.35;
-static std::chrono::steady_clock::time_point g_lastOverlayTickTime{};
-static float g_measuredOverlayFps = 0.0f;
-static float g_measuredInferenceMs = 0.0f;
-static ImVec2 g_menuSize = ImVec2(0.0f, 0.0f);
-static bool g_menuWasVisible = false;
-static bool g_streamerModeAppliedState = false;
-
 extern "C" void NotifyStreamerModeChanged(bool enabled);
-
-static float QuantizeStep(float value, float step) {
-    if (step <= 0.0f) return value;
-    return std::round(value / step) * step;
-}
-
-static void ShowSettingHelp(const char* description) {
-    ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
-    if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-        ImGui::TextUnformatted(description);
-        ImGui::PopTextWrapPos();
-        ImGui::EndTooltip();
-    }
-}
-
-static void ApplyRenderConfigToUnifiedSettings(const ESP::RenderConfig& settings) {
-    g_settings.boxColorR = settings.boxColorR.load(std::memory_order_relaxed);
-    g_settings.boxColorG = settings.boxColorG.load(std::memory_order_relaxed);
-    g_settings.boxColorB = settings.boxColorB.load(std::memory_order_relaxed);
-    g_settings.boxThickness = settings.boxThickness.load(std::memory_order_relaxed);
-    g_settings.confidenceThreshold = settings.confidenceThreshold.load(std::memory_order_relaxed);
-    g_settings.fovRadius = settings.fovRadius.load(std::memory_order_relaxed);
-    g_settings.showFPS = settings.showFPS.load(std::memory_order_relaxed);
-    g_settings.showDetectionCount = settings.showDetectionCount.load(std::memory_order_relaxed);
-    g_settings.showLabels = settings.showLabels.load(std::memory_order_relaxed);
-    g_settings.drawLine = settings.drawLine.load(std::memory_order_relaxed);
-    g_settings.drawDot = settings.drawDot.load(std::memory_order_relaxed);
-    g_settings.enableSmoothing = settings.enableSmoothing.load(std::memory_order_relaxed);
-    g_settings.smoothingFactor = settings.smoothingFactor.load(std::memory_order_relaxed);
-    g_settings.aimbotEnabled = settings.aimbotEnabled.load(std::memory_order_relaxed);
-    g_settings.headOffset = settings.headOffset.load(std::memory_order_relaxed);
-
-    g_settings.screenWidth = g_screenWidth;
-    g_settings.screenHeight = g_screenHeight;
-    if (g_screenWidth > 0 && g_screenHeight > 0) {
-        float ratioX = settings.touchCenterX.load(std::memory_order_relaxed);
-        float ratioY = settings.touchCenterY.load(std::memory_order_relaxed);
-        g_settings.touchX = ratioX * static_cast<float>(g_screenWidth);
-        g_settings.touchY = ratioY * static_cast<float>(g_screenHeight);
-    }
-    g_settings.touchRadius = settings.touchRadius.load(std::memory_order_relaxed);
-    g_settings.aimDelay = settings.aimDelay.load(std::memory_order_relaxed);
-
-    g_settings.validate();
-}
 
 namespace {
 
-// Read a system file (typically /system/fonts/*) into a heap buffer that
-// ImGui's atlas will own. Returns nullptr if the file is unreadable.
-unsigned char* ReadFile(const char* path, size_t& outSize) {
-    FILE* f = std::fopen(path, "rb");
-    if (!f) return nullptr;
-    std::fseek(f, 0, SEEK_END);
-    long len = std::ftell(f);
-    std::fseek(f, 0, SEEK_SET);
-    if (len <= 0) { std::fclose(f); return nullptr; }
-    unsigned char* buf = static_cast<unsigned char*>(IM_ALLOC(static_cast<size_t>(len)));
-    if (!buf) { std::fclose(f); return nullptr; }
-    size_t got = std::fread(buf, 1, static_cast<size_t>(len), f);
-    std::fclose(f);
-    if (got != static_cast<size_t>(len)) { IM_FREE(buf); return nullptr; }
-    outSize = static_cast<size_t>(len);
-    return buf;
+// How far ahead of "now" targets are drawn. A frame drawn now reaches the screen about one to
+// two refreshes later, so targets are projected that far to land on the right spot.
+constexpr int64_t kDisplayLeadNs = 20'000'000;
+
+// Overlay frame caps. The menu may render faster for smoother slider feedback.
+constexpr int kBaseFpsCap = 60;
+constexpr int kMenuFpsCap = 90;
+
+// Settings are written this long after the last change, once no control is being dragged.
+constexpr double kSaveDelaySeconds = 0.35;
+
+// Size of the floating icon the menu opens beside, in pixels.
+constexpr float kIconRadius = 44.0f;
+
+ANativeWindow* g_window = nullptr;
+bool g_imguiReady = false;
+int g_windowWidth = 0;
+int g_windowHeight = 0;
+
+std::atomic<bool> g_menuVisible{false};
+std::atomic<uint64_t> g_frameCount{0};
+
+// Where the overlay window's top-left corner sits on the display. Game space drawing (targets, the
+// crosshair, the detection zone) is in display pixels and is shifted by this.
+std::atomic<int> g_overlayOriginX{0};
+std::atomic<int> g_overlayOriginY{0};
+
+// Where the floating icon is, so the menu can open beside it.
+ImVec2 g_iconPosition = ImVec2(60.0f, 200.0f);
+
+// The menu's rectangle (left, top, right, bottom) as drawn last, to tell a tap on it from one outside it.
+std::atomic<float> g_menuRect[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+ImVec2 g_menuSize = ImVec2(0.0f, 0.0f);
+bool g_menuWasVisible = false;
+bool g_streamerModeApplied = false;
+std::chrono::steady_clock::time_point g_lastTick{};
+float g_measuredFps = 0.0f;
+
+// ---------------------------------------------------------------------------------------------
+// Fonts and theme
+// ---------------------------------------------------------------------------------------------
+
+/// Reads a file into memory that the font atlas will own, or returns nullptr.
+unsigned char* readFile(const char* path, size_t* size) {
+    FILE* file = std::fopen(path, "rb");
+    if (!file) {
+        return nullptr;
+    }
+    std::fseek(file, 0, SEEK_END);
+    const long length = std::ftell(file);
+    std::fseek(file, 0, SEEK_SET);
+    if (length <= 0) {
+        std::fclose(file);
+        return nullptr;
+    }
+    unsigned char* buffer = static_cast<unsigned char*>(IM_ALLOC(static_cast<size_t>(length)));
+    const size_t got = buffer ? std::fread(buffer, 1, static_cast<size_t>(length), file) : 0;
+    std::fclose(file);
+    if (got != static_cast<size_t>(length)) {
+        IM_FREE(buffer);
+        return nullptr;
+    }
+    *size = static_cast<size_t>(length);
+    return buffer;
 }
 
-// Load CJK font. Strategy:
-//   1. Try /system/fonts/ - every modern Android device ships NotoSansCJK
-//      pre-installed. This works without bundling a font in the APK.
-//   2. Fall back to assets/fonts/cjk.ttf (user-supplied).
-// Returns true on success. Loaded as a MERGED font over the default font
-// so English glyphs stay crisp and CJK glyphs slot in only where needed.
-bool TryLoadCjkFont(JNIEnv* env, jobject assetManager, float pixelSize) {
+/// Adds the first readable font among `paths` to the atlas, for the glyphs in `ranges`. `merge` puts them in the previous font.
+bool addFont(const char* const* paths, int count, float pixelSize, const ImWchar* ranges, bool merge) {
     ImGuiIO& io = ImGui::GetIO();
-    const ImWchar* ranges = io.Fonts->GetGlyphRangesChineseSimplifiedCommon();
+    for (int i = 0; i < count; ++i) {
+        size_t size = 0;
+        unsigned char* data = readFile(paths[i], &size);
+        if (!data) {
+            continue;
+        }
+        ImFontConfig config;
+        config.FontDataOwnedByAtlas = true;
+        config.MergeMode = merge;
+        config.PixelSnapH = true;
+        if (io.Fonts->AddFontFromMemoryTTF(data, static_cast<int>(size), pixelSize, &config, ranges)) {
+            LOGI("Menu font: %s", paths[i]);
+            return true;
+        }
+    }
+    return false;
+}
 
-    // Step 1: system font paths. Order matters; first hit wins.
-    const char* systemCandidates[] = {
+/**
+ * Builds the menu's font: a Latin and Cyrillic base with Chinese added where needed. Every phone
+ * ships fonts for all of these, so none has to be bundled.
+ */
+void loadFonts(float pixelSize) {
+    ImGuiIO& io = ImGui::GetIO();
+
+    static const char* const kBaseFonts[] = {
+        "/system/fonts/Roboto-Regular.ttf",
+        "/system/fonts/RobotoStatic-Regular.ttf",
+        "/system/fonts/NotoSans-Regular.ttf",
+        "/system/fonts/DroidSans.ttf",
+    };
+    static const char* const kChineseFonts[] = {
         "/system/fonts/NotoSansCJK-Regular.ttc",
         "/system/fonts/NotoSerifCJK-Regular.ttc",
         "/system/fonts/DroidSansFallback.ttf",
         "/system/fonts/NotoSansSC-Regular.otf",
-        "/system/fonts/MiSans-Regular.ttf",          // Xiaomi
-        "/system/fonts/HarmonyOS_Sans_SC.ttf",        // HarmonyOS
+        "/system/fonts/MiSans-Regular.ttf",
+        "/system/fonts/HarmonyOS_Sans_SC.ttf",
         "/product/fonts/NotoSansCJK-Regular.ttc",
     };
-    for (const char* path : systemCandidates) {
-        size_t size = 0;
-        unsigned char* buf = ReadFile(path, size);
-        if (!buf) continue;
-        ImFontConfig cfg;
-        cfg.FontDataOwnedByAtlas = true;
-        cfg.MergeMode = true;  // merge into the default font
-        cfg.PixelSnapH = true;
-        ImFont* font = io.Fonts->AddFontFromMemoryTTF(buf, static_cast<int>(size), pixelSize, &cfg, ranges);
-        if (font) {
-            LOGI("Loaded CJK font from system: %s (%zu bytes)", path, size);
-            return true;
-        }
-    }
 
-    // Step 2: APK assets fallback for older / stripped devices.
-    if (env && assetManager) {
-        AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
-        const char* assetCandidates[] = {
-            "fonts/cjk.ttf",
-            "fonts/cjk.otf",
-            "fonts/NotoSansSC-Regular.ttf",
-            "fonts/NotoSansCJKsc-Regular.otf",
-        };
-        for (const char* path : assetCandidates) {
-            AAsset* asset = AAssetManager_open(mgr, path, AASSET_MODE_BUFFER);
-            if (!asset) continue;
-            off_t size = AAsset_getLength(asset);
-            if (size <= 0) { AAsset_close(asset); continue; }
-            void* buf = IM_ALLOC(static_cast<size_t>(size));
-            AAsset_read(asset, buf, static_cast<size_t>(size));
-            AAsset_close(asset);
-            ImFontConfig cfg;
-            cfg.FontDataOwnedByAtlas = true;
-            cfg.MergeMode = true;
-            cfg.PixelSnapH = true;
-            ImFont* font = io.Fonts->AddFontFromMemoryTTF(buf, static_cast<int>(size), pixelSize, &cfg, ranges);
-            if (font) {
-                LOGI("Loaded CJK font from assets: %s (%ld bytes)", path, static_cast<long>(size));
-                return true;
-            }
-        }
-    }
+    static ImVector<ImWchar> baseRanges;
+    ImFontGlyphRangesBuilder builder;
+    builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
+    builder.AddRanges(io.Fonts->GetGlyphRangesCyrillic());
+    builder.BuildRanges(&baseRanges);
 
-    LOGI("No CJK font found on this device; Chinese strings will render as tofu");
-    return false;
+    if (!addFont(kBaseFonts, 4, pixelSize, baseRanges.Data, false)) {
+        io.Fonts->AddFontDefault();   // Latin only, but always there
+        LOGW("No system font with Latin and Cyrillic glyphs; using ImGui's built-in font");
+    }
+    if (!addFont(kChineseFonts, 7, pixelSize, io.Fonts->GetGlyphRangesChineseSimplifiedCommon(), true)) {
+        LOGI("No Chinese font on this device; Chinese text will show as boxes");
+    }
 }
 
-} // namespace
-
-// Initialize ImGui for GLSurfaceView rendering
-extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeInit(JNIEnv* env, jclass /* this */, jobject assetManager, jobject surface) {
-    LOGI("nativeImGuiInit called");
-    
-    if (g_imguiInitialized) {
-        LOGI("ImGui already initialized, skipping");
-        return;
-    }
-
-    if (!surface) {
-        LOGE("Surface is null");
-        return;
-    }
-
-    // Get native window from Surface
-    g_menuWindow = ANativeWindow_fromSurface(env, surface);
-    if (!g_menuWindow) {
-        LOGE("Failed to get ANativeWindow from Surface");
-        return;
-    }
-
-    LOGI("Got ANativeWindow: %p", g_menuWindow);
-
-    // Query dimensions
-    g_screenWidth = ANativeWindow_getWidth(g_menuWindow);
-    g_screenHeight = ANativeWindow_getHeight(g_menuWindow);
-    LOGI("Menu window: %dx%d", g_screenWidth, g_screenHeight);
-
-
-    // Create ImGui context if not already created
-    ImGuiContext* existingContext = ImGui::GetCurrentContext();
-    if (!existingContext) {
-        LOGI("Creating new ImGui context");
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-    } else {
-        LOGI("Using existing ImGui context");
-    }
-    
-    ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = nullptr; // No ini file
-    io.ConfigFlags |= ImGuiConfigFlags_IsTouchScreen;
-    io.ConfigWindowsMoveFromTitleBarOnly = true;
-    io.DisplaySize = ImVec2(static_cast<float>(g_screenWidth), static_cast<float>(g_screenHeight));
-    
-    // Dark theme with accent colors
+void applyTheme() {
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 8.0f;
     style.FrameRounding = 4.0f;
     style.GrabRounding = 4.0f;
-    
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.08f, 0.08f, 0.12f, 0.95f);
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.08f, 0.08f, 0.12f, 0.97f);
     style.Colors[ImGuiCol_TitleBg] = ImVec4(0.9f, 0.2f, 0.3f, 1.0f);
     style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.95f, 0.3f, 0.4f, 1.0f);
     style.Colors[ImGuiCol_Button] = ImVec4(0.15f, 0.6f, 0.45f, 1.0f);
@@ -273,747 +178,503 @@ Java_com_aimbuddy_ImGuiGLSurface_nativeInit(JNIEnv* env, jclass /* this */, jobj
     style.Colors[ImGuiCol_CheckMark] = ImVec4(0.2f, 0.9f, 0.5f, 1.0f);
     style.Colors[ImGuiCol_Header] = ImVec4(0.2f, 0.2f, 0.3f, 1.0f);
     style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.3f, 0.3f, 0.4f, 1.0f);
-    
-    // Scale for mobile without making controls overly cramped
+
+    // Scale for fingers rather than a mouse.
     style.ScaleAllSizes(1.15f);
-    io.FontGlobalScale = 1.08f;
     style.WindowPadding = ImVec2(16.0f, 14.0f);
     style.FramePadding = ImVec2(10.0f, 8.0f);
-    style.ItemSpacing = ImVec2(10.0f, 8.0f);
+    style.ItemSpacing = ImVec2(10.0f, 10.0f);
     style.ItemInnerSpacing = ImVec2(8.0f, 6.0f);
     style.WindowBorderSize = 1.0f;
     style.ScrollbarSize = 18.0f;
-    
-    // Load CJK font (optional) BEFORE backend init  -  backend builds the
-    // font atlas during its own init. Default font is always loaded first
-    // so English glyphs come from the standard ImGui font.
-    io.Fonts->AddFontDefault();
-    TryLoadCjkFont(env, assetManager, 18.0f);
-
-    // Apply persisted language preference so the very first frame renders
-    // in the user's chosen language without a one-frame English flash.
-    aimbuddy::i18n::SetLanguage(g_settings.language);
-
-    // Initialize backends
-    LOGI("Initializing ImGui Android backend");
-    ImGui_ImplAndroid_Init(g_menuWindow);
-
-    LOGI("Initializing ImGui OpenGL3 backend");
-    ImGui_ImplOpenGL3_Init("#version 300 es");
-
-    g_imguiInitialized = true;
-    LOGI("ImGui menu initialized successfully");
 }
 
-    // Handle surface size changes
-    extern "C" JNIEXPORT void JNICALL
-    Java_com_aimbuddy_ImGuiGLSurface_nativeSurfaceChanged(JNIEnv* /* env */, jclass /* this */, jint width, jint height) {
-        if (!g_imguiInitialized) {
-            return;
+// ---------------------------------------------------------------------------------------------
+// The game overlay: crosshair, targets, zones
+// ---------------------------------------------------------------------------------------------
+
+/// Draws a line, a box or a marker for every target, and the zones the detector and the assist work in.
+void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCountOut) {
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    const ImVec2 windowSize = ImGui::GetIO().DisplaySize;
+    const aimbuddy::CaptureGeometry geometry = aimbuddy::pipeline().capture().geometry();
+
+    // The game, the detector and the aim logic all use display pixels, whose centre is where the
+    // in-game crosshair is. The overlay window may be smaller than the display or offset from it.
+    const float displayWidth = geometry.isValid() ? static_cast<float>(geometry.screenWidth) : windowSize.x;
+    const float displayHeight = geometry.isValid() ? static_cast<float>(geometry.screenHeight) : windowSize.y;
+    const ImVec2 crosshair(displayWidth * 0.5f - origin.x, displayHeight * 0.5f - origin.y);
+
+    const float arm = 11.5f;
+    const ImU32 crossColor = IM_COL32(58, 156, 255, 240);
+    list->AddLine(ImVec2(crosshair.x - arm, crosshair.y), ImVec2(crosshair.x + arm, crosshair.y), crossColor, 3.0f);
+    list->AddLine(ImVec2(crosshair.x, crosshair.y - arm), ImVec2(crosshair.x, crosshair.y + arm), crossColor, 3.0f);
+
+    // Targets come from the tracker, projected to the moment this frame will be on screen.
+    const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch()).count();
+    aimbuddy::TrackView views[aimbuddy::kMaxTracks];
+    const int viewCount = aimbuddy::pipeline().tracker().snapshot(nowNs + kDisplayLeadNs, views, aimbuddy::kMaxTracks);
+    const aimbuddy::ModelProfile& profile = aimbuddy::pipeline().profile();
+
+    aimbuddy::TargetStyle style;
+    style.color = ImGui::ColorConvertFloat4ToU32(ImVec4(settings.boxColor[0], settings.boxColor[1], settings.boxColor[2], 1.0f));
+    style.thickness = static_cast<float>(settings.boxThickness);
+    style.showScore = settings.showLabels;
+    style.showAimPoint = settings.showAimPoint;
+    style.aimZone = static_cast<aimbuddy::AimZone>(settings.aimZone);
+    style.lockedTrackId = aimbuddy::aimLoop().stats().lockedTrack;
+    style.origin = origin;
+    aimbuddy::TargetOverlay::draw(list, views, viewCount, profile, style);
+
+    int bodies = 0;
+    const aimbuddy::TrackView* nearest = nullptr;
+    float nearestDistanceSq = 0.0f;
+    for (int i = 0; i < viewCount; ++i) {
+        if (profile.roleOf(views[i].classId) != aimbuddy::ClassRole::kBody) {
+            continue;
         }
+        ++bodies;
+        const float dx = views[i].centerX - displayWidth * 0.5f;
+        const float dy = views[i].centerY - displayHeight * 0.5f;
+        const float distanceSq = dx * dx + dy * dy;
+        if (nearest == nullptr || distanceSq < nearestDistanceSq) {
+            nearest = &views[i];
+            nearestDistanceSq = distanceSq;
+        }
+    }
+    *bodyCountOut = bodies;
 
-        g_screenWidth = width;
-        g_screenHeight = height;
-        glViewport(0, 0, width, height);
-
-        ImGuiIO& io = ImGui::GetIO();
-        io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
-        // The overlay's size is NOT the screen's size: it shrinks while the navigation bar is
-        // showing. Detection and aiming always work in display pixels (see nativeConfigureCapture).
+    if (settings.showSnapLine && nearest != nullptr) {
+        list->AddLine(crosshair, ImVec2(nearest->centerX - origin.x, nearest->centerY - origin.y),
+                      IM_COL32(255, 100, 50, static_cast<int>(255.0f * nearest->opacity)), 2.0f);
     }
 
-    // The overlay window's top-left corner on the display, reported by the Kotlin view.
-    extern "C" JNIEXPORT void JNICALL
-    Java_com_aimbuddy_ImGuiGLSurface_nativeSetOrigin(JNIEnv* /* env */, jclass /* this */, jint x, jint y) {
-        g_overlayOriginX.store(x, std::memory_order_relaxed);
-        g_overlayOriginY.store(y, std::memory_order_relaxed);
+    // The detection zone (blue box) and, while the assist is on, the radius it picks targets from (red circle).
+    float left, top, right, bottom;
+    if (GetDetectionZoneScreenRect(&left, &top, &right, &bottom)) {
+        list->AddRect(ImVec2(left - origin.x, top - origin.y), ImVec2(right - origin.x, bottom - origin.y),
+                      IM_COL32(40, 140, 255, 220), 0.0f, 0, 2.2f);
+        if (settings.assistEnabled) {
+            list->AddCircle(crosshair, settings.aimFovRadius, IM_COL32(255, 60, 60, 230), 64, 2.3f);
+        }
     }
 
-// Render ImGui (menu + ESP)
-extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* this */) {
-    if (!g_imguiInitialized || !g_menuWindow) {
+    // Where the assist's finger rests, so the player can keep their own thumb away from it.
+    if (settings.assistEnabled && settings.showAnchor) {
+        const ImVec2 anchor(settings.anchorX * displayWidth - origin.x, settings.anchorY * displayHeight - origin.y);
+        const int alpha = static_cast<int>(255.0f * settings.anchorOpacity);
+        list->AddCircleFilled(anchor, settings.anchorRadius, IM_COL32(120, 200, 255, alpha / 4), 64);
+        list->AddCircle(anchor, settings.anchorRadius, IM_COL32(120, 200, 255, alpha), 64, 2.0f);
+    }
+
+    if (settings.showCount && bodies > 0) {
+        char text[64];
+        std::snprintf(text, sizeof(text), "%d", bodies);
+        ImFont* font = ImGui::GetFont();
+        const float size = ImGui::GetFontSize() * 2.0f;
+        const ImVec2 textSize = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+        list->AddText(font, size, ImVec2((windowSize.x - textSize.x) * 0.5f, 40.0f), IM_COL32(255, 50, 50, 255), text);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The menu
+// ---------------------------------------------------------------------------------------------
+
+/// A short explanation that appears when the "(?)" after a control is held.
+void helpMarker(const char* text) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+        ImGui::TextUnformatted(text);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
+/// What to tell the player about the touch helper.
+const char* helperStatusText(const aimbuddy::AimLoop::Stats& stats) {
+    using aimbuddy::touch::protocol::Reason;
+    using aimbuddy::touch::protocol::State;
+    const char* reason = nullptr;
+    switch (stats.helperReason) {
+        case Reason::kNoTouchscreen: reason = T(Key::ReasonNoTouchscreen); break;
+        case Reason::kTouchscreenDenied: reason = T(Key::ReasonDenied); break;
+        case Reason::kVirtualDeviceDenied: reason = T(Key::ReasonVirtualDenied); break;
+        case Reason::kGrabFailed: reason = T(Key::ReasonGrab); break;
+        case Reason::kHeartbeatLost: reason = T(Key::ReasonHeartbeat); break;
+        case Reason::kEscapeKeys: reason = T(Key::ReasonEscape); break;
+        default: break;
+    }
+    if (!stats.helperConnected) {
+        return reason != nullptr ? reason : T(Key::HelperOff);
+    }
+    switch (stats.helperState) {
+        case State::kMerging: return T(Key::HelperActive);
+        case State::kWaitingForFingers: return T(Key::HelperWaiting);
+        default: return reason != nullptr ? reason : T(Key::HelperIdle);
+    }
+}
+
+bool drawVisualsTab(Settings& s) {
+    bool changed = false;
+    changed |= ImGui::Checkbox(T(Key::ShowLabels), &s.showLabels);
+    changed |= ImGui::Checkbox(T(Key::ShowSnapLine), &s.showSnapLine);
+    changed |= ImGui::Checkbox(T(Key::ShowAimPoint), &s.showAimPoint);
+    changed |= ImGui::Checkbox(T(Key::ShowCount), &s.showCount);
+    changed |= ImGui::Checkbox(T(Key::ShowPerformance), &s.showPerformance);
+    ImGui::Separator();
+
+    changed |= ImGui::ColorEdit3(T(Key::BoxColor), s.boxColor, ImGuiColorEditFlags_NoInputs);
+    changed |= ImGui::SliderInt(T(Key::BoxThickness), &s.boxThickness, 1, 6);
+    ImGui::Separator();
+
+    changed |= ImGui::SliderFloat(T(Key::Confidence), &s.confidence, 0.1f, 0.95f, "%.2f");
+    changed |= ImGui::SliderFloat(T(Key::DetectionZone), &s.detectionZoneRadius, 100.0f, 650.0f, "%.0f px");
+    ImGui::Separator();
+
+    changed |= ImGui::Checkbox(T(Key::ShowAnchor), &s.showAnchor);
+    if (s.showAnchor) {
+        changed |= ImGui::SliderFloat(T(Key::AnchorOpacity), &s.anchorOpacity, 0.1f, 1.0f, "%.2f");
+    }
+    ImGui::Separator();
+
+    changed |= ImGui::Checkbox(T(Key::StreamerMode), &s.streamerMode);
+    const char* languages[] = {aimbuddy::i18n::LanguageName(0), aimbuddy::i18n::LanguageName(1),
+                               aimbuddy::i18n::LanguageName(2)};
+    if (ImGui::Combo(T(Key::Language), &s.language, languages, 3)) {
+        aimbuddy::i18n::SetLanguage(s.language);
+        changed = true;
+    }
+    return changed;
+}
+
+bool drawAimTab(Settings& s) {
+    bool changed = false;
+    changed |= ImGui::Checkbox(T(Key::AssistEnable), &s.assistEnabled);
+
+    const aimbuddy::AimLoop::Stats stats = aimbuddy::aimLoop().stats();
+    ImGui::TextWrapped("%s", helperStatusText(stats));
+    ImGui::Separator();
+
+    const char* access[] = {T(Key::AccessAutomatic), T(Key::AccessShizuku), T(Key::AccessRoot)};
+    changed |= ImGui::Combo(T(Key::TouchAccess), &s.touchBackend, access, 3);
+
+    const char* zones[] = {T(Key::ZoneHead), T(Key::ZoneChest), T(Key::ZoneCentre)};
+    changed |= ImGui::Combo(T(Key::AimZone), &s.aimZone, zones, 3);
+    changed |= ImGui::SliderFloat(T(Key::AimStrength), &s.aimStrength, 0.0f, 1.0f, "%.2f");
+    changed |= ImGui::SliderFloat(T(Key::AimRadius), &s.aimFovRadius, 50.0f, 650.0f, "%.0f px");
+    const char* priorities[] = {T(Key::PriorityNearest), T(Key::PriorityLargest), T(Key::PriorityCertain)};
+    changed |= ImGui::Combo(T(Key::AimPriority), &s.aimPriority, priorities, 3);
+
+    ImGui::SeparatorText(T(Key::CalibrationTitle));
+    ImGui::TextWrapped("%s", T(Key::CalibrationHint));
+    changed |= ImGui::SliderFloat(T(Key::CameraSensitivity), &s.sceneGain, 0.2f, 6.0f, "%.2f");
+    changed |= ImGui::SliderFloat(T(Key::ResponseDelay), &s.actuationDelayMs, 0.0f, 200.0f, "%.0f ms");
+    changed |= ImGui::Checkbox(T(Key::InvertVertical), &s.invertY);
+
+    ImGui::SeparatorText(T(Key::TouchAreaTitle));
+    changed |= ImGui::SliderFloat(T(Key::AnchorX), &s.anchorX, 0.5f, 0.95f, "%.2f");
+    changed |= ImGui::SliderFloat(T(Key::AnchorY), &s.anchorY, 0.2f, 0.8f, "%.2f");
+    changed |= ImGui::SliderFloat(T(Key::AnchorSize), &s.anchorRadius, 50.0f, 400.0f, "%.0f px");
+    if (ImGui::Button(T(Key::ResetTouchArea))) {
+        const Settings defaults;
+        s.anchorX = defaults.anchorX;
+        s.anchorY = defaults.anchorY;
+        s.anchorRadius = defaults.anchorRadius;
+        changed = true;
+    }
+    return changed;
+}
+
+void drawInfoTab(int bodyCount) {
+    const aimbuddy::DetectionPipeline::Stats stats = aimbuddy::pipeline().stats();
+    ImGui::TextUnformatted(T(Key::InfoTitle));
+    ImGui::TextUnformatted(T(Key::InfoVersion));
+    ImGui::Text("%s: %.0f", T(Key::InfoOverlayFps), g_measuredFps);
+    ImGui::Text("%s: %.0f", T(Key::InfoDetectionsPerSecond), stats.detectionsPerSecond);
+    ImGui::Text("%s: %.0f ms (%s)", T(Key::InfoDelay), stats.frameAgeMs, stats.backend);
+    ImGui::Text("%s: %d", T(Key::InfoTargets), bodyCount);
+    ImGui::Text("%s: %dx%d", T(Key::InfoScreen), g_windowWidth, g_windowHeight);
+    ImGui::TextDisabled("github.com/1337XCode/AimBuddy");
+    ImGui::Separator();
+    ImGui::TextWrapped("%s", T(Key::InfoTip));
+}
+
+/// Draws the menu beside the floating icon. Returns true if a setting changed.
+bool drawMenu(Settings& settings, int bodyCount) {
+    const ImVec2 windowSize = ImGui::GetIO().DisplaySize;
+    if (!g_menuWasVisible || g_menuSize.x <= 0.0f || g_menuSize.y <= 0.0f) {
+        g_menuSize = ImVec2(std::max(460.0f, std::min(windowSize.x * 0.48f, 860.0f)),
+                            std::max(560.0f, std::min(windowSize.y * 0.92f, 1060.0f)));
+    }
+    float x = g_iconPosition.x + kIconRadius + 52.0f;
+    float y = g_iconPosition.y - g_menuSize.y * 0.5f;
+    if (x + g_menuSize.x > windowSize.x) {
+        x = g_iconPosition.x - kIconRadius - 52.0f - g_menuSize.x;
+    }
+    x = std::max(4.0f, std::min(x, windowSize.x - g_menuSize.x - 4.0f));
+    y = std::max(4.0f, std::min(y, windowSize.y - g_menuSize.y - 4.0f));
+
+    ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(g_menuSize, ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(420.0f, 460.0f), ImVec2(windowSize.x - 8.0f, windowSize.y - 8.0f));
+
+    bool changed = false;
+    bool open = true;
+    if (ImGui::Begin(T(Key::AppTitle), &open, ImGuiWindowFlags_NoCollapse)) {
+        g_menuSize = ImGui::GetWindowSize();
+        const ImVec2 position = ImGui::GetWindowPos();
+        g_menuRect[0].store(position.x, std::memory_order_relaxed);
+        g_menuRect[1].store(position.y, std::memory_order_relaxed);
+        g_menuRect[2].store(position.x + g_menuSize.x, std::memory_order_relaxed);
+        g_menuRect[3].store(position.y + g_menuSize.y, std::memory_order_relaxed);
+
+        ImGui::BeginChild("##MenuScroll", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 6.0f), false,
+                          ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        if (ImGui::BeginTabBar("##MenuTabs", ImGuiTabBarFlags_FittingPolicyResizeDown)) {
+            if (ImGui::BeginTabItem(T(Key::TabVisuals))) {
+                changed |= drawVisualsTab(settings);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem(T(Key::TabAim))) {
+                changed |= drawAimTab(settings);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem(T(Key::TabInfo))) {
+                drawInfoTab(bodyCount);
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+        ImGui::EndChild();
+        if (ImGui::Button(T(Key::Close), ImVec2(160.0f, 0.0f))) {
+            open = false;
+        }
+    }
+    ImGui::End();
+    if (!open) {
+        g_menuVisible.store(false, std::memory_order_relaxed);
+    }
+    return changed;
+}
+
+/// Saves the settings once they have stopped changing.
+void saveSettingsWhenDue() {
+    int64_t changedAtNs = 0;
+    if (!aimbuddy::settingsStore().hasUnsavedChanges(&changedAtNs) || ImGui::IsAnyItemActive()) {
         return;
     }
+    const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (static_cast<double>(nowNs - changedAtNs) * 1e-9 >= kSaveDelaySeconds) {
+        aimbuddy::settingsStore().saveIfChanged(aimbuddy::settingsPath());
+    }
+}
 
+/// Keeps the overlay from drawing faster than needed, and measures how fast it does draw.
+void limitFrameRate() {
+    const int cap = g_menuVisible.load(std::memory_order_relaxed) ? kMenuFpsCap : kBaseFpsCap;
+    const auto minFrameTime = std::chrono::nanoseconds(1'000'000'000LL / cap);
+    if (g_lastTick.time_since_epoch().count() != 0) {
+        const auto elapsed = std::chrono::steady_clock::now() - g_lastTick;
+        if (elapsed < minFrameTime) {
+            std::this_thread::sleep_for(minFrameTime - elapsed);
+        }
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (g_lastTick.time_since_epoch().count() != 0) {
+        const float seconds = std::chrono::duration<float>(now - g_lastTick).count();
+        if (seconds > 0.0f && seconds <= 0.25f) {
+            const float instant = 1.0f / seconds;
+            g_measuredFps = g_measuredFps > 0.0f ? g_measuredFps * 0.9f + instant * 0.1f : instant;
+        }
+    }
+    g_lastTick = now;
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------------------------
+// Calls from ImGuiGLSurface
+// ---------------------------------------------------------------------------------------------
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aimbuddy_ImGuiGLSurface_nativeInit(JNIEnv* env, jclass /* clazz */, jobject /* assetManager */, jobject surface) {
+    if (g_imguiReady) {
+        LOGI("ImGui already initialised");
+        return;
+    }
+    if (!surface) {
+        LOGE("Surface is null");
+        return;
+    }
+    g_window = ANativeWindow_fromSurface(env, surface);
+    if (!g_window) {
+        LOGE("Failed to get ANativeWindow from Surface");
+        return;
+    }
+    g_windowWidth = ANativeWindow_getWidth(g_window);
+    g_windowHeight = ANativeWindow_getHeight(g_window);
+    LOGI("Overlay window: %dx%d", g_windowWidth, g_windowHeight);
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.ConfigFlags |= ImGuiConfigFlags_IsTouchScreen;
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
+    io.DisplaySize = ImVec2(static_cast<float>(g_windowWidth), static_cast<float>(g_windowHeight));
+
+    loadFonts(20.0f);   // before the backend, which builds the atlas
+    applyTheme();
+    aimbuddy::i18n::SetLanguage(aimbuddy::settingsStore().get().language);
+
+    ImGui_ImplAndroid_Init(g_window);
+    ImGui_ImplOpenGL3_Init("#version 300 es");
+    g_imguiReady = true;
+    LOGI("ImGui initialised");
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aimbuddy_ImGuiGLSurface_nativeSurfaceChanged(JNIEnv* /* env */, jclass /* clazz */, jint width, jint height) {
+    if (!g_imguiReady) {
+        return;
+    }
+    g_windowWidth = width;
+    g_windowHeight = height;
+    glViewport(0, 0, width, height);
+    // The overlay is not the screen: it shrinks while the navigation bar is showing. Detection and
+    // aiming always work in display pixels (see NativeBridge.configureDisplay).
+    ImGui::GetIO().DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aimbuddy_ImGuiGLSurface_nativeSetOrigin(JNIEnv* /* env */, jclass /* clazz */, jint x, jint y) {
+    g_overlayOriginX.store(x, std::memory_order_relaxed);
+    g_overlayOriginY.store(y, std::memory_order_relaxed);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aimbuddy_ImGuiGLSurface_nativeTick(JNIEnv* /* env */, jclass /* clazz */) {
+    if (!g_imguiReady || !g_window) {
+        return;
+    }
     try {
-        // Cap overlay render rate to ~60 FPS regardless of the device's
-        // native refresh (120/144 Hz panels would otherwise burn GPU time
-        // redrawing the same overlay twice per inference frame).
-        // The menu, when visible, may render faster (up to 90 FPS) for
-        // smoother slider feedback.
-        constexpr int kBaseFpsCap = 60;
-        constexpr int kMenuFpsCap = 90;
-        const int fpsCap = g_menuVisible ? kMenuFpsCap : kBaseFpsCap;
-        const auto minFrameTime = std::chrono::nanoseconds(1'000'000'000LL / fpsCap);
-        if (g_lastOverlayTickTime.time_since_epoch().count() != 0) {
-            const auto elapsed = std::chrono::steady_clock::now() - g_lastOverlayTickTime;
-            if (elapsed < minFrameTime) {
-                std::this_thread::sleep_for(minFrameTime - elapsed);
-            }
-        }
-        const auto nowTick = std::chrono::steady_clock::now();
-        if (g_lastOverlayTickTime.time_since_epoch().count() != 0) {
-            const float dtSeconds = std::chrono::duration<float>(nowTick - g_lastOverlayTickTime).count();
-            if (dtSeconds > 0.0f && dtSeconds <= 0.25f) {
-                const float instantFps = 1.0f / dtSeconds;
-                g_measuredOverlayFps = (g_measuredOverlayFps > 0.0f)
-                    ? (g_measuredOverlayFps * 0.90f + instantFps * 0.10f)
-                    : instantFps;
-            }
-        }
-        g_lastOverlayTickTime = nowTick;
+        limitFrameRate();
+        g_frameCount.fetch_add(1, std::memory_order_relaxed);
 
-        // Start ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplAndroid_NewFrame();
         ImGui::NewFrame();
 
-        // Access global settings
-        ESP::RenderConfig* settings = GetRenderConfig();
-        if (!settings) {
-            ImGui::EndFrame();
-            ImGui::Render();
-            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-            return;
-        }
+        const Settings settings = aimbuddy::settingsStore().get();
+        aimbuddy::i18n::SetLanguage(settings.language);
 
-
-        ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-        float displayW = displaySize.x;
-        float displayH = displaySize.y;
-
-        // The game, the detector and the aim logic all use display pixels, whose centre is where the
-        // in-game crosshair is. The overlay window may be smaller than the display or offset from it.
         const ImVec2 origin(static_cast<float>(g_overlayOriginX.load(std::memory_order_relaxed)),
                             static_cast<float>(g_overlayOriginY.load(std::memory_order_relaxed)));
-        const aimbuddy::CaptureGeometry geometry = aimbuddy::pipeline().capture().geometry();
-        const ImVec2 gameCenter(
-            (geometry.isValid() ? static_cast<float>(geometry.screenWidth) : displayW) * 0.5f - origin.x,
-            (geometry.isValid() ? static_cast<float>(geometry.screenHeight) : displayH) * 0.5f - origin.y);
+        int bodyCount = 0;
+        drawGameOverlay(settings, origin, &bodyCount);
 
-        // Always-visible center crosshair
-        {
-            ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-            const float centerX = gameCenter.x;
-            const float centerY = gameCenter.y;
-            const float crossArm = 11.5f;
-            const ImU32 crossColor = IM_COL32(58, 156, 255, 240);
-            drawList->AddLine(ImVec2(centerX - crossArm, centerY), ImVec2(centerX + crossArm, centerY), crossColor, 3.0f);
-            drawList->AddLine(ImVec2(centerX, centerY - crossArm), ImVec2(centerX, centerY + crossArm), crossColor, 3.0f);
-        }
-
-        // Targets come from the tracker, projected to the moment this frame will be on screen.
-        const auto nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
-        aimbuddy::TrackView views[aimbuddy::kMaxTracks];
-        const int viewCount = aimbuddy::pipeline().tracker().snapshot(nowNs + kDisplayLeadNs, views,
-                                                                      aimbuddy::kMaxTracks);
-        const aimbuddy::ModelProfile& profile = aimbuddy::pipeline().profile();
-        g_measuredInferenceMs = aimbuddy::pipeline().stats().inferenceMs;
-
-        {
-            ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-            aimbuddy::TargetStyle style;
-            style.color = ImGui::ColorConvertFloat4ToU32(ImVec4(
-                settings->boxColorR.load(std::memory_order_relaxed),
-                settings->boxColorG.load(std::memory_order_relaxed),
-                settings->boxColorB.load(std::memory_order_relaxed), 1.0f));
-            style.thickness = static_cast<float>(std::max(1, std::min(settings->boxThickness.load(std::memory_order_relaxed), 5)));
-            style.showScore = settings->showLabels.load(std::memory_order_relaxed);
-            style.showAimPoint = settings->drawDot.load(std::memory_order_relaxed);
-            style.origin = origin;
-            aimbuddy::TargetOverlay::draw(drawList, views, viewCount, profile, style);
-
-            // Line from the screen centre to the target nearest to it.
-            if (settings->drawLine.load(std::memory_order_relaxed)) {
-                const float centreX = gameCenter.x + origin.x;   // compare in display pixels
-                const float centreY = gameCenter.y + origin.y;
-                const aimbuddy::TrackView* nearest = nullptr;
-                float nearestDistSq = 0.0f;
-                for (int i = 0; i < viewCount; ++i) {
-                    if (profile.roleOf(views[i].classId) != aimbuddy::ClassRole::kBody) continue;
-                    const float dx = views[i].centerX - centreX;
-                    const float dy = views[i].centerY - centreY;
-                    const float distSq = dx * dx + dy * dy;
-                    if (nearest == nullptr || distSq < nearestDistSq) {
-                        nearest = &views[i];
-                        nearestDistSq = distSq;
-                    }
-                }
-                if (nearest != nullptr) {
-                    drawList->AddLine(gameCenter, ImVec2(nearest->centerX - origin.x, nearest->centerY - origin.y),
-                                      IM_COL32(255, 100, 50, static_cast<int>(255.0f * nearest->opacity)), 2.0f);
-                }
+        if (g_menuVisible.load(std::memory_order_relaxed)) {
+            Settings edited = settings;
+            if (drawMenu(edited, bodyCount)) {
+                aimbuddy::settingsStore().set(edited);
             }
-        }
-
-        // Draw FOV overlays (ESP=blue box, Aimbot=red circle)
-        {
-            ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-            const bool aimbotEnabled = settings->aimbotEnabled.load(std::memory_order_relaxed);
-            const float espFovRadius = settings->fovRadius.load(std::memory_order_relaxed);
-            const float aimFovRadius = std::min(
-                (g_settings.aimFovRadius > 0.0f) ? g_settings.aimFovRadius : espFovRadius,
-                espFovRadius
-            );
-
-            float zoneLeft = 0.0f, zoneTop = 0.0f, zoneRight = 0.0f, zoneBottom = 0.0f;
-            if (espFovRadius > 0.0f && GetDetectionZoneScreenRect(&zoneLeft, &zoneTop, &zoneRight, &zoneBottom)) {
-                const ImU32 espFovColor = IM_COL32(40, 140, 255, 220);
-                drawList->AddRect(ImVec2(zoneLeft - origin.x, zoneTop - origin.y),
-                                  ImVec2(zoneRight - origin.x, zoneBottom - origin.y), espFovColor, 0.0f, 0, 2.2f);
-
-                if (aimbotEnabled && aimFovRadius > 0.0f) {
-                    drawList->AddCircle(gameCenter, aimFovRadius, IM_COL32(255, 60, 60, 230), 64, 2.3f);
-                }
-            }
-        }
-
-        // Detection count overlay (red, centered at top with margin)
-        int detCount = 0;
-        for (int i = 0; i < viewCount; ++i) {
-            if (profile.roleOf(views[i].classId) == aimbuddy::ClassRole::kBody) ++detCount;
-        }
-        if (settings->showDetectionCount.load(std::memory_order_relaxed) && detCount > 0) {
-            ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-            ImU32 redColor = IM_COL32(255, 50, 50, 255);
-            ImFont* font = ImGui::GetFont();
-            if (drawList != nullptr && font != nullptr) {
-                float largeSize = ImGui::GetFontSize() * 2.0f;
-                float topMargin = 40.0f;  // Proper margin to avoid clipping
-
-                // Format: "X enemy" or "X enemies"
-                char countText[64];
-                const char* label = (detCount == 1) ? "enemy" : "enemies";
-                snprintf(countText, sizeof(countText), "%d %s", detCount, label);
-
-                ImVec2 textSize = font->CalcTextSizeA(largeSize, FLT_MAX, 0.0f, countText);
-                ImVec2 textPos((displayW - textSize.x) * 0.5f, topMargin);
-                drawList->AddText(font, largeSize, textPos, redColor, countText);
-            }
-        }
-
-        // Menu window  -  display-proportional size with scrollable tab layout
-        g_menuVisible = settings->menuVisible.load(std::memory_order_relaxed);
-        if (g_menuVisible) {
-            bool settingsDirty = false;
-            const float defaultMenuWidth  = std::max(460.0f, std::min(displayW * 0.48f, 860.0f));
-            const float defaultMenuHeight = std::max(560.0f, std::min(displayH * 0.92f, 1060.0f));
-            if (!g_menuWasVisible || g_menuSize.x <= 0.0f || g_menuSize.y <= 0.0f) {
-                g_menuSize = ImVec2(defaultMenuWidth, defaultMenuHeight);
-            }
-
-            const float menuWidth = g_menuSize.x;
-            const float menuHeight = g_menuSize.y;
-            const float iconPad = 52.0f;
-            float menuX = g_iconPos.x + ICON_RADIUS + iconPad;
-            float menuY = g_iconPos.y - menuHeight * 0.5f;
-            if (menuX + menuWidth > displayW)
-                menuX = g_iconPos.x - ICON_RADIUS - iconPad - menuWidth;
-            menuX = std::max(4.0f, std::min(menuX, displayW - menuWidth - 4.0f));
-            menuY = std::max(4.0f, std::min(menuY, displayH - menuHeight - 4.0f));
-
-            ImGui::SetNextWindowPos(ImVec2(menuX, menuY), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(g_menuSize, ImGuiCond_Appearing);
-            ImGui::SetNextWindowSizeConstraints(ImVec2(420.0f, 460.0f), ImVec2(displayW - 8.0f, displayH - 8.0f));
-
-            ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse;
-            // Keep the language in sync every frame so a toggle takes
-            // effect immediately, even before the next save.
-            aimbuddy::i18n::SetLanguage(g_settings.language);
-
-            if (ImGui::Begin(T(Key::AppTitle), nullptr, windowFlags)) {
-                g_menuSize = ImGui::GetWindowSize();
-                const bool rootAvailable = g_rootAvailable.load(std::memory_order_relaxed);
-                const bool shizukuAvailable = g_shizukuAvailable.load(std::memory_order_relaxed);
-                if (!rootAvailable && !shizukuAvailable) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", T(Key::BannerRootMissing));
-                }
-
-                ImGui::Separator();
-                ImGui::BeginChild("##MenuScroll", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 6.0f), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
-
-                if (ImGui::BeginTabBar("##MenuTabs", ImGuiTabBarFlags_FittingPolicyResizeDown)) {
-                    if (ImGui::BeginTabItem(T(Key::TabEsp))) {
-                        bool showLabels = settings->showLabels.load(std::memory_order_relaxed);
-                        bool drawLine = settings->drawLine.load(std::memory_order_relaxed);
-                        bool drawDot = settings->drawDot.load(std::memory_order_relaxed);
-                        bool countOn = settings->showDetectionCount.load(std::memory_order_relaxed);
-
-                        if (ImGui::Checkbox(T(Key::EspLabels), &showLabels)) { settings->showLabels.store(showLabels, std::memory_order_relaxed); settingsDirty = true; }
-                        ShowSettingHelp("Shows label text over each detected target.");
-                        if (ImGui::Checkbox(T(Key::EspSnapLine), &drawLine)) { settings->drawLine.store(drawLine, std::memory_order_relaxed); settingsDirty = true; }
-                        ShowSettingHelp("Draws a line from your screen center to the target box.");
-                        if (ImGui::Checkbox(T(Key::EspHeadDot), &drawDot)) { settings->drawDot.store(drawDot, std::memory_order_relaxed); settingsDirty = true; }
-                        ShowSettingHelp("Marks the estimated head point for each detection.");
-                        if (ImGui::Checkbox(T(Key::EspDetectionCount), &countOn)) { settings->showDetectionCount.store(countOn, std::memory_order_relaxed); settingsDirty = true; }
-                        ShowSettingHelp("Shows how many targets are currently detected.");
-
-                        ImGui::Separator();
-
-                        float boxColor[4] = {
-                            settings->boxColorR.load(std::memory_order_relaxed),
-                            settings->boxColorG.load(std::memory_order_relaxed),
-                            settings->boxColorB.load(std::memory_order_relaxed),
-                            1.0f
-                        };
-                        if (ImGui::ColorEdit4(T(Key::EspBoxColor), boxColor, ImGuiColorEditFlags_NoInputs)) {
-                            settings->boxColorR.store(boxColor[0], std::memory_order_relaxed);
-                            settings->boxColorG.store(boxColor[1], std::memory_order_relaxed);
-                            settings->boxColorB.store(boxColor[2], std::memory_order_relaxed);
-                            settingsDirty = true;
-                        }
-                        ShowSettingHelp("Changes ESP box color for better visibility.");
-
-                        float thickness = static_cast<float>(settings->boxThickness.load(std::memory_order_relaxed));
-                        if (ImGui::SliderFloat(T(Key::EspBoxThickness), &thickness, 1.0f, 5.0f, "%.0f")) {
-                            settings->boxThickness.store(static_cast<int>(thickness), std::memory_order_relaxed);
-                            settingsDirty = true;
-                        }
-                        ShowSettingHelp("Higher values make boxes easier to see; lower values look cleaner.");
-
-                        ImGui::Separator();
-
-                        float conf = settings->confidenceThreshold.load(std::memory_order_relaxed);
-                        if (ImGui::SliderFloat(T(Key::EspConfidence), &conf, 0.1f, 0.95f, "%.2f")) {
-                            settings->confidenceThreshold.store(conf, std::memory_order_relaxed);
-                            settingsDirty = true;
-                        }
-                        ShowSettingHelp("Minimum detection confidence. Higher reduces false positives.");
-
-                        float detFov = settings->fovRadius.load(std::memory_order_relaxed);
-                        if (ImGui::SliderFloat(T(Key::EspDetectionZone), &detFov, 100.0f, 650.0f, "%.0f px")) {
-                            settings->fovRadius.store(detFov, std::memory_order_relaxed);
-                            if (g_settings.aimFovRadius > detFov) {
-                                g_settings.aimFovRadius = detFov;
-                            }
-                            settingsDirty = true;
-                        }
-                        ShowSettingHelp("Limits detection processing to a center region for more stable targeting.");
-
-                        bool showTouchZone = g_settings.showTouchZone;
-                        if (ImGui::Checkbox(T(Key::EspTouchZoneOverlay), &showTouchZone)) {
-                            g_settings.showTouchZone = showTouchZone;
-                            settingsDirty = true;
-                        }
-                        ShowSettingHelp("Shows the touch input area used for assist movement.");
-                        if (g_settings.showTouchZone) {
-                            float alpha = g_settings.touchZoneAlpha;
-                            if (ImGui::SliderFloat(T(Key::EspTouchZoneOpacity), &alpha, 0.10f, 1.0f, "%.2f")) {
-                                g_settings.touchZoneAlpha = QuantizeStep(alpha, 0.01f);
-                                settingsDirty = true;
-                            }
-                            ShowSettingHelp("Lower opacity is less distracting; higher opacity is easier to locate.");
-                        }
-
-                        ImGui::Separator();
-                        bool streamer = g_settings.streamerMode;
-                        if (ImGui::Checkbox(T(Key::EspStreamerMode), &streamer)) {
-                            g_settings.streamerMode = streamer;
-                            settingsDirty = true;
-                        }
-                        ShowSettingHelp("Marks overlay windows as secure. The overlay still appears on your screen but is stripped from screen recorders, screenshots, and screen mirroring.");
-
-                        // Language picker. Items come from i18n::LanguageDisplayName.
-                        const char* languageItems[2] = {
-                            aimbuddy::i18n::LanguageDisplayName(0),
-                            aimbuddy::i18n::LanguageDisplayName(1),
-                        };
-                        int langIndex = g_settings.language;
-                        if (ImGui::Combo(T(Key::EspLanguage), &langIndex, languageItems, 2)) {
-                            g_settings.language = langIndex;
-                            aimbuddy::i18n::SetLanguage(langIndex);
-                            settingsDirty = true;
-                        }
-                        ShowSettingHelp("UI language. Drop assets/fonts/cjk.ttf to render Chinese glyphs.");
-                        ImGui::EndTabItem();
-                    }
-
-                    if (ImGui::BeginTabItem(T(Key::TabAim))) {
-                        int touchBackend = g_settings.touchBackend;
-                        const char* touchBackends[] = { "uinput (Root)", "Shizuku (Non-root)" };
-                        if (ImGui::Combo(T(Key::AimTouchBackend), &touchBackend, touchBackends, 2)) {
-                            g_settings.touchBackend = touchBackend;
-                            settingsDirty = true;
-                        }
-                        if (touchBackend == 0) {
-                            ImGui::TextDisabled("%s", rootAvailable ? T(Key::AimBackendStatusReady) : T(Key::AimBackendStatusMissingRoot));
-                        } else {
-                            ImGui::TextDisabled("%s", shizukuAvailable ? T(Key::AimBackendStatusReady) : T(Key::AimBackendStatusMissingShizuku));
-                        }
-                        ImGui::Separator();
-
-                        const bool backendReady = (touchBackend == 0) ? rootAvailable : shizukuAvailable;
-                        if (!backendReady) {
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
-                            if (touchBackend == 0) {
-                                ImGui::TextUnformatted(T(Key::AimRootRequired));
-                            } else {
-                                ImGui::TextUnformatted(T(Key::AimShizukuRequired));
-                            }
-                            ImGui::PopStyleColor();
-                        } else {
-                            bool enabled = settings->aimbotEnabled.load(std::memory_order_relaxed);
-                            if (ImGui::Checkbox(T(Key::AimEnable), &enabled)) {
-                                settings->aimbotEnabled.store(enabled, std::memory_order_relaxed);
-                                settingsDirty = true;
-                            }
-
-                            if (enabled) {
-                                ImGui::Spacing();
-                                if (ImGui::Button(T(Key::AimPresetDefault), ImVec2(150, 0))) {
-                                    g_settings.aimMode = 0; g_settings.aimSpeed = 0.48f;
-                                    g_settings.smoothness = 0.78f; g_settings.filterType = 1;
-                                    g_settings.emaAlpha = 0.30f; g_settings.pdDerivativeGain = 0.030f;
-                                    g_settings.velocityLeadFactor = 0.85f; g_settings.velocityLeadClamp = 60.0f;
-                                    g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 30.0f;
-                                    g_settings.maxLockMissFrames = 2; g_settings.targetSwitchDelayFrames = 8;
-                                    g_settings.recoilCompensationEnabled = false;
-                                    g_settings.aimFovRadius = 240.0f;
-                                    settings->headOffset.store(0.18f, std::memory_order_relaxed);
-                                    settingsDirty = true;
-                                }
-                                ImGui::SameLine();
-                                if (ImGui::Button(T(Key::AimPresetCompetitive), ImVec2(150, 0))) {
-                                    g_settings.aimMode = 1; g_settings.aimSpeed = 0.72f;
-                                    g_settings.smoothness = 0.45f; g_settings.filterType = 0;
-                                    g_settings.emaAlpha = 0.30f; g_settings.pdDerivativeGain = 0.020f;
-                                    g_settings.velocityLeadFactor = 1.10f; g_settings.velocityLeadClamp = 80.0f;
-                                    g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 22.0f;
-                                    g_settings.maxLockMissFrames = 2; g_settings.targetSwitchDelayFrames = 5;
-                                    g_settings.recoilCompensationEnabled = false;
-                                    g_settings.aimFovRadius = 220.0f;
-                                    settings->headOffset.store(0.15f, std::memory_order_relaxed);
-                                    settingsDirty = true;
-                                }
-                                if (ImGui::Button(T(Key::AimPresetBalanced), ImVec2(150, 0))) {
-                                    g_settings.aimMode = 0; g_settings.aimSpeed = 0.52f;
-                                    g_settings.smoothness = 0.80f; g_settings.filterType = 1;
-                                    g_settings.emaAlpha = 0.28f; g_settings.pdDerivativeGain = 0.032f;
-                                    g_settings.velocityLeadFactor = 0.90f; g_settings.velocityLeadClamp = 65.0f;
-                                    g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 32.0f;
-                                    g_settings.maxLockMissFrames = 2; g_settings.targetSwitchDelayFrames = 9;
-                                    g_settings.recoilCompensationEnabled = false;
-                                    g_settings.aimFovRadius = 260.0f;
-                                    settings->headOffset.store(0.18f, std::memory_order_relaxed);
-                                    settingsDirty = true;
-                                }
-                                ImGui::SameLine();
-                                if (ImGui::Button(T(Key::AimPresetPrecision), ImVec2(150, 0))) {
-                                    g_settings.aimMode = 2; g_settings.aimSpeed = 0.58f;
-                                    g_settings.smoothness = 0.88f; g_settings.filterType = 2;
-                                    g_settings.kalmanProcessNoise = 0.8f; g_settings.kalmanMeasurementNoise = 5.0f;
-                                    g_settings.pdDerivativeGain = 0.025f; g_settings.velocityLeadFactor = 0.70f;
-                                    g_settings.velocityLeadClamp = 50.0f;
-                                    g_settings.enableConvergenceDamping = true; g_settings.convergenceRadius = 40.0f;
-                                    g_settings.maxLockMissFrames = 2; g_settings.targetSwitchDelayFrames = 12;
-                                    g_settings.recoilCompensationEnabled = false;
-                                    g_settings.aimFovRadius = 300.0f;
-                                    settings->headOffset.store(0.17f, std::memory_order_relaxed);
-                                    settingsDirty = true;
-                                }
-
-                                ImGui::Separator();
-
-                                float offset = settings->headOffset.load(std::memory_order_relaxed);
-                                if (ImGui::SliderFloat(T(Key::AimHeadOffset), &offset, 0.0f, 0.5f, "%.2f")) {
-                                    settings->headOffset.store(offset, std::memory_order_relaxed);
-                                    settingsDirty = true;
-                                }
-                                ShowSettingHelp("Adjusts vertical aim point inside the box. Increase to target higher.");
-
-                                int priority = static_cast<int>(g_settings.targetPriority);
-                                const char* priorities[] = { "Nearest", "Largest", "Confidence" };
-                                if (ImGui::Combo(T(Key::AimTargetPriority), &priority, priorities, 3)) {
-                                    g_settings.targetPriority = priority;
-                                    settingsDirty = true;
-                                }
-
-                                ImGui::Separator();
-
-                                if (g_settings.aimFovRadius > settings->fovRadius.load(std::memory_order_relaxed)) {
-                                    g_settings.aimFovRadius = settings->fovRadius.load(std::memory_order_relaxed);
-                                }
-
-                                const char* aimModes[] = { "Smooth", "Snap", "Magnetic" };
-                                int aimMode = static_cast<int>(g_settings.aimMode);
-                                if (ImGui::Combo(T(Key::AimMode), &aimMode, aimModes, 3)) { g_settings.aimMode = aimMode; settingsDirty = true; }
-
-                                float aimSpeed = g_settings.aimSpeed;
-                                if (ImGui::SliderFloat(T(Key::AimSpeed), &aimSpeed, 0.1f, 1.0f, "%.2f")) { g_settings.aimSpeed = QuantizeStep(aimSpeed, 0.01f); settingsDirty = true; }
-                                ShowSettingHelp("Higher is faster snap movement; lower is slower and smoother.");
-
-                                float smoothness = g_settings.smoothness;
-                                if (ImGui::SliderFloat(T(Key::AimSmoothness), &smoothness, 0.0f, 1.0f, "%.2f")) { g_settings.smoothness = QuantizeStep(smoothness, 0.01f); settingsDirty = true; }
-                                ShowSettingHelp("Higher smoothness looks natural but reacts slower.");
-
-                                float aimFov = g_settings.aimFovRadius;
-                                if (ImGui::SliderFloat(T(Key::AimFovRadius), &aimFov, 50.0f, 600.0f, "%.0f px")) {
-                                    g_settings.aimFovRadius = QuantizeStep(aimFov, 1.0f);
-                                    if (g_settings.aimFovRadius > settings->fovRadius.load(std::memory_order_relaxed)) {
-                                        g_settings.aimFovRadius = settings->fovRadius.load(std::memory_order_relaxed);
-                                    }
-                                    settingsDirty = true;
-                                }
-                                ShowSettingHelp("Only targets inside this radius can be selected.");
-
-                                float maxDist = g_settings.maxAimDistance;
-                                if (ImGui::SliderFloat(T(Key::AimMaxDistance), &maxDist, 100.0f, 1000.0f, "%.0f px")) {
-                                    g_settings.maxAimDistance = QuantizeStep(maxDist, 1.0f);
-                                    settingsDirty = true;
-                                }
-
-                                int fps = static_cast<int>(g_settings.aimbotFps);
-                                if (ImGui::SliderInt(T(Key::AimFps), &fps, 30, 120)) {
-                                    g_settings.aimbotFps = static_cast<uint32_t>(fps);
-                                    settingsDirty = true;
-                                }
-                                ShowSettingHelp("Update rate for assist logic. Higher is more responsive but heavier.");
-
-                                ImGui::Separator();
-
-                                const char* filterTypes[] = { "None", "EMA", "Kalman" };
-                                int filterType = static_cast<int>(g_settings.filterType);
-                                if (ImGui::Combo(T(Key::AimFilter), &filterType, filterTypes, 3)) {
-                                    g_settings.filterType = filterType;
-                                    settingsDirty = true;
-                                }
-                                if (g_settings.filterType == 1) {
-                                    float ema = g_settings.emaAlpha;
-                                    if (ImGui::SliderFloat("EMA alpha", &ema, 0.1f, 0.9f, "%.2f")) { g_settings.emaAlpha = QuantizeStep(ema, 0.01f); settingsDirty = true; }
-                                } else if (g_settings.filterType == 2) {
-                                    float pn = g_settings.kalmanProcessNoise;
-                                    if (ImGui::SliderFloat("Kalman process", &pn, 0.1f, 5.0f, "%.1f")) { g_settings.kalmanProcessNoise = QuantizeStep(pn, 0.1f); settingsDirty = true; }
-                                    float mn = g_settings.kalmanMeasurementNoise;
-                                    if (ImGui::SliderFloat("Kalman measure", &mn, 1.0f, 10.0f, "%.1f")) { g_settings.kalmanMeasurementNoise = QuantizeStep(mn, 0.1f); settingsDirty = true; }
-                                }
-
-                                bool antiOvershoot = g_settings.enableConvergenceDamping;
-                                if (ImGui::Checkbox("Anti overshoot", &antiOvershoot)) { g_settings.enableConvergenceDamping = antiOvershoot; settingsDirty = true; }
-                                if (g_settings.enableConvergenceDamping) {
-                                    float cr = g_settings.convergenceRadius;
-                                    if (ImGui::SliderFloat("Damp radius", &cr, 10.0f, 100.0f, "%.0f px")) { g_settings.convergenceRadius = QuantizeStep(cr, 1.0f); settingsDirty = true; }
-                                }
-
-                                float pdGain = g_settings.pdDerivativeGain;
-                                if (ImGui::SliderFloat("Derivative damping", &pdGain, 0.0f, 0.12f, "%.3f")) { g_settings.pdDerivativeGain = QuantizeStep(pdGain, 0.005f); settingsDirty = true; }
-
-                                float leadFactor = g_settings.velocityLeadFactor;
-                                if (ImGui::SliderFloat("Velocity lead", &leadFactor, 0.0f, 1.5f, "%.2f")) { g_settings.velocityLeadFactor = QuantizeStep(leadFactor, 0.05f); settingsDirty = true; }
-                                ShowSettingHelp("How aggressively to lead running targets. 0 = no prediction, 1.0 = full velocity * pipeline-delay lead.");
-                                float leadClamp = g_settings.velocityLeadClamp;
-                                if (ImGui::SliderFloat("Lead clamp", &leadClamp, 1.0f, 120.0f, "%.0f px")) { g_settings.velocityLeadClamp = QuantizeStep(leadClamp, 1.0f); settingsDirty = true; }
-
-                                bool recoilOn = g_settings.recoilCompensationEnabled;
-                                if (ImGui::Checkbox("Recoil compensation", &recoilOn)) { g_settings.recoilCompensationEnabled = recoilOn; settingsDirty = true; }
-                                if (g_settings.recoilCompensationEnabled) {
-                                    float rs = g_settings.recoilCompensationStrength;
-                                    if (ImGui::SliderFloat("Recoil strength", &rs, 0.0f, 0.35f, "%.2f")) { g_settings.recoilCompensationStrength = QuantizeStep(rs, 0.01f); settingsDirty = true; }
-                                    float rm = g_settings.recoilCompensationMax;
-                                    if (ImGui::SliderFloat("Recoil max", &rm, 2.0f, 18.0f, "%.0f px")) { g_settings.recoilCompensationMax = QuantizeStep(rm, 1.0f); settingsDirty = true; }
-                                    float rd = g_settings.recoilCompensationDecay;
-                                    if (ImGui::SliderFloat("Recoil decay", &rd, 0.50f, 0.98f, "%.2f")) { g_settings.recoilCompensationDecay = QuantizeStep(rd, 0.01f); settingsDirty = true; }
-                                }
-
-                                int missFrames = g_settings.maxLockMissFrames;
-                                if (ImGui::SliderInt("Miss grace", &missFrames, 1, 12, "%d")) { g_settings.maxLockMissFrames = missFrames; settingsDirty = true; }
-                                int switchDelay = g_settings.targetSwitchDelayFrames;
-                                if (ImGui::SliderInt("Switch delay", &switchDelay, 0, 20, "%d")) { g_settings.targetSwitchDelayFrames = switchDelay; settingsDirty = true; }
-
-                                ImGui::Separator();
-
-                                float tcx = settings->touchCenterX.load(std::memory_order_relaxed);
-                                if (ImGui::SliderFloat("Touch center X", &tcx, 0.5f, 0.95f, "%.2f")) { settings->touchCenterX.store(tcx, std::memory_order_relaxed); settingsDirty = true; }
-                                float tcy = settings->touchCenterY.load(std::memory_order_relaxed);
-                                if (ImGui::SliderFloat("Touch center Y", &tcy, 0.3f, 0.7f, "%.2f")) { settings->touchCenterY.store(tcy, std::memory_order_relaxed); settingsDirty = true; }
-                                float tr = settings->touchRadius.load(std::memory_order_relaxed);
-                                if (ImGui::SliderFloat("Touch radius", &tr, 50.0f, 300.0f, "%.0f px")) { settings->touchRadius.store(tr, std::memory_order_relaxed); settingsDirty = true; }
-                                float ad = settings->aimDelay.load(std::memory_order_relaxed);
-                                if (ImGui::SliderFloat("Aim delay", &ad, 0.0f, 5.0f, "%.1f ms")) { settings->aimDelay.store(ad, std::memory_order_relaxed); settingsDirty = true; }
-
-                                if (ImGui::Button("Reset touch zone", ImVec2(220.0f, 0.0f))) {
-                                    settings->touchCenterX.store(0.75f, std::memory_order_relaxed);
-                                    settings->touchCenterY.store(0.5f, std::memory_order_relaxed);
-                                    settings->touchRadius.store(150.0f, std::memory_order_relaxed);
-                                    settings->aimDelay.store(0.0f, std::memory_order_relaxed);
-                                    settingsDirty = true;
-                                }
-                            }
-                        }
-                        ImGui::EndTabItem();
-                    }
-
-                    if (ImGui::BeginTabItem(T(Key::TabInfo))) {
-                        ImGui::Text("%s", T(Key::InfoTitle));
-                        ImGui::Text("%s", T(Key::InfoVersion));
-                        ImGui::Text("%s: %.0f", T(Key::InfoOverlayFps), g_measuredOverlayFps);
-                        ImGui::Text("%s: %.1f ms", T(Key::InfoInferenceMs), g_measuredInferenceMs);
-                        ImGui::Text("%s: %d", T(Key::InfoDetections), detCount);
-                        ImGui::Text("%s: %dx%d", T(Key::InfoScreen), g_screenWidth, g_screenHeight);
-                        ImGui::TextDisabled("github.com/1337XCode/AimBuddy");
-                        ImGui::Separator();
-                        ImGui::TextWrapped("%s", T(Key::InfoTip));
-                        ImGui::EndTabItem();
-                    }
-
-                    ImGui::EndTabBar();
-                }
-
-                ImGui::EndChild();
-
-                if (ImGui::Button(T(Key::SaveNow), ImVec2(160.0f, 0.0f))) {
-                    ApplyRenderConfigToUnifiedSettings(*settings);
-                    g_settings.validate();
-                    g_settings.save();
-                    g_settingsPendingSave = false;
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("%s", T(Key::AutoSaveHint));
-            }
-            if (settingsDirty) {
-                ApplyRenderConfigToUnifiedSettings(*settings);
-                g_settingsPendingSave = true;
-                g_settingsDirtyAt = ImGui::GetTime();
-            }
-            ImGui::End();
             g_menuWasVisible = true;
         } else {
             g_menuWasVisible = false;
-        }
-
-        if (g_settingsPendingSave) {
-            const double now = ImGui::GetTime();
-            if ((now - g_settingsDirtyAt) >= SETTINGS_SAVE_DELAY_SEC && !ImGui::IsAnyItemActive()) {
-                g_settings.validate();
-                g_settings.save();
-                g_settingsPendingSave = false;
+            for (std::atomic<float>& side : g_menuRect) {
+                side.store(0.0f, std::memory_order_relaxed);
             }
         }
+        saveSettingsWhenDue();
 
-        // Push streamer-mode state across the JNI bridge whenever it changes.
-        if (g_settings.streamerMode != g_streamerModeAppliedState) {
-            g_streamerModeAppliedState = g_settings.streamerMode;
-            NotifyStreamerModeChanged(g_streamerModeAppliedState);
+        if (settings.streamerMode != g_streamerModeApplied) {
+            g_streamerModeApplied = settings.streamerMode;
+            NotifyStreamerModeChanged(g_streamerModeApplied);
         }
 
-        // Render ImGui
         ImGui::Render();
-        
-        // Clear to transparent
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        
-        // Render ImGui draw data
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     } catch (const std::exception& e) {
-        LOGE("Exception in nativeImGuiRender: %s", e.what());
+        LOGE("Exception while drawing the overlay: %s", e.what());
     } catch (...) {
-        LOGE("Unknown exception in nativeImGuiRender");
+        LOGE("Unknown exception while drawing the overlay");
     }
 }
 
-// Handle touch events
+/**
+ * Hands a touch to the menu. Returns true if the touch was used. While the menu is open the whole
+ * overlay is touchable, so a touch that lands outside the menu closes it: the player can always get
+ * back to the game with one tap, even if the menu failed to draw.
+ */
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeMotionEvent(
-    JNIEnv* /* env */, jclass /* this */,
-    jint action, jfloat x, jfloat y) {
-    
-    if (!g_imguiInitialized) {
+Java_com_aimbuddy_ImGuiGLSurface_nativeMotionEvent(JNIEnv* /* env */, jclass /* clazz */, jint action, jfloat x, jfloat y) {
+    if (!g_imguiReady || !g_menuVisible.load(std::memory_order_relaxed)) {
         return JNI_FALSE;
     }
-
-    ImGuiIO& io = ImGui::GetIO();
-
-    // If menu is visible, feed ImGui input
-    if (g_menuVisible) {
-        // Update mouse position
-        io.AddMousePosEvent(x, y);
-
-        switch (action) {
-            case 0: // ACTION_DOWN
-                io.AddMouseButtonEvent(0, true);
-                break;
-            case 1: // ACTION_UP
-                io.AddMouseButtonEvent(0, false);
-                break;
-            case 2: // ACTION_MOVE
-                break;
-            default:
-                return JNI_FALSE;
+    if (action == 0) {
+        const bool insideMenu = x >= g_menuRect[0].load(std::memory_order_relaxed) &&
+                                y >= g_menuRect[1].load(std::memory_order_relaxed) &&
+                                x <= g_menuRect[2].load(std::memory_order_relaxed) &&
+                                y <= g_menuRect[3].load(std::memory_order_relaxed);
+        if (!insideMenu) {
+            g_menuVisible.store(false, std::memory_order_relaxed);
+            return JNI_TRUE;
         }
-
-        // Consume input while menu is visible
-        return JNI_TRUE;
-    }
-
-    // Pass-through to game
-    return JNI_FALSE;
-}
-
-// Expose whether ImGui wants to capture touch
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeWantsCapture(JNIEnv* /* env */, jclass /* this */) {
-    if (!g_imguiInitialized) {
-        return JNI_FALSE;
     }
     ImGuiIO& io = ImGui::GetIO();
-    return (g_menuVisible || io.WantCaptureMouse) ? JNI_TRUE : JNI_FALSE;
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeSetMenuVisible(JNIEnv* /* env */, jclass /* this */, jboolean visible) {
-    ESP::RenderConfig* settings = GetRenderConfig();
-    if (settings) {
-        settings->menuVisible.store(visible == JNI_TRUE, std::memory_order_relaxed);
+    io.AddMousePosEvent(x, y);
+    if (action == 0) {
+        io.AddMouseButtonEvent(0, true);
+    } else if (action == 1) {
+        io.AddMouseButtonEvent(0, false);
     }
-    g_menuVisible = (visible == JNI_TRUE);
+    return JNI_TRUE;
 }
 
+/// Whether the overlay window should be touchable: only while the menu is open.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_aimbuddy_ImGuiGLSurface_nativeWantsCapture(JNIEnv* /* env */, jclass /* clazz */) {
+    return g_menuVisible.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
+}
 
-// Shutdown ImGui
 extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeShutdown(JNIEnv* /* env */, jclass /* this */) {
-    if (!g_imguiInitialized) {
+Java_com_aimbuddy_ImGuiGLSurface_nativeSetMenuVisible(JNIEnv* /* env */, jclass /* clazz */, jboolean visible) {
+    g_menuVisible.store(visible == JNI_TRUE, std::memory_order_relaxed);
+}
+
+/// How many frames the overlay has drawn, so Kotlin can tell a stuck renderer from a working one.
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_aimbuddy_ImGuiGLSurface_nativeFrameCount(JNIEnv* /* env */, jclass /* clazz */) {
+    return static_cast<jlong>(g_frameCount.load(std::memory_order_relaxed));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aimbuddy_ImGuiGLSurface_nativeSetIconPosition(JNIEnv* /* env */, jclass /* clazz */, jfloat x, jfloat y) {
+    g_iconPosition.x = x + kIconRadius * 0.5f;
+    g_iconPosition.y = y + kIconRadius * 0.5f;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aimbuddy_ImGuiGLSurface_nativeShutdown(JNIEnv* /* env */, jclass /* clazz */) {
+    if (!g_imguiReady) {
         return;
     }
-
-    LOGI("Shutting down ImGui menu");
-    
+    LOGI("Shutting down the overlay");
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplAndroid_Shutdown();
     ImGui::DestroyContext();
-    
-    if (g_menuWindow) {
-        ANativeWindow_release(g_menuWindow);
-        g_menuWindow = nullptr;
+    if (g_window) {
+        ANativeWindow_release(g_window);
+        g_window = nullptr;
     }
-    
-    g_imguiInitialized = false;
-    LOGI("ImGui menu shutdown complete");
-}
-
-// Set icon position from Kotlin layer (for menu positioning)
-extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeSetIconPosition(JNIEnv* /* env */, jclass /* this */, jfloat x, jfloat y) {
-    g_iconPos.x = x + (ICON_RADIUS * 0.5f);  // Adjust to center of icon
-    g_iconPos.y = y + (ICON_RADIUS * 0.5f);
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeSetRootAvailable(JNIEnv* /* env */, jclass /* this */, jboolean available) {
-    g_rootAvailable.store(available == JNI_TRUE, std::memory_order_relaxed);
-    LOGI("Root status updated: %s", available ? "AVAILABLE" : "NOT AVAILABLE");
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_ImGuiGLSurface_nativeSetShizukuAvailable(JNIEnv* /* env */, jclass /* this */, jboolean available) {
-    g_shizukuAvailable.store(available == JNI_TRUE, std::memory_order_relaxed);
-    LOGI("Shizuku status updated: %s", available ? "AVAILABLE" : "NOT AVAILABLE");
-}
-
-extern "C" bool IsImGuiMenuVisible() {
-    return g_menuVisible;
+    g_menuVisible.store(false, std::memory_order_relaxed);
+    g_imguiReady = false;
 }

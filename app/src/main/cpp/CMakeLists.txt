@@ -157,10 +157,10 @@ set(ESP_SOURCES
     core/detection_decoder.cpp
     core/aim_controller.cpp
     detector/yolo_detector.cpp
-    aimbot/aimbot_controller.cpp
-    aimbot/target_tracker.cpp
+    pipeline/aim_loop.cpp
     renderer/imgui_menu.cpp
-    input/touch_helper.cpp
+    settings/settings_store.cpp
+    touch/touch_link.cpp
 )
 
 add_library(esp_native SHARED
