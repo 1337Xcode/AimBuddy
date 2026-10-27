@@ -65,6 +65,15 @@
             android:name=".update.InstallResultReceiver"
             android:exported="false" />
 
+        <!-- Opens the app again once an update has replaced it. -->
+        <receiver
+            android:name=".update.AppUpdatedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Remembers the language the player picked in the app on Android 12 and older. -->
         <service
             android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
