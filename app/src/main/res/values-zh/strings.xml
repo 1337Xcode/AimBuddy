@@ -118,8 +118,7 @@
     <string name="s_calibration_footer">这些数值对应游戏对手指的反应。自动校准会在游玩时测量它们；关闭后则使用你自己设定的值。</string>
     <string name="s_access">触控方式</string>
     <string name="s_automatic">自动</string>
-    <string name="s_touch_area">触控区域</string>
-    <string name="s_touch_area_footer">AimBuddy 运行时，可在游戏内菜单中移动和调整它的大小。</string>
+    <string name="s_touch_area_footer">触控区域是辅助手指停放的位置。AimBuddy 运行时，可在游戏内菜单中移动和调整它的大小。</string>
     <string name="s_language">语言</string>
     <string name="s_appearance">外观</string>
     <string name="s_system">跟随系统</string>

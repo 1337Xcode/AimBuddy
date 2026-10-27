@@ -120,8 +120,7 @@
     <string name="s_calibration_footer">These match how your game reacts to a finger. Automatic calibration measures them while you play; turn it off to keep your own values.</string>
     <string name="s_access">Touch access</string>
     <string name="s_automatic">Automatic</string>
-    <string name="s_touch_area">Touch area</string>
-    <string name="s_touch_area_footer">Move and resize it from the in-game menu while AimBuddy is running.</string>
+    <string name="s_touch_area_footer">The touch area is where the assist\'s finger rests. Move and resize it from the in-game menu while AimBuddy is running.</string>
     <string name="s_language">Language</string>
     <string name="s_appearance">Appearance</string>
     <string name="s_system">System</string>

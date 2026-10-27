@@ -118,8 +118,7 @@
     <string name="s_calibration_footer">Эти значения описывают, как игра реагирует на палец. Автокалибровка измеряет их во время игры; отключите её, чтобы оставить свои значения.</string>
     <string name="s_access">Доступ к касаниям</string>
     <string name="s_automatic">Автоматически</string>
-    <string name="s_touch_area">Зона касания</string>
-    <string name="s_touch_area_footer">Перемещайте и меняйте размер в меню в игре, пока AimBuddy работает.</string>
+    <string name="s_touch_area_footer">Зона касания: место, где находится палец помощника. Её можно двигать и менять в размере в меню в игре, пока AimBuddy работает.</string>
     <string name="s_language">Язык</string>
     <string name="s_appearance">Оформление</string>
     <string name="s_system">Системное</string>
