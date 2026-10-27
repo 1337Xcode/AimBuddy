@@ -54,6 +54,19 @@ struct PlayerInput {
     bool lookActive = false;  ///< The player's own finger is steering the camera.
 };
 
+/// What the controller saw and did on its latest step. For diagnostics, tests and the overlay.
+struct AimTelemetry {
+    int targetId = -1;          ///< The target being followed, or -1.
+    float errorX = 0.0f;        ///< From the crosshair to the aim point, screen pixels, as the controller judged it.
+    float errorY = 0.0f;
+    float deadzone = 0.0f;
+    float movingShare = 0.0f;   ///< 0 for a target standing still, 1 for one clearly running.
+    float stability = 1.0f;
+    float fingerX = 0.0f;       ///< Where the assist's finger is, display pixels.
+    float fingerY = 0.0f;
+    bool touching = false;
+};
+
 /**
  * Decides, many times a second, how far to drag the assist's finger.
  *
@@ -111,6 +124,9 @@ public:
     /// 0 to 1: how much of its strength the controller currently allows itself (below 1 after swinging).
     float stability() const { return stability_; }
 
+    /// What the latest step saw and did. Read from the thread that calls step().
+    const AimTelemetry& telemetry() const { return telemetry_; }
+
 private:
     /// The target being followed, as it will be when a move made now takes effect.
     struct Pursuit {
@@ -152,6 +168,7 @@ private:
                               const PlayerInput& player, float dt) const;
     AimOutput moveFinger(int64_t nowNs, float dt, const Pursuit& pursuit, FingerStep step);
     AimOutput lift();
+    void noteFinger();
 
     // Keeping the aim from swinging.
     void watchForSwinging(int64_t nowNs, float dt, const Pursuit& pursuit);
@@ -171,6 +188,7 @@ private:
     int rivalId_ = -1;
     int64_t rivalSinceNs_ = 0;
 
+    AimTelemetry telemetry_;
     bool touching_ = false;
     bool releaseRequested_ = false;
     float fingerX_ = 0.0f;

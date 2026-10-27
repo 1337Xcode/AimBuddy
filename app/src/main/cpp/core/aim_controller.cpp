@@ -122,15 +122,31 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
 
     const CameraResponse response = motion_->response();
     Pursuit pursuit;
+    telemetry_.targetId = -1;
     if (!beginPursuit(nowNs, response, tracker, profile, &pursuit)) {
         // Nobody to follow: let go. A lock that is only briefly out of sight keeps the finger down, still.
-        return lockedTrackId() < 0 ? lift() : AimOutput();
+        const AimOutput out = lockedTrackId() < 0 ? lift() : AimOutput();
+        noteFinger();
+        return out;
     }
+    telemetry_.targetId = pursuit.body->id;
+    telemetry_.errorX = pursuit.errorX;
+    telemetry_.errorY = pursuit.errorY;
+    telemetry_.deadzone = pursuit.deadzone;
+    telemetry_.movingShare = pursuit.movingShare;
     watchForSwinging(nowNs, dt, pursuit);
-    if (!touching_) {
-        return putFingerDown(pursuit);
-    }
-    return moveFinger(nowNs, dt, pursuit, planFingerStep(nowNs, response, pursuit, player, dt));
+    const AimOutput out = touching_ ? moveFinger(nowNs, dt, pursuit, planFingerStep(nowNs, response, pursuit, player, dt))
+                                    : putFingerDown(pursuit);
+    noteFinger();
+    return out;
+}
+
+/// Copies the finger's state into the telemetry at the end of a step.
+void AimController::noteFinger() {
+    telemetry_.stability = stability_;
+    telemetry_.fingerX = fingerX_;
+    telemetry_.fingerY = fingerY_;
+    telemetry_.touching = touching_;
 }
 
 float AimController::advanceClock(int64_t nowNs) {
