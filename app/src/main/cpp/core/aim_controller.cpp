@@ -43,9 +43,34 @@ constexpr float kRecentreShare = 0.7f;
 /// A re-centre only waits for a quiet moment while the error is below this fraction of the target's height.
 constexpr float kQuietErrorBoxFraction = 0.25f;
 
+/// Finger travel allowed to be on its way (moved but not yet visible on screen) is a small base
+/// amount plus a part that grows steeply with how well the camera's response is known.
+constexpr float kMinTravelCapPx = 8.0f;
+constexpr float kTravelCapRangePx = 300.0f;
+
+/// Swing detection: an error counts as on one side of the target beyond this many dead zones (or
+/// this fraction of the target's height), and a swing is this many crossings within the window.
+constexpr float kSwingMarginDeadzones = 3.0f;
+constexpr float kSwingMarginBoxFraction = 0.10f;
+constexpr int kSwingCrossings = 3;
+constexpr float kSwingWindowS = 0.7f;
+
+/// A swing takes the stability factor down by this share, to no less than the minimum; it comes
+/// back at this rate (per second) once the aim has been calm for a while.
+constexpr float kSwingStabilityKeep = 0.6f;
+constexpr float kMinStability = 0.2f;
+constexpr float kStabilityRecoveryPerS = 0.3f;
+constexpr float kCalmBeforeRecoveryS = 0.5f;
+
 float lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 float nsToSeconds(int64_t ns) { return static_cast<float>(ns) * 1e-9f; }
+
+/// Finger travel that may be on its way at once, for a camera response trusted to `confidence` (0 to 1).
+float travelCapFor(float confidence) {
+    const float c = std::clamp(confidence, 0.0f, 1.0f);
+    return kMinTravelCapPx + kTravelCapRangePx * c * c * c;
+}
 
 /**
  * True when `rival` beats `current` by the switch ratio. Metrics are "lower is better"; the ones
@@ -58,7 +83,7 @@ bool clearlyBetter(float rival, float current, float ratio) {
 /// The number that ranks a target for the chosen priority; lower is better.
 float priorityMetric(int priority, const TrackView& view, float distanceToCrosshair) {
     if (priority == 1) {
-        return -view.height;  // the largest, so usually the closest to the player
+        return -view.height;  // the biggest on screen, so usually the closest to the player
     }
     if (priority == 2) {
         return -view.score;  // the one the detector is surest about
@@ -82,7 +107,8 @@ float movingShareOf(const TrackView& view) {
 
 }  // namespace
 
-AimController::AimController(const AimSettings& settings) : settings_(settings) {}
+AimController::AimController(const AimSettings& settings, CameraMotion* motion)
+    : settings_(settings), motion_(motion) {}
 
 AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const ModelProfile& profile,
                               const PlayerInput& player) {
@@ -94,15 +120,17 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
         return lift();
     }
 
+    const CameraResponse response = motion_->response();
     Pursuit pursuit;
-    if (!beginPursuit(nowNs, tracker, profile, &pursuit)) {
+    if (!beginPursuit(nowNs, response, tracker, profile, &pursuit)) {
         // Nobody to follow: let go. A lock that is only briefly out of sight keeps the finger down, still.
         return lockedTrackId() < 0 ? lift() : AimOutput();
     }
+    watchForSwinging(nowNs, dt, pursuit);
     if (!touching_) {
         return putFingerDown(pursuit);
     }
-    return moveFinger(nowNs, dt, pursuit, planFingerStep(pursuit, player, dt));
+    return moveFinger(nowNs, dt, pursuit, planFingerStep(nowNs, response, pursuit, player, dt));
 }
 
 float AimController::advanceClock(int64_t nowNs) {
@@ -110,10 +138,6 @@ float AimController::advanceClock(int64_t nowNs) {
                                       : std::clamp(nsToSeconds(nowNs - lastStepNs_), kMinStepS, kMaxStepS);
     lastStepNs_ = nowNs;
     return dt;
-}
-
-int64_t AimController::actuationDelayNs() const {
-    return static_cast<int64_t>(settings_.actuationDelayS * 1e9f);
 }
 
 void AimController::forgetTarget() {
@@ -214,8 +238,8 @@ int AimController::selectTarget(int64_t nowNs, const TrackView* views, int count
     return best.index;
 }
 
-bool AimController::beginPursuit(int64_t nowNs, const Tracker& tracker, const ModelProfile& profile,
-                                 Pursuit* pursuit) {
+bool AimController::beginPursuit(int64_t nowNs, const CameraResponse& response, const Tracker& tracker,
+                                 const ModelProfile& profile, Pursuit* pursuit) {
     // Who to follow, judged by where targets are on screen right now.
     const int nowCount = tracker.snapshot(nowNs, nowViews_.data(), kMaxTracks);
     const int chosen = selectTarget(nowNs, nowViews_.data(), nowCount, profile);
@@ -224,8 +248,9 @@ bool AimController::beginPursuit(int64_t nowNs, const Tracker& tracker, const Mo
     }
 
     // Where that target will be when a move made now takes effect, with the camera slide already
-    // promised by earlier moves included (the tracker adds it from the commanded-motion log).
-    const int futureCount = tracker.snapshot(nowNs + actuationDelayNs(), futureViews_.data(), kMaxTracks);
+    // promised by earlier moves included (the tracker adds it from the camera motion).
+    const int64_t delayNs = static_cast<int64_t>(response.delayS * 1e9f);
+    const int futureCount = tracker.snapshot(nowNs + delayNs, futureViews_.data(), kMaxTracks);
     const TrackView* body = &nowViews_[chosen];
     for (int i = 0; i < futureCount; ++i) {
         if (futureViews_[i].id == body->id) {
@@ -260,19 +285,21 @@ AimOutput AimController::putFingerDown(const Pursuit& pursuit) {
     return {AimAction::kTouchDown, fingerX_, fingerY_};
 }
 
-AimController::FingerStep AimController::planFingerStep(const Pursuit& pursuit, const PlayerInput& player,
+AimController::FingerStep AimController::planFingerStep(int64_t /* nowNs */, const CameraResponse& response,
+                                                        const Pursuit& pursuit, const PlayerInput& player,
                                                         float dt) const {
     const TrackView& body = *pursuit.body;
-    const float gain = std::max(settings_.sceneGain, 0.05f);
-    const float yDirection = settings_.invertY ? -1.0f : 1.0f;
+    const float gainX = std::max(response.gainX, 0.05f);
+    const float gainY = std::max(response.gainY, 0.05f);
+    const float yDirection = response.invertY ? -1.0f : 1.0f;
     FingerStep step;
 
     // Feed-forward: a target running at speed v needs the scene to slide at v too, so the finger
     // is kept moving at v / gain even when the error is zero. Without it the aim would trail a
     // moving target by speed / (closing rate), several body widths at a run.
     const float followShare = pursuit.movingShare * std::clamp(0.5f + settings_.strength, 0.0f, 1.0f);
-    step.x += body.velocityX / gain * dt * followShare;
-    step.y += body.velocityY / gain * dt * followShare * yDirection;
+    step.x += body.velocityX / gainX * dt * followShare;
+    step.y += body.velocityY / gainY * dt * followShare * yDirection;
 
     // Feedback: close a fraction of the remaining error. It aims at the edge of the dead zone, not
     // its centre, so the finger comes to rest instead of twitching.
@@ -281,18 +308,29 @@ AimController::FingerStep AimController::planFingerStep(const Pursuit& pursuit, 
         const float strength = player.lookActive ? settings_.strength * settings_.yieldWhileLooking : settings_.strength;
         const float timeConstant =
             lerp(kSlowestTimeConstantS, kFastestTimeConstantS, std::pow(std::clamp(strength, 0.0f, 1.0f), 0.7f));
-        const float closing = 1.0f - std::exp(-dt / timeConstant);
-        step.x += pursuit.errorX * shrink / gain * closing;
-        step.y += pursuit.errorY * shrink / gain * closing * yDirection;
+        const float closing = (1.0f - std::exp(-dt / timeConstant)) * stability_;
+        step.x += pursuit.errorX * shrink / gainX * closing;
+        step.y += pursuit.errorY * shrink / gainY * closing * yDirection;
     }
 
     // A speed limit keeps a big error from becoming a sudden flick.
     const float speedShare = lerp(kMinSpeedShare, 1.0f, std::clamp(settings_.strength, 0.0f, 1.0f));
-    const float maxStep = settings_.maxFingerSpeedPxS * speedShare * dt;
+    float allowed = settings_.maxFingerSpeedPxS * speedShare * dt;
+
+    // While the camera's response is not known well, only a little finger travel may be on its
+    // way at a time. A wrong guess then costs a small overshoot instead of a swing, and the
+    // first small move shows how the camera really answers.
+    float pendingX = 0.0f;
+    float pendingY = 0.0f;
+    motion_->unseenFinger(&pendingX, &pendingY);
+    const float room = std::max(0.0f, travelCapFor(motion_->confidence()) - std::hypot(pendingX, pendingY));
+    allowed = std::min(allowed, room);
+
     const float length = std::hypot(step.x, step.y);
-    if (length > maxStep) {
-        step.x *= maxStep / length;
-        step.y *= maxStep / length;
+    if (length > allowed) {
+        const float scale = length > 0.0f ? allowed / length : 0.0f;
+        step.x *= scale;
+        step.y *= scale;
     }
     return step;
 }
@@ -324,11 +362,59 @@ AimOutput AimController::moveFinger(int64_t nowNs, float dt, const Pursuit& purs
         return AimOutput();
     }
 
-    // Tell the tracker how the scene will slide because of this move, once the game applies it.
-    const int64_t landsNs = nowNs + actuationDelayNs();
-    const float yScene = settings_.invertY ? settings_.sceneGain : -settings_.sceneGain;
-    motion_.record(landsNs, landsNs + static_cast<int64_t>(dt * 1e9f), -settings_.sceneGain * movedX, yScene * movedY);
+    // Tell everyone who needs to know how the scene will slide because of this move.
+    motion_->recordFinger(nowNs, static_cast<int64_t>(dt * 1e9f), movedX, movedY);
     return {AimAction::kTouchMove, fingerX_, fingerY_};
+}
+
+void AimController::forgetSwinging() {
+    crossingCount_ = 0;
+    sideX_ = 0;
+    sideY_ = 0;
+}
+
+void AimController::watchForSwinging(int64_t nowNs, float dt, const Pursuit& pursuit) {
+    // A different target restarts the watch: the first error to a new target says nothing about swinging.
+    if (pursuit.body->id != swingTrackId_) {
+        swingTrackId_ = pursuit.body->id;
+        forgetSwinging();
+    }
+
+    // The aim swings when the error flips from one side of the target to the other, by a clear
+    // margin each time, again and again. Crossing the target once is just arriving at it.
+    const float margin = std::max(kSwingMarginDeadzones * pursuit.deadzone, kSwingMarginBoxFraction * pursuit.body->height);
+    const auto side = [margin](float error) { return error > margin ? 1 : (error < -margin ? -1 : 0); };
+    bool crossed = false;
+    const int sideX = side(pursuit.errorX);
+    const int sideY = side(pursuit.errorY);
+    if (sideX != 0) {
+        crossed = crossed || (sideX_ != 0 && sideX != sideX_);
+        sideX_ = sideX;
+    }
+    if (sideY != 0) {
+        crossed = crossed || (sideY_ != 0 && sideY != sideY_);
+        sideY_ = sideY;
+    }
+
+    // Keep the recent crossings only.
+    int kept = 0;
+    for (int i = 0; i < crossingCount_; ++i) {
+        if (nsToSeconds(nowNs - crossingNs_[i]) <= kSwingWindowS) {
+            crossingNs_[kept++] = crossingNs_[i];
+        }
+    }
+    crossingCount_ = kept;
+    if (crossed && crossingCount_ < kMaxCrossings) {
+        crossingNs_[crossingCount_++] = nowNs;
+        lastCrossingNs_ = nowNs;
+    }
+
+    if (crossingCount_ >= kSwingCrossings) {
+        stability_ = std::max(kMinStability, stability_ * kSwingStabilityKeep);
+        crossingCount_ = 0;
+    } else if (nsToSeconds(nowNs - lastCrossingNs_) > kCalmBeforeRecoveryS) {
+        stability_ = std::min(1.0f, stability_ + kStabilityRecoveryPerS * dt);
+    }
 }
 
 }  // namespace aimbuddy

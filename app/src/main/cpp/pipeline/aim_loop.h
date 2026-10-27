@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "../core/aim_controller.h"
+#include "../core/camera_motion.h"
 #include "../core/model_profile.h"
 #include "../core/tracker.h"
 #include "../touch/touch_link.h"
@@ -15,8 +16,13 @@ namespace aimbuddy {
 
 /// What the app wants from the assist at this moment.
 struct AimLoopConfig {
-    bool enabled = false;   ///< The player's switch for the assist.
+    bool enabled = false;          ///< The player's switch for the assist.
     AimSettings aim;
+    CameraResponse cameraGuess;    ///< How the camera is believed to answer the finger until it has been measured.
+    bool learnCamera = true;       ///< Measure the camera's answer instead of trusting the guess.
+    bool hasLearned = false;       ///< An earlier run measured the camera: the two fields below say what it found.
+    CameraResponse learned;
+    float learnedConfidence = 0.0f;
 };
 
 /**
@@ -35,6 +41,9 @@ public:
     /// Asked for the current wishes a few times a second; must be cheap and safe to call from this loop's thread.
     using ConfigSource = std::function<AimLoopConfig()>;
 
+    /// Told now and then what the camera's answer to the finger turned out to be, so it can be kept for next time.
+    using LearnedSink = std::function<void(const CameraResponse& response, float confidence)>;
+
     /// What the loop is doing, for the app to show.
     struct Stats {
         bool helperConnected = false;
@@ -44,13 +53,16 @@ public:
         int lockedTrack = -1;
     };
 
-    AimLoop(Tracker* tracker, const ModelProfile* profile, touch::TouchLink* link);
+    AimLoop(Tracker* tracker, const ModelProfile* profile, touch::TouchLink* link, CameraMotion* motion);
     ~AimLoop() { stop(); }
     AimLoop(const AimLoop&) = delete;
     AimLoop& operator=(const AimLoop&) = delete;
 
     /// Sets where the loop reads the player's wishes from. Call while stopped.
     void setConfigSource(ConfigSource source) { source_ = std::move(source); }
+
+    /// Sets where the measured camera response is reported. Call while stopped.
+    void setLearnedSink(LearnedSink sink) { learnedSink_ = std::move(sink); }
 
     /// Tells the loop the display's size in pixels and rotation (0 to 3, as Android numbers them). Thread safe.
     void setDisplay(int width, int height, int rotation);
@@ -74,6 +86,7 @@ private:
 
     void run();
     void refreshConfig(int64_t nowNs);
+    void reportLearned(int64_t nowNs);
     void syncDisplayWithHelper();
     void stepWhileActive(int64_t nowNs);
     void standDown(int64_t nowNs);
@@ -85,7 +98,9 @@ private:
     Tracker* tracker_;
     const ModelProfile* profile_;
     touch::TouchLink* link_;
+    CameraMotion* motion_;
     ConfigSource source_;
+    LearnedSink learnedSink_;
 
     AimController controller_;
     AimLoopConfig config_;
@@ -97,6 +112,7 @@ private:
 
     // State owned by the loop thread.
     int64_t lastConfigNs_ = 0;
+    int64_t lastLearnedReportNs_ = 0;
     int64_t lastEngageNs_ = 0;
     uint32_t configuredSession_ = 0;
     uint32_t configuredDisplayVersion_ = 0;

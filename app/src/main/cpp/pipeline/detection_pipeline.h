@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "../capture/roi_capture.h"
+#include "../core/camera_motion.h"
 #include "../core/detection_batch.h"
 #include "../core/model_profile.h"
 #include "../core/tracker.h"
@@ -61,6 +62,9 @@ public:
     /// Sets the observer. Must be called while stopped.
     void setObserver(BatchObserver observer) { observer_ = std::move(observer); }
 
+    /// Sets where the camera's movement between frames is recorded. Must be called while stopped.
+    void setCameraMotion(CameraMotion* motion) { cameraMotion_ = motion; }
+
     /// The player's "minimum confidence" setting; retunes the detector and the tracker. Thread safe.
     void setConfidenceThreshold(float threshold) { confidence_.store(threshold, std::memory_order_relaxed); }
 
@@ -74,12 +78,15 @@ public:
 private:
     void run();
     void applyConfidenceIfChanged(float& applied);
+    void recordCameraMotion(int64_t captureNs);
     void recordStats(const DetectionBatch& batch, int64_t finishedNs);
 
     RoiCapture capture_;
     YoloDetector detector_;
     Tracker tracker_;
     BatchObserver observer_;
+    CameraMotion* cameraMotion_ = nullptr;
+    int64_t lastFrameNs_ = 0;
     std::thread worker_;
     std::atomic<bool> running_{false};
     std::atomic<float> confidence_{0.5f};

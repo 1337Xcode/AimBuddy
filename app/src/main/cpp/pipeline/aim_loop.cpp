@@ -18,6 +18,9 @@ constexpr int64_t kIdlePeriodNs = 20'000'000;
 /// How often the player's wishes are read.
 constexpr int64_t kConfigRefreshNs = 100'000'000;
 
+/// How often what was learned about the camera is passed on to be kept.
+constexpr int64_t kLearnedReportNs = 5'000'000'000;
+
 /// Wait before asking the helper again to take the touchscreen over.
 constexpr int64_t kEngageRetryNs = 500'000'000;
 constexpr int64_t kEngageRetryAfterRefusalNs = 2'000'000'000;
@@ -37,8 +40,8 @@ int64_t steadyNowNs() {
 
 }  // namespace
 
-AimLoop::AimLoop(Tracker* tracker, const ModelProfile* profile, touch::TouchLink* link)
-    : tracker_(tracker), profile_(profile), link_(link) {}
+AimLoop::AimLoop(Tracker* tracker, const ModelProfile* profile, touch::TouchLink* link, CameraMotion* motion)
+    : tracker_(tracker), profile_(profile), link_(link), motion_(motion), controller_(AimSettings(), motion) {}
 
 void AimLoop::setDisplay(int width, int height, int rotation) {
     std::lock_guard<std::mutex> lock(displayMutex_);
@@ -82,7 +85,15 @@ AimLoop::Stats AimLoop::stats() const {
 void AimLoop::run() {
     LOGI("Aim loop started");
     setpriority(PRIO_PROCESS, 0, kThreadNice);
-    tracker_->setEgoMotion(&controller_.commandedMotion());
+
+    // Start from what an earlier run measured, so the first move is already close to right.
+    if (source_) {
+        const AimLoopConfig first = source_();
+        motion_->setPrior(first.cameraGuess, first.learnCamera);
+        if (first.learnCamera && first.hasLearned) {
+            motion_->seed(first.learned, first.learnedConfidence);
+        }
+    }
 
     int64_t nextNs = steadyNowNs();
     while (running_.load(std::memory_order_acquire)) {
@@ -112,7 +123,6 @@ void AimLoop::run() {
     // Leaving: whatever the settings say, the finger comes off and the touchscreen goes back.
     config_.enabled = false;
     standDown(steadyNowNs());
-    tracker_->setEgoMotion(nullptr);
     LOGI("Aim loop stopped");
 }
 
@@ -123,6 +133,16 @@ void AimLoop::refreshConfig(int64_t nowNs) {
     lastConfigNs_ = nowNs;
     config_ = source_();
     controller_.setSettings(config_.aim);
+    motion_->setPrior(config_.cameraGuess, config_.learnCamera);
+    reportLearned(nowNs);
+}
+
+void AimLoop::reportLearned(int64_t nowNs) {
+    if (!learnedSink_ || !motion_->hasLearned() || nowNs - lastLearnedReportNs_ < kLearnedReportNs) {
+        return;
+    }
+    lastLearnedReportNs_ = nowNs;
+    learnedSink_(motion_->response(), motion_->confidence());
 }
 
 void AimLoop::syncDisplayWithHelper() {

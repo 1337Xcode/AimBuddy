@@ -50,6 +50,7 @@ void DetectionPipeline::start() {
     capture_.mailbox().reopen();
     tracker_.reset();
     lastBatchNs_ = 0;
+    lastFrameNs_ = 0;
     running_.store(true, std::memory_order_release);
     worker_ = std::thread([this] { run(); });
 }
@@ -73,6 +74,15 @@ void DetectionPipeline::applyConfidenceIfChanged(float& applied) {
     tracker_.setConfig(config);
     detector_.setMinScore(config.lowScore);
     applied = requested;
+}
+
+void DetectionPipeline::recordCameraMotion(int64_t captureNs) {
+    if (cameraMotion_ != nullptr && lastFrameNs_ > 0) {
+        // Nothing measures the slide of the scene yet, so the record is told it is unknown and
+        // fills the gap from the assist's own moves.
+        cameraMotion_->addMeasurement(lastFrameNs_, captureNs, 0.0f, 0.0f, 0.0f);
+    }
+    lastFrameNs_ = captureNs;
 }
 
 void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishedNs) {
@@ -117,6 +127,7 @@ void DetectionPipeline::run() {
             continue;
         }
 
+        recordCameraMotion(batch.captureNs);
         tracker_.update(batch.detections, batch.count, batch.captureNs, &batch.scanned);
         if (observer_) {
             observer_(batch);

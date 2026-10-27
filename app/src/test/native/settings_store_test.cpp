@@ -134,3 +134,27 @@ TEST(resetting_keeps_only_the_language) {
     CHECK(!fresh.showSnapLine);
     CHECK(fresh.touchBackend == defaults.touchBackend);
 }
+
+TEST(what_was_learned_about_the_camera_is_kept_and_kept_in_range) {
+    Settings original;
+    original.autoCalibrate = false;
+    original.learnedGainX = 4.5f;
+    original.learnedGainY = 3.75f;
+    original.learnedDelayMs = 64.0f;
+    original.learnedConfidence = 0.8f;
+    const Settings loaded = SettingsStore::parse(SettingsStore::serialize(original));
+    CHECK(!loaded.autoCalibrate);
+    CHECK_NEAR(loaded.learnedGainX, 4.5, 1e-6);
+    CHECK_NEAR(loaded.learnedGainY, 3.75, 1e-6);
+    CHECK_NEAR(loaded.learnedDelayMs, 64.0, 1e-4);
+    CHECK_NEAR(loaded.learnedConfidence, 0.8, 1e-6);
+
+    // Nothing learned is zero and stays zero; an absurd figure is brought into range.
+    const Settings fresh = SettingsStore::parse("");
+    CHECK(fresh.autoCalibrate);
+    CHECK_NEAR(fresh.learnedGainX, 0.0, 1e-9);
+    const Settings wild = SettingsStore::parse("learnedGainX=900\nlearnedGainY=0.001\nlearnedConfidence=7\n");
+    CHECK_NEAR(wild.learnedGainX, 40.0, 1e-6);
+    CHECK_NEAR(wild.learnedGainY, 0.15, 1e-6);
+    CHECK_NEAR(wild.learnedConfidence, 1.0, 1e-6);
+}

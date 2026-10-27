@@ -6,25 +6,20 @@
 #include <cstdint>
 
 #include "aim_point.h"
-#include "commanded_motion.h"
+#include "camera_motion.h"
 #include "model_profile.h"
 #include "tracker.h"
 
 namespace aimbuddy {
 
-/// How the assist behaves. Every field is either a player preference or a property of the game.
+/// How the assist behaves. Every field is either a player preference or a property of the screen.
 struct AimSettings {
     // --- Player preferences ---
     AimZone zone = AimZone::kHead;      ///< Which part of a target to steer towards.
     float strength = 0.6f;              ///< 0 to 1: how quickly the aim closes on a target.
     float fovRadiusPx = 220.0f;         ///< Targets further than this from the crosshair are left alone.
-    int priority = 0;                   ///< Which target to prefer: 0 nearest the crosshair, 1 largest, 2 most certain.
+    int priority = 0;                   ///< Which target to prefer: 0 closest to the crosshair, 1 biggest, 2 most certain.
     float yieldWhileLooking = 0.4f;     ///< Fraction of the assist kept while the player is steering themselves.
-
-    // --- Properties of the game (set by calibration or by hand) ---
-    float sceneGain = 1.5f;             ///< Screen pixels the scene slides per pixel the finger moves.
-    float actuationDelayS = 0.05f;      ///< Time from a finger move to its effect showing on screen.
-    bool invertY = false;               ///< The game looks up when the finger moves down.
 
     // --- Where the assist's finger rests ---
     float anchorX = 1800.0f;            ///< Display pixels. Should be in the game's look area, away from the player's thumb.
@@ -62,30 +57,32 @@ struct PlayerInput {
 /**
  * Decides, many times a second, how far to drag the assist's finger.
  *
- * It is a feedback controller with three ideas that make the aim settle quickly and stay still:
+ * It is a feedback controller built on four ideas that make the aim settle quickly and stay still:
  *
  *  1. Delay compensation. A finger move shows up on screen only after the game has turned the
  *     camera, one or two frames later. Judging by what the screen shows now would keep ordering
- *     the same correction again and again, and the aim would circle the target. Every request is
- *     recorded in a CommandedMotion log; the tracker removes that known slide from its estimates,
- *     and the controller aims where the target will be when this step's move takes effect.
+ *     the same correction again and again, and the aim would circle the target. Every move is
+ *     recorded in the CameraMotion, which tells the tracker how far the scene has slid and will
+ *     slide, and the controller aims where the target will be when this step's move takes effect.
  *  2. Lead. The tracker's speed estimate, free of the camera's own movement, is used to predict
  *     where a moving target will be at that moment.
  *  3. Closing, not chasing. The error is reduced by a fraction each step (an exponential
  *     approach), capped by a finger speed limit, with a dead zone around the aim point so
  *     detector noise does not make the finger twitch.
- *
- * It needs two numbers that depend on the game and the player's sensitivity setting: how far the
- * scene slides per finger pixel (sceneGain) and how long that takes (actuationDelayS). It stays
- * stable while the real gain is within about 0.4 to 1.7 times the configured one and the real
- * delay within about 30 ms of it; further off, it settles slowly or rings.
+ *  4. Caution while the camera is unknown. How far the scene slides per finger pixel differs
+ *     between games and sensitivity settings by a factor of ten or more, and a controller that
+ *     assumes the wrong figure overshoots and swings. Until the camera's response has been
+ *     measured (see CameraMotion), only a small amount of finger travel is allowed to be on its
+ *     way at a time, so the first move is small and its effect teaches the real figure. If the
+ *     aim swings anyway, a stability factor takes the strength down until it stops.
  *
  * The class holds no threads or platform calls: call step() at a steady rate and carry out the
  * returned action. That keeps it testable against a simulated game.
  */
 class AimController {
 public:
-    explicit AimController(const AimSettings& settings = AimSettings());
+    /// `motion` is where moves are recorded and the camera's response is read from; it outlives the controller.
+    AimController(const AimSettings& settings, CameraMotion* motion);
 
     /// Replaces the settings. Call from the same thread as step().
     void setSettings(const AimSettings& settings) { settings_ = settings; }
@@ -111,8 +108,8 @@ public:
     /// Id of the target being followed, or -1. Safe to read from other threads.
     int lockedTrackId() const { return lockedId_.load(std::memory_order_relaxed); }
 
-    /// The log of requested camera movement. Give it to Tracker::setEgoMotion().
-    CommandedMotion& commandedMotion() { return motion_; }
+    /// 0 to 1: how much of its strength the controller currently allows itself (below 1 after swinging).
+    float stability() const { return stability_; }
 
 private:
     /// The target being followed, as it will be when a move made now takes effect.
@@ -148,15 +145,20 @@ private:
 
     // One control step.
     float advanceClock(int64_t nowNs);
-    int64_t actuationDelayNs() const;
-    bool beginPursuit(int64_t nowNs, const Tracker& tracker, const ModelProfile& profile, Pursuit* pursuit);
+    bool beginPursuit(int64_t nowNs, const CameraResponse& response, const Tracker& tracker,
+                      const ModelProfile& profile, Pursuit* pursuit);
     AimOutput putFingerDown(const Pursuit& pursuit);
-    FingerStep planFingerStep(const Pursuit& pursuit, const PlayerInput& player, float dt) const;
+    FingerStep planFingerStep(int64_t nowNs, const CameraResponse& response, const Pursuit& pursuit,
+                              const PlayerInput& player, float dt) const;
     AimOutput moveFinger(int64_t nowNs, float dt, const Pursuit& pursuit, FingerStep step);
     AimOutput lift();
 
+    // Keeping the aim from swinging.
+    void watchForSwinging(int64_t nowNs, float dt, const Pursuit& pursuit);
+    void forgetSwinging();
+
     AimSettings settings_;
-    CommandedMotion motion_;
+    CameraMotion* motion_;
     float crosshairX_ = 0.0f;
     float crosshairY_ = 0.0f;
 
@@ -174,6 +176,16 @@ private:
     float fingerX_ = 0.0f;
     float fingerY_ = 0.0f;
     int64_t lastStepNs_ = 0;
+
+    // Swing detection: times the error crossed zero by a clear margin, and the side it was last on.
+    static constexpr int kMaxCrossings = 8;
+    std::array<int64_t, kMaxCrossings> crossingNs_{};
+    int crossingCount_ = 0;
+    int sideX_ = 0;
+    int sideY_ = 0;
+    int swingTrackId_ = -1;
+    float stability_ = 1.0f;
+    int64_t lastCrossingNs_ = 0;
 };
 
 }  // namespace aimbuddy

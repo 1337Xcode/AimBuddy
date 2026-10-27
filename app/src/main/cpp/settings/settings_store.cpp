@@ -41,9 +41,14 @@ void visitFields(Settings_& s, Visitor&& visit) {
     visit("aimStrength", s.aimStrength);
     visit("aimFovRadius", s.aimFovRadius);
     visit("aimPriority", s.aimPriority);
+    visit("autoCalibrate", s.autoCalibrate);
     visit("sceneGain", s.sceneGain);
     visit("actuationDelayMs", s.actuationDelayMs);
     visit("invertY", s.invertY);
+    visit("learnedGainX", s.learnedGainX);
+    visit("learnedGainY", s.learnedGainY);
+    visit("learnedDelayMs", s.learnedDelayMs);
+    visit("learnedConfidence", s.learnedConfidence);
     visit("anchorX", s.anchorX);
     visit("anchorY", s.anchorY);
     visit("anchorRadius", s.anchorRadius);
@@ -136,6 +141,10 @@ void Settings::clamp() {
     aimPriority = std::clamp(aimPriority, 0, 2);
     sceneGain = clampTo(sceneGain, 0.1f, 8.0f);
     actuationDelayMs = clampTo(actuationDelayMs, 0.0f, 250.0f);
+    learnedGainX = learnedGainX > 0.0f ? clampTo(learnedGainX, 0.15f, 40.0f) : 0.0f;
+    learnedGainY = learnedGainY > 0.0f ? clampTo(learnedGainY, 0.15f, 40.0f) : 0.0f;
+    learnedDelayMs = clampTo(learnedDelayMs, 0.0f, 250.0f);
+    learnedConfidence = clampTo(learnedConfidence, 0.0f, 1.0f);
     anchorX = clampTo(anchorX, 0.05f, 0.95f);
     anchorY = clampTo(anchorY, 0.05f, 0.95f);
     anchorRadius = clampTo(anchorRadius, 50.0f, 500.0f);

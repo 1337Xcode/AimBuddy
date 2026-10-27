@@ -4,6 +4,7 @@
 #include <android/hardware_buffer.h>
 #include <android/hardware_buffer_jni.h>
 
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -48,7 +49,8 @@ using aimbuddy::Settings;
 aimbuddy::DetectionPipeline g_pipeline;
 aimbuddy::SettingsStore g_settingsStore;
 aimbuddy::touch::TouchLink g_touchLink;
-aimbuddy::AimLoop g_aimLoop(&g_pipeline.tracker(), &g_pipeline.profile(), &g_touchLink);
+aimbuddy::CameraMotion g_cameraMotion;
+aimbuddy::AimLoop g_aimLoop(&g_pipeline.tracker(), &g_pipeline.profile(), &g_touchLink, &g_cameraMotion);
 
 JavaVM* g_jvm = nullptr;
 std::string g_settingsPath;
@@ -83,13 +85,37 @@ aimbuddy::AimLoopConfig makeAimLoopConfig() {
     config.aim.strength = settings.aimStrength;
     config.aim.fovRadiusPx = settings.aimFovRadius;
     config.aim.priority = settings.aimPriority;
-    config.aim.sceneGain = settings.sceneGain;
-    config.aim.actuationDelayS = settings.actuationDelayMs * 0.001f;
-    config.aim.invertY = settings.invertY;
     config.aim.anchorX = settings.anchorX * displayWidth;
     config.aim.anchorY = settings.anchorY * displayHeight;
     config.aim.anchorRadiusPx = settings.anchorRadius;
+
+    config.cameraGuess.gainX = settings.sceneGain;
+    config.cameraGuess.gainY = settings.sceneGain;
+    config.cameraGuess.delayS = settings.actuationDelayMs * 0.001f;
+    config.cameraGuess.invertY = settings.invertY;
+    config.learnCamera = settings.autoCalibrate;
+    config.hasLearned = settings.learnedConfidence > 0.0f && settings.learnedGainX > 0.0f && settings.learnedGainY > 0.0f;
+    config.learned.gainX = settings.learnedGainX;
+    config.learned.gainY = settings.learnedGainY;
+    config.learned.delayS = settings.learnedDelayMs * 0.001f;
+    config.learnedConfidence = settings.learnedConfidence;
     return config;
+}
+
+/// Keeps what the aim loop measured about the game's camera, so the next run starts close to right.
+void keepLearnedCamera(const aimbuddy::CameraResponse& response, float confidence) {
+    Settings settings = g_settingsStore.get();
+    const bool unchanged = std::fabs(settings.learnedGainX - response.gainX) < 0.05f * response.gainX &&
+                           std::fabs(settings.learnedGainY - response.gainY) < 0.05f * response.gainY &&
+                           std::fabs(settings.learnedDelayMs - response.delayS * 1000.0f) < 4.0f;
+    if (unchanged) {
+        return;
+    }
+    settings.learnedGainX = response.gainX;
+    settings.learnedGainY = response.gainY;
+    settings.learnedDelayMs = response.delayS * 1000.0f;
+    settings.learnedConfidence = confidence;
+    g_settingsStore.set(settings);
 }
 
 }  // namespace
@@ -120,6 +146,9 @@ bool GetDetectionZoneScreenRect(float* left, float* top, float* right, float* bo
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /* reserved */) {
     LOGI("Native library loaded");
     g_jvm = vm;
+    // What the camera did on screen is known to the tracker and written by the pipeline.
+    g_pipeline.tracker().setEgoMotion(&g_cameraMotion);
+    g_pipeline.setCameraMotion(&g_cameraMotion);
     ncnn::create_gpu_instance();
     return JNI_VERSION_1_6;
 }
@@ -237,8 +266,10 @@ JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_start(JNIEnv* /* env *
     Settings settings = g_settingsStore.get();
     settings.assistEnabled = false;
     g_settingsStore.set(settings);
+    g_cameraMotion.clear();
     g_pipeline.start();
     g_aimLoop.setConfigSource(makeAimLoopConfig);
+    g_aimLoop.setLearnedSink(keepLearnedCamera);
     g_aimLoop.start();
     return JNI_TRUE;
 }
