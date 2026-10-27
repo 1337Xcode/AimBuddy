@@ -62,6 +62,32 @@ constexpr float kMinStability = 0.2f;
 constexpr float kStabilityRecoveryPerS = 0.3f;
 constexpr float kCalmBeforeRecoveryS = 0.5f;
 
+/// A target is judged to be stuck to the screen when, over a stretch of at least this many seconds and
+/// at least this many looks (and no longer than the window, after which the watch starts again), the
+/// camera swept at least this many pixels in all, every place the target was seen at lay within the
+/// larger of this many pixels and this share of its height, and it was on average further from the
+/// crosshair than the larger of this many pixels and this share of its height. That must be so on this
+/// many looks in a row. A target that runs or strafes, or one the camera is following, does not stay
+/// put on the screen; one the aim is on is not far from the crosshair.
+constexpr float kStuckMinSeconds = 0.4f;
+constexpr int kStuckMinLooks = 4;
+constexpr float kStuckWindowSeconds = 2.0f;
+constexpr float kStuckMinSweepPx = 150.0f;
+constexpr float kStuckSpreadPx = 14.0f;
+constexpr float kStuckSpreadBoxFraction = 0.12f;
+constexpr float kStuckMinErrorPx = 50.0f;
+constexpr float kStuckErrorBoxFraction = 0.3f;
+constexpr int kStuckLooks = 2;
+
+/// A target given up on is left alone this long the first time, twice as long each time after, to the limit;
+/// it is forgotten this long after that. Two boxes are the same one when their centres are within this share
+/// of the larger one's height and their areas differ by less than this factor.
+constexpr float kGiveUpFirstS = 3.0f;
+constexpr float kGiveUpLongestS = 12.0f;
+constexpr float kGiveUpForgetS = 30.0f;
+constexpr float kSamePlaceBoxShare = 0.5f;
+constexpr float kSameBoxAreaFactor = 2.5f;
+
 /// A finger is given this long to show an effect before the game is judged to be ignoring it, and
 /// only the most recent stretch of this length is looked at (the records of moves and slides are short).
 constexpr float kAnswerWithinS = 1.4f;
@@ -154,6 +180,12 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
     telemetry_.deadzone = pursuit.deadzone;
     telemetry_.movingShare = pursuit.movingShare;
     watchForSwinging(nowNs, dt, pursuit);
+    if (cannotCloseOn(nowNs, tracker, *pursuit.body)) {
+        // Not part of the scene: let go of it and of the finger, and look for another.
+        const AimOutput out = lift();
+        noteFinger();
+        return out;
+    }
     if (touching_ && fingerSeemsDead(nowNs)) {
         // The game is not answering this finger: lift it and try again after a wait.
         const float wait = std::min(kRetryLongestS, kRetryFirstS * static_cast<float>(1 << std::min(deadStreak_, 4)));
@@ -234,7 +266,8 @@ void AimController::rankTargets(const TrackView* views, int count, const ModelPr
     const int lockedId = lockedTrackId();
     for (int i = 0; i < count; ++i) {
         const TrackView& view = views[i];
-        if (profile.roleOf(view.classId) != ClassRole::kBody || view.opacity < kMinTargetOpacity) {
+        if (profile.roleOf(view.classId) != ClassRole::kBody || view.opacity < kMinTargetOpacity ||
+            view.phase == TrackPhase::kTentative || isGivenUp(view, lastStepNs_)) {
             continue;
         }
         const AimPoint point = chooseAimPoint(view, nullptr, settings_.zone);
@@ -252,6 +285,142 @@ void AimController::rankTargets(const TrackView* views, int count, const ModelPr
             *locked = {i, metric};
         }
     }
+}
+
+/// True when the target is one that was given up on and is still being left alone.
+bool AimController::isGivenUp(const TrackView& view, int64_t nowNs) const {
+    for (const GivenUp& entry : givenUp_) {
+        if (entry.trackId < 0 || nowNs >= entry.untilNs) {
+            continue;
+        }
+        const float tallest = std::max(view.height, entry.height);
+        const float areaRatio = std::max(view.width * view.height, entry.width * entry.height) /
+                                std::max(1.0f, std::min(view.width * view.height, entry.width * entry.height));
+        const bool samePlace = std::hypot(view.centerX - entry.centerX, view.centerY - entry.centerY) <= kSamePlaceBoxShare * tallest &&
+                               areaRatio <= kSameBoxAreaFactor;
+        if (view.id == entry.trackId || samePlace) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Forgets what was seen of the target being watched, so the watch starts afresh at the next look.
+void AimController::forgetWatch() {
+    watchedId_ = -1;
+    watchLastSeenNs_ = 0;
+    watchLooks_ = 0;
+    futileLooks_ = 0;
+}
+
+/**
+ * Judges, at each new look the tracker has had at the target, whether the target is stuck to the
+ * screen. The judging uses where the target was when it was last seen, not where it is projected
+ * to be, because the projection moves with the assist's own finger and would make anything look
+ * as if it were coming closer. Returns true once it is, after giving it up.
+ */
+bool AimController::cannotCloseOn(int64_t nowNs, const Tracker& tracker, const TrackView& body) {
+    if (body.lastSeenNs <= 0 || body.phase == TrackPhase::kTentative || body.lastSeenNs == watchLastSeenNs_) {
+        return false;   // nothing new has been seen since the last look
+    }
+    const int count = tracker.snapshot(body.lastSeenNs, watchViews_.data(), kMaxTracks, true);
+    const TrackView* seen = nullptr;
+    for (int i = 0; i < count; ++i) {
+        if (watchViews_[i].id == body.id) {
+            seen = &watchViews_[i];
+            break;
+        }
+    }
+    if (seen == nullptr) {
+        return false;
+    }
+    const int64_t previousLookNs = watchLastSeenNs_;
+    watchLastSeenNs_ = body.lastSeenNs;
+    const AimPoint aim = chooseAimPoint(*seen, nullptr, settings_.zone);
+    const float errorPx = std::hypot(aim.x - crosshairX_, aim.y - crosshairY_);
+    const float watchedS = nsToSeconds(body.lastSeenNs - watchStartNs_);
+    if (body.id != watchedId_ || watchedS > kStuckWindowSeconds || watchedS < 0.0f || previousLookNs <= 0) {
+        watchedId_ = body.id;
+        watchStartNs_ = body.lastSeenNs;
+        watchMinX_ = watchMaxX_ = seen->centerX;
+        watchMinY_ = watchMaxY_ = seen->centerY;
+        watchSweptPx_ = 0.0f;
+        watchErrorSumPx_ = errorPx;
+        watchLooks_ = 1;
+        futileLooks_ = 0;
+        return false;
+    }
+
+    // Where the target has been seen, how far it was from the crosshair, and how far the camera swept
+    // (as the frames measured it) between the last look and this one.
+    watchMinX_ = std::min(watchMinX_, seen->centerX);
+    watchMaxX_ = std::max(watchMaxX_, seen->centerX);
+    watchMinY_ = std::min(watchMinY_, seen->centerY);
+    watchMaxY_ = std::max(watchMaxY_, seen->centerY);
+    watchErrorSumPx_ += errorPx;
+    ++watchLooks_;
+    float sweepX = 0.0f;
+    float sweepY = 0.0f;
+    motion_->shiftBetween(previousLookNs, body.lastSeenNs, &sweepX, &sweepY);
+    watchSweptPx_ += std::hypot(sweepX, sweepY);
+
+    const float spreadPx = std::max(watchMaxX_ - watchMinX_, watchMaxY_ - watchMinY_);
+    const float meanErrorPx = watchErrorSumPx_ / static_cast<float>(watchLooks_);
+    const bool stuck = watchedS >= kStuckMinSeconds && watchLooks_ >= kStuckMinLooks && watchSweptPx_ >= kStuckMinSweepPx &&
+                       spreadPx <= std::max(kStuckSpreadPx, kStuckSpreadBoxFraction * seen->height) &&
+                       meanErrorPx >= std::max(kStuckMinErrorPx, kStuckErrorBoxFraction * seen->height);
+    futileLooks_ = stuck ? futileLooks_ + 1 : 0;
+    if (futileLooks_ < kStuckLooks) {
+        return false;
+    }
+    giveUpOn(nowNs, *seen);
+    return true;
+}
+
+/// Leaves the target alone for a while, longer if it is the same one as before, and lets go of the lock.
+void AimController::giveUpOn(int64_t nowNs, const TrackView& seen) {
+    GivenUp* slot = nullptr;
+    for (GivenUp& entry : givenUp_) {
+        if (entry.trackId >= 0 && nowNs >= entry.forgottenNs) {
+            entry = GivenUp();   // too long ago to count against it
+        }
+        const float tallest = std::max(seen.height, entry.height);
+        const bool samePlace = entry.trackId >= 0 &&
+                               std::hypot(seen.centerX - entry.centerX, seen.centerY - entry.centerY) <= kSamePlaceBoxShare * tallest;
+        if (samePlace || entry.trackId == seen.id) {
+            slot = &entry;
+            break;
+        }
+    }
+    if (slot == nullptr) {
+        for (GivenUp& entry : givenUp_) {
+            if (entry.trackId < 0) {
+                slot = &entry;
+                break;
+            }
+        }
+    }
+    if (slot == nullptr) {
+        slot = &givenUp_[0];   // all taken: the oldest slot is as good as any
+        for (GivenUp& entry : givenUp_) {
+            if (entry.untilNs < slot->untilNs) {
+                slot = &entry;
+            }
+        }
+    }
+    const int times = slot->trackId >= 0 ? slot->times + 1 : 1;
+    const float waitS = std::min(kGiveUpLongestS, kGiveUpFirstS * static_cast<float>(1 << std::min(times - 1, 5)));
+    slot->trackId = seen.id;
+    slot->centerX = seen.centerX;
+    slot->centerY = seen.centerY;
+    slot->width = seen.width;
+    slot->height = seen.height;
+    slot->times = times;
+    slot->untilNs = nowNs + static_cast<int64_t>(waitS * 1e9f);
+    slot->forgottenNs = slot->untilNs + static_cast<int64_t>(kGiveUpForgetS * 1e9f);
+    ++telemetry_.giveUps;
+    forgetTarget();
+    forgetWatch();
 }
 
 int AimController::keepOrSwitchLock(int64_t nowNs, const TrackView* views, const Candidate& best,

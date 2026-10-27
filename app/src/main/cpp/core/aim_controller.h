@@ -29,7 +29,7 @@ struct AimSettings {
     // --- Fine tuning ---
     float maxFingerSpeedPxS = 3200.0f;  ///< Ceiling on finger speed at full strength.
     float deadzoneMinPx = 2.0f;         ///< No movement when this close to the aim point...
-    float deadzoneBoxFraction = 0.05f;  ///< ...or this fraction of the target's height, whichever is larger.
+    float deadzoneBoxFraction = 0.04f;  ///< ...or this fraction of the target's height, whichever is larger.
     float lockLossSeconds = 0.15f;      ///< How long a lost target is waited for before letting go.
     float switchRatio = 0.7f;           ///< A rival must be this much closer to take over the lock...
     float switchHoldSeconds = 0.15f;    ///< ...for this long.
@@ -68,6 +68,7 @@ struct AimTelemetry {
     int deadFingers = 0;        ///< Times the finger was lifted and put down again because the game did not answer it.
     float deadFingerPx = 0.0f;  ///< For the latest such time: how far the finger had moved (net, along its main axis)...
     float deadSlidePx = 0.0f;   ///< ...and how far the scene had slid along it.
+    int giveUps = 0;            ///< Times a target was given up on because it did not come closer however the camera turned.
 };
 
 /**
@@ -96,6 +97,12 @@ struct AimTelemetry {
  * where the game does not look around) would be moved for ever for nothing. When the finger has
  * been moved a good way and the scene has not slid with it, the finger is lifted and put down
  * again, waiting a little longer each time it happens again.
+ *
+ * A target that is not part of the scene would be chased for ever too: the player's own weapon
+ * or character, which the detector sometimes takes for an enemy, stays where it is on the screen
+ * however the camera turns, so the aim never gets nearer. When the camera has swept a good way and
+ * the target has stayed put on the screen, well away from the crosshair, it is given up on for a
+ * while, longer each time it happens again at the same place.
  *
  * The class holds no threads or platform calls: call step() at a steady rate and carry out the
  * returned action. That keeps it testable against a simulated game.
@@ -159,8 +166,24 @@ private:
         float metric = 0.0f;
     };
 
+    /// A target that was given up on, and where it was, so that it is not taken up again at once when it is found again.
+    struct GivenUp {
+        int trackId = -1;
+        float centerX = 0.0f;
+        float centerY = 0.0f;
+        float width = 0.0f;
+        float height = 0.0f;
+        int64_t untilNs = 0;     ///< Left alone until then.
+        int64_t forgottenNs = 0; ///< Forgotten altogether after that, so a later giving up starts from the shortest wait again.
+        int times = 0;
+    };
+
     // Target choice.
     int selectTarget(int64_t nowNs, const TrackView* views, int count, const ModelProfile& profile);
+    bool isGivenUp(const TrackView& view, int64_t nowNs) const;
+    bool cannotCloseOn(int64_t nowNs, const Tracker& tracker, const TrackView& body);
+    void giveUpOn(int64_t nowNs, const TrackView& seen);
+    void forgetWatch();
     void rankTargets(const TrackView* views, int count, const ModelProfile& profile, Candidate* best,
                      Candidate* locked) const;
     int keepOrSwitchLock(int64_t nowNs, const TrackView* views, const Candidate& best, const Candidate& locked);
@@ -198,6 +221,24 @@ private:
     int64_t rivalSinceNs_ = 0;
 
     AimTelemetry telemetry_;
+
+    // Watching the target being followed for one that stays put on the screen: when the watch began and
+    // when the target was last looked at, where it was then, how far apart its places have been, how far
+    // the camera has swept, and how many looks in a row have said it is stuck.
+    static constexpr int kMaxGivenUp = 6;
+    std::array<GivenUp, kMaxGivenUp> givenUp_{};
+    std::array<TrackView, kMaxTracks> watchViews_{};
+    int watchedId_ = -1;
+    int64_t watchStartNs_ = 0;
+    int64_t watchLastSeenNs_ = 0;
+    float watchMinX_ = 0.0f;
+    float watchMaxX_ = 0.0f;
+    float watchMinY_ = 0.0f;
+    float watchMaxY_ = 0.0f;
+    float watchSweptPx_ = 0.0f;
+    float watchErrorSumPx_ = 0.0f;
+    int watchLooks_ = 0;
+    int futileLooks_ = 0;
 
     // Is the finger being answered? When it went down, and the wait before it may go down again
     // after the game ignored it.

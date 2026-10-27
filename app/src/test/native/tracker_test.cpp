@@ -335,7 +335,10 @@ TEST(tracker_follows_a_target_that_peeks_out_of_cover) {
         }
         tracker.update(&d, 1, t, nullptr);
         TrackView view;
-        CHECK(viewNear(tracker, t, d.x + d.width * 0.5f, d.y + d.height * 0.5f, &view));
+        const bool shown = viewNear(tracker, t, d.x + d.width * 0.5f, d.y + d.height * 0.5f, &view);
+        if (frame >= 2) {
+            CHECK(shown);   // a new target is drawn from its third sighting on, unless the detector is very sure of it
+        }
         if (frame == 5) {
             id = view.id;
         }

@@ -68,7 +68,7 @@ TrackerConfig TrackerConfig::forConfidence(float confidence) {
     config.birthScore = birth;
     config.highScore = std::max(0.20f, birth - 0.10f);
     config.lowScore = std::max(0.10f, std::min(birth * 0.30f, 0.20f));
-    config.showTentativeScore = std::min(0.95f, birth + 0.25f);
+    config.showTentativeScore = std::min(0.97f, birth + 0.40f);
     return config;
 }
 
@@ -110,13 +110,23 @@ void Tracker::predictTrack(Track& track, int64_t toNs) const {
         track.y.velocity *= keep;
     }
 
+    // A target that is standing still is held steady; one that is clearly moving is allowed to speed up and turn.
     const float boxHeight = std::max(track.height.value, 1.0f);
-    const float accelerationVariance = square(config_.accelerationPerBox * boxHeight);
+    const float speedSigma = std::sqrt(0.5f * (track.x.pVelocity + track.y.pVelocity));
+    const float speed = std::hypot(track.x.velocity, track.y.velocity);
+    const float moving = std::clamp((speed / std::max(speedSigma, 1.0f) - 1.0f) / 1.5f, 0.0f, 1.0f);
+    const float acceleration = config_.restingAccelerationPerBox + (config_.accelerationPerBox - config_.restingAccelerationPerBox) * moving;
+    const float accelerationVariance = square(acceleration * boxHeight);
     track.x.predict(dt, accelerationVariance, egoX, square(config_.egoUncertainty * egoX));
     track.y.predict(dt, accelerationVariance, egoY, square(config_.egoUncertainty * egoY));
     track.width.predict(dt, square(config_.sizeDriftPerSecond * track.width.value));
     track.height.predict(dt, square(config_.sizeDriftPerSecond * track.height.value));
     track.stateNs = toNs;
+}
+
+float Tracker::velocityTrust(float velocity, float velocityVariance) const {
+    const float squared = velocity * velocity;
+    return squared / (squared + config_.velocityDoubt * velocityVariance + 1e-6f);
 }
 
 float Tracker::measurementVariance(float boxHeight, float score) const {
@@ -426,6 +436,9 @@ void Tracker::projectTrack(const Track& track, int64_t atNs, TrackView& view) co
         velocityX *= keep;
         velocityY *= keep;
     }
+    // The speed that is carried forward to draw the box is the part of it the filter is sure of.
+    const float carriedX = velocityX * velocityTrust(velocityX, track.x.pVelocity);
+    const float carriedY = velocityY * velocityTrust(velocityY, track.y.pVelocity);
 
     // Camera motion is exact, so it is applied over the whole interval; the target's own
     // velocity is only trusted for a short distance beyond the last update.
@@ -437,8 +450,8 @@ void Tracker::projectTrack(const Track& track, int64_t atNs, TrackView& view) co
 
     view.id = track.id;
     view.classId = track.classId;
-    view.centerX = track.x.position + velocityX * ahead + egoX;
-    view.centerY = track.y.position + velocityY * ahead + egoY;
+    view.centerX = track.x.position + carriedX * ahead + egoX;
+    view.centerY = track.y.position + carriedY * ahead + egoY;
     view.width = track.width.value;
     view.height = track.height.value;
     view.velocityX = velocityX;
@@ -462,13 +475,13 @@ void Tracker::projectTrack(const Track& track, int64_t atNs, TrackView& view) co
     }
 }
 
-int Tracker::snapshot(int64_t atNs, TrackView* out, int capacity) const {
+int Tracker::snapshot(int64_t atNs, TrackView* out, int capacity, bool includeHidden) const {
     std::lock_guard<std::mutex> lock(mutex_);
     int written = 0;
     for (int i = 0; i < trackCount_ && written < capacity; ++i) {
         TrackView view;
         projectTrack(tracks_[i], atNs, view);
-        if (view.opacity > 0.0f) {
+        if (includeHidden || view.opacity > 0.0f) {
             out[written++] = view;
         }
     }

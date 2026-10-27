@@ -77,8 +77,8 @@ struct TrackerConfig {
     float highScore = 0.40f;          ///< Detections at or above this are matched to existing targets first.
     float lowScore = 0.12f;           ///< Detections between lowScore and highScore only keep tracked targets alive.
     float birthScore = 0.50f;         ///< A new target needs a detection at least this confident.
-    int confirmHits = 2;              ///< Matches needed before a new target counts as real.
-    float showTentativeScore = 0.75f; ///< A tentative target this confident is drawn right away.
+    int confirmHits = 3;              ///< Matches needed before a new target counts as real.
+    float showTentativeScore = 0.90f; ///< A tentative target this confident is drawn right away.
     float minIou = 0.05f;             ///< Boxes overlapping less than this are matched by distance instead.
     float gateSigmas = 4.0f;          ///< Non-overlapping boxes match only within this many standard deviations
                                       ///< of where the target is expected, so a neighbour is never mistaken for it.
@@ -96,9 +96,14 @@ struct TrackerConfig {
     int64_t unobservedNs = 900'000'000;   ///< Forget a target outside the scanned region after this long.
     int64_t maxExtrapolateNs = 150'000'000; ///< Never project a position further ahead than this.
     float coastVelocityDecayS = 0.15f;    ///< Time constant at which a missed target's velocity fades.
+    float velocityDoubt = 1.0f;           ///< How far a target's speed is trusted when carried forward to be drawn: it counts for
+                                          ///< speed squared over speed squared plus this many times its own variance. A speed no
+                                          ///< bigger than the filter's doubt about it is noise, and carrying it on would make
+                                          ///< the box wander; a clear one is carried on whole.
 
     // --- Motion model (all scaled by the target's box height, so distance does not matter) ---
-    float accelerationPerBox = 10.0f;     ///< Std. dev. of acceleration, box heights per second squared.
+    float accelerationPerBox = 14.0f;     ///< Std. dev. of acceleration, box heights per second squared, of a target that is clearly moving.
+    float restingAccelerationPerBox = 4.0f; ///< The same for a target that looks to be standing still, which is smoothed harder so its box does not wander.
     float positionSigmaPerBox = 0.03f;    ///< Std. dev. of the detector's centre error, in box heights.
     float sizeSigmaPerBox = 0.06f;        ///< Std. dev. of the detector's size error, as a fraction of size.
     float sizeDriftPerSecond = 0.20f;     ///< How fast the true box size may change, as a fraction per second.
@@ -160,8 +165,10 @@ public:
      * Writes the expected state of every target at `atNs`, in the order the targets were found.
      * Returns how many targets were written. Targets are projected forward from their last
      * update using their speed and the camera motion, so boxes can be drawn at display rate.
+     * Targets that are not drawn (a new one not yet sure, a faded one) are left out unless
+     * `includeHidden` is set, which is for whoever needs to know where anything might be.
      */
-    int snapshot(int64_t atNs, TrackView* out, int capacity) const;
+    int snapshot(int64_t atNs, TrackView* out, int capacity, bool includeHidden = false) const;
 
     /// Forgets every target.
     void reset();
@@ -197,6 +204,7 @@ private:
         float maxCost;      ///< Pairs costing more than this are rejected.
     };
 
+    float velocityTrust(float velocity, float velocityVariance) const;
     float measurementVariance(float boxHeight, float score) const;
     void predictTrack(Track& track, int64_t toNs) const;
     void correctTrack(Track& track, const Detection& detection) const;
