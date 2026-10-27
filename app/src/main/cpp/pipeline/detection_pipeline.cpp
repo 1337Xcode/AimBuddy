@@ -17,6 +17,11 @@ constexpr std::chrono::milliseconds kFrameWait{50};
 /// Weight of the newest sample in the smoothed statistics (about the last 20 samples).
 constexpr float kStatsSmoothing = 0.05f;
 
+/// The camera is looked at on a frame at least this long after the last one it was looked at on. That is 30 times a second:
+/// often enough that the newest reading is never more than a frame or two old when a box is drawn, and cheap enough
+/// not to take much from the game.
+constexpr int64_t kCameraLookIntervalNs = 30'000'000;
+
 /// How often debug builds print the statistics to the log.
 constexpr int64_t kStatsLogIntervalNs = 5'000'000'000;
 
@@ -41,6 +46,10 @@ float smooth(float current, float sample) {
 
 }  // namespace
 
+DetectionPipeline::DetectionPipeline() {
+    capture_.setFrameObserver([this](const RoiFrame& frame) { measureCameraMotion(frame); });
+}
+
 bool DetectionPipeline::loadModel(AAssetManager* assets, const std::string& paramPath, const std::string& binPath,
                                   const ModelProfile& profile) {
     if (isRunning()) {
@@ -60,9 +69,12 @@ void DetectionPipeline::start() {
     }
     capture_.mailbox().reopen();
     tracker_.reset();
-    sceneMotion_.reset();
+    {
+        std::lock_guard<std::mutex> lock(motionMutex_);
+        sceneMotion_.reset();
+        lastFrameNs_ = 0;
+    }
     lastBatchNs_ = 0;
-    lastFrameNs_ = 0;
     running_.store(true, std::memory_order_release);
     worker_ = std::thread([this] { run(); });
 }
@@ -89,26 +101,35 @@ void DetectionPipeline::applyConfidenceIfChanged(float& applied) {
 }
 
 /**
- * Measures how the picture slid since the previous frame. The enemies the detector found in this
- * frame (if it was run) move by themselves, so they are left out: a large one crossing the middle
- * of the view would otherwise be taken for the camera turning.
+ * Measures how the picture slid since the last frame it was looked at on, 30 times a second at
+ * most. This runs on the capture thread, for frames the detector never sees as well: a box found
+ * in a frame is drawn well over a tenth of a second later, and the camera must be known up to
+ * that moment, not only up to the picture the box was found in. The enemies being followed move
+ * by themselves, so they are left out: a large one crossing the middle of the view would otherwise
+ * be taken for the camera turning.
  */
-void DetectionPipeline::measureCameraMotion(const RoiFrame& frame, const DetectionBatch* detections) {
+void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
     if (cameraMotion_ == nullptr) {
         return;
     }
-    MovingBox movers[kMaxDetections];
+    std::lock_guard<std::mutex> lock(motionMutex_);
+    const float limit = maxRate_.load(std::memory_order_relaxed);
+    const int64_t intervalNs = std::max(kCameraLookIntervalNs, limit > 0.0f ? static_cast<int64_t>(1e9f / limit) : int64_t{0});
+    if (lastFrameNs_ > 0 && frame.captureTimeNs > lastFrameNs_ && frame.captureTimeNs - lastFrameNs_ < intervalNs) {
+        return;
+    }
+
+    // Where the targets are in this frame, in pixels of the region the odometry is given.
+    MovingBox movers[kMaxTracks];
     int moverCount = 0;
-    if (detections != nullptr) {
-        // Detections are in screen pixels; the odometry works in pixels of the region it is given.
-        const float captureOfScreen = 1.0f / frame.geometry.screenPerCapture();
-        for (int i = 0; i < detections->count && moverCount < kMaxDetections; ++i) {
-            const Detection& d = detections->detections[i];
-            movers[moverCount++] = {d.x * captureOfScreen - static_cast<float>(frame.roi.x),
-                                    d.y * captureOfScreen - static_cast<float>(frame.roi.y),
-                                    (d.x + d.width) * captureOfScreen - static_cast<float>(frame.roi.x),
-                                    (d.y + d.height) * captureOfScreen - static_cast<float>(frame.roi.y)};
-        }
+    TrackView views[kMaxTracks];
+    const int viewCount = tracker_.snapshot(frame.captureTimeNs, views, kMaxTracks, true);
+    const float captureOfScreen = 1.0f / frame.geometry.screenPerCapture();
+    for (int i = 0; i < viewCount; ++i) {
+        const TrackView& view = views[i];
+        const float left = (view.centerX - view.width * 0.5f) * captureOfScreen - static_cast<float>(frame.roi.x);
+        const float top = (view.centerY - view.height * 0.5f) * captureOfScreen - static_cast<float>(frame.roi.y);
+        movers[moverCount++] = {left, top, left + view.width * captureOfScreen, top + view.height * captureOfScreen};
     }
     const GlobalShift shift = sceneMotion_.push(frame.rgba.data(), frame.roi.side, frame.roi.side * 4, movers, moverCount);
     if (lastFrameNs_ > 0 && frame.captureTimeNs > lastFrameNs_) {
@@ -246,14 +267,24 @@ void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishe
             bestScore = std::max(bestScore, batch.detections[i].score);
         }
         LOGI("Last frame: %d detections, best score %.2f", batch.count, bestScore);
-        if (cameraMotion_ != nullptr && slideFrames_ > 0) {
-            const CameraResponse response = cameraMotion_->response();
-            LOGI("Camera: scene slid %.1f px a frame on average (measurement quality %.2f); response gain %.2f/%.2f, delay %.0f ms, confidence %.2f",
-                 slideSum_ / static_cast<float>(slideFrames_), qualitySum_ / static_cast<float>(slideFrames_), response.gainX,
-                 response.gainY, response.delayS * 1000.0f, cameraMotion_->confidence());
-            slideSum_ = 0.0f;
-            qualitySum_ = 0.0f;
-            slideFrames_ = 0;
+        if (cameraMotion_ != nullptr) {
+            float slidePx = 0.0f;
+            float quality = 0.0f;
+            int frames = 0;
+            {
+                std::lock_guard<std::mutex> lock(motionMutex_);
+                frames = slideFrames_;
+                slidePx = frames > 0 ? slideSum_ / static_cast<float>(frames) : 0.0f;
+                quality = frames > 0 ? qualitySum_ / static_cast<float>(frames) : 0.0f;
+                slideSum_ = 0.0f;
+                qualitySum_ = 0.0f;
+                slideFrames_ = 0;
+            }
+            if (frames > 0) {
+                const CameraResponse response = cameraMotion_->response();
+                LOGI("Camera: scene slid %.1f px a look on average (measurement quality %.2f, %d looks); response gain %.2f/%.2f, delay %.0f ms, confidence %.2f",
+                     slidePx, quality, frames, response.gainX, response.gainY, response.delayS * 1000.0f, cameraMotion_->confidence());
+            }
         }
         lastLogNs_ = finishedNs;
     }
@@ -284,7 +315,6 @@ void DetectionPipeline::run() {
 #else
         const bool detected = detector_.detect(*frame, batch);
 #endif
-        measureCameraMotion(*frame, detected ? &batch : nullptr);
         capture_.mailbox().endRead();  // the pixels are consumed; let the capture thread reuse the slot
         if (!detected) {
             continue;

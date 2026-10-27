@@ -47,6 +47,29 @@ constexpr float kMaxDelayS = 0.2f;
 /// How far a new confidence reading pulls the stored one.
 constexpr float kConfidencePull = 0.3f;
 
+/// The player's own turn is carried on past the newest frame at the rate it had over the last stretch
+/// of whole frames reaching back this far (but no longer than the second value, when frames are
+/// rare), fading with this time constant, and only when frames covering this share of the stretch
+/// could be compared. Not all of it is kept, so a turn that stops costs little, and a rate below
+/// the dead zone is the response being a little off, not the player turning, so it counts for nothing.
+/// While the assist's own finger moves (more than the last value, in pixels, in that stretch) none of
+/// it is done: how much of the slide was the assist's depends on a response that may be far off, and
+/// reading its mistake as the player's turn would count the assist's slide twice.
+constexpr int64_t kMomentumWindowNs = 80'000'000;
+constexpr int64_t kMomentumMaxSpanNs = 200'000'000;
+constexpr float kMomentumMinCoverage = 0.7f;
+constexpr float kMomentumFadeS = 0.20f;
+constexpr float kMomentumKept = 0.9f;
+constexpr float kMomentumDeadZonePxS = 40.0f;
+constexpr float kMaxMomentumPxS = 4000.0f;
+constexpr float kMomentumAssistFingerPx = 1.0f;
+
+/// A rate with the dead zone taken off it, keeping its sign.
+float beyondDeadZone(float rate) {
+    const float size = std::max(0.0f, std::fabs(rate) - kMomentumDeadZonePxS);
+    return std::copysign(std::min(size, kMaxMomentumPxS), rate);
+}
+
 /// Moves `current` towards `target` along a ratio scale, by at most `maxFactor` at once.
 float stepGain(float current, float target, float rate, float maxFactor) {
     const float logCurrent = std::log(std::max(current, kMinGain));
@@ -230,15 +253,61 @@ void CameraMotion::shiftBetween(int64_t fromNs, int64_t toNs, float* dx, float* 
     if (seenUntilNs > fromNs) {
         measured_.shiftBetween(fromNs, std::min(toNs, seenUntilNs), &seenX, &seenY);
     }
-    // Past the newest captured frame only the assist's own moves are known.
+    // Past the newest captured frame the assist's own moves are known, and the player's own turn is
+    // taken to go on a little. Without that, every box would trail the scene by as far as the
+    // camera turns during the age of the frame it was found in, about 100 ms of the player's turning.
     float aheadX = 0.0f;
     float aheadY = 0.0f;
     const int64_t aheadFromNs = std::max(fromNs, seenUntilNs);
     if (toNs > aheadFromNs) {
         modelShift(aheadFromNs, toNs, &aheadX, &aheadY);
+        float momentumX = 0.0f;
+        float momentumY = 0.0f;
+        playerMomentum(seenUntilNs, aheadFromNs, toNs, &momentumX, &momentumY);
+        aheadX += momentumX;
+        aheadY += momentumY;
     }
     *dx = seenX + aheadX;
     *dy = seenY + aheadY;
+}
+
+void CameraMotion::playerMomentum(int64_t seenUntilNs, int64_t fromNs, int64_t toNs, float* dx, float* dy) const {
+    *dx = 0.0f;
+    *dy = 0.0f;
+    if (measured_.empty()) {
+        return;
+    }
+    // Whole frames, so that what the frames saw and what the assist's moves are predicted to have done are of the same stretch of time.
+    const int64_t windowFromNs = measured_.entryStartAtOrBefore(seenUntilNs - kMomentumWindowNs);
+    const int64_t spanNs = seenUntilNs - windowFromNs;
+    if (spanNs <= 0 || spanNs > kMomentumMaxSpanNs) {
+        return;   // frames too rare to say how the scene is sliding now
+    }
+    float slideX = 0.0f;
+    float slideY = 0.0f;
+    int64_t coveredNs = 0;
+    measured_.seenShiftBetween(windowFromNs, seenUntilNs, &slideX, &slideY, &coveredNs);
+    if (static_cast<float>(coveredNs) < kMomentumMinCoverage * static_cast<float>(spanNs)) {
+        return;   // the picture could not be read for much of that stretch: no rate to go by
+    }
+
+    // While the assist's finger is moving, how much of the slide was its own is a guess.
+    float fingerX = 0.0f;
+    float fingerY = 0.0f;
+    fingers_.landedBetween(current_.delayS, windowFromNs, seenUntilNs, &fingerX, &fingerY);
+    if (std::hypot(fingerX, fingerY) > kMomentumAssistFingerPx) {
+        return;
+    }
+    const float seconds = static_cast<float>(coveredNs) * 1e-9f;
+    const float rateX = beyondDeadZone(slideX / seconds);
+    const float rateY = beyondDeadZone(slideY / seconds);
+
+    // The distance a rate that fades away exponentially covers between the two instants.
+    const float startS = static_cast<float>(fromNs - seenUntilNs) * 1e-9f;
+    const float endS = static_cast<float>(toNs - seenUntilNs) * 1e-9f;
+    const float reach = kMomentumFadeS * (std::exp(-startS / kMomentumFadeS) - std::exp(-endS / kMomentumFadeS));
+    *dx = rateX * reach * kMomentumKept;
+    *dy = rateY * reach * kMomentumKept;
 }
 
 void CameraMotion::clear() {

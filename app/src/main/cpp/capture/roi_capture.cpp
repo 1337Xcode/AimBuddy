@@ -92,6 +92,9 @@ bool RoiCapture::ingest(AHardwareBuffer* buffer, int64_t imageTimestampNs) {
     frame.roi = roi;
     frame.geometry = geometry;
     frame.captureTimeNs = timestampUsable ? imageTimestampNs : now;
+    if (observer_) {
+        observer_(frame);
+    }
     mailbox_.publish();
     return true;
 }

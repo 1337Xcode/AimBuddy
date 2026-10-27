@@ -237,3 +237,65 @@ TEST(camera_motion_starts_from_an_earlier_run_without_trusting_it) {
     CHECK(motion.confidence() <= 0.36f);
     CHECK(motion.confidence() > 0.3f);
 }
+
+TEST(camera_motion_carries_the_players_turn_on_past_the_newest_frame) {
+    // The player turns the camera at 600 px/s and every frame sees it: the scene slides left 600 px a
+    // second. A box found in a frame is drawn a tenth of a second after it, so the slide between the
+    // newest frame and that moment must be answered with the turn carried on, not with nothing.
+    CameraMotion motion;
+    motion.setPrior({2.0f, 2.0f, 0.05f, false}, false);   // the assist never moves here
+    for (int frame = 1; frame <= 30; ++frame) {
+        motion.addMeasurement((frame - 1) * 33 * kMs, frame * 33 * kMs, -19.8f, 0.0f, 1.0f);
+    }
+    const int64_t newestNs = 30 * 33 * kMs;
+    float dx, dy;
+    motion.shiftBetween(newestNs - 330 * kMs, newestNs, &dx, &dy);   // time that was seen is answered as measured
+    CHECK_NEAR(dx, -198.0, 0.5);
+    motion.shiftBetween(newestNs, newestNs + 100 * kMs, &dx, &dy);
+    CHECK(dx < -30.0f);    // most of the 60 px the turn goes on to cover
+    CHECK(dx > -60.0f);    // but not more than it would: the turn is only believed to carry on, fading out
+    CHECK_NEAR(dy, 0.0, 1e-4);
+    // Further out it adds less and less: a turn does not go on for ever.
+    float later;
+    motion.shiftBetween(newestNs + 100 * kMs, newestNs + 1000 * kMs, &later, &dy);
+    CHECK(later > -0.0f - 100.0f);
+    CHECK(later < -10.0f);
+}
+
+TEST(camera_motion_does_not_carry_on_a_turn_it_did_not_see) {
+    // Frames whose pictures could not be compared give no rate to go by, and a camera that was still stays still.
+    CameraMotion blind;
+    blind.setPrior({2.0f, 2.0f, 0.05f, false}, false);
+    for (int frame = 1; frame <= 30; ++frame) {
+        blind.addMeasurement((frame - 1) * 33 * kMs, frame * 33 * kMs, -19.8f, 0.0f, 0.1f);   // too poor to use
+    }
+    float dx, dy;
+    blind.shiftBetween(30 * 33 * kMs, 30 * 33 * kMs + 100 * kMs, &dx, &dy);
+    CHECK_NEAR(dx, 0.0, 1e-4);
+
+    CameraMotion still;
+    still.setPrior({2.0f, 2.0f, 0.05f, false}, false);
+    for (int frame = 1; frame <= 30; ++frame) {
+        still.addMeasurement((frame - 1) * 33 * kMs, frame * 33 * kMs, 0.0f, 0.0f, 1.0f);
+    }
+    still.shiftBetween(30 * 33 * kMs, 30 * 33 * kMs + 100 * kMs, &dx, &dy);
+    CHECK_NEAR(dx, 0.0, 1e-4);
+    CHECK_NEAR(dy, 0.0, 1e-4);
+}
+
+TEST(camera_motion_does_not_count_the_assists_own_slide_as_the_players_turn) {
+    // The assist's finger moves 10 px a frame at a gain of 2, so the scene slides 20 px a frame, and
+    // the frames see exactly that. The slide is already answered from the finger's moves; reading it
+    // as the player's own turn as well would count it twice.
+    CameraMotion motion;
+    motion.setPrior({2.0f, 2.0f, 0.0f, false}, false);
+    for (int frame = 1; frame <= 30; ++frame) {
+        const int64_t fromNs = (frame - 1) * 33 * kMs;
+        const int64_t toNs = frame * 33 * kMs;
+        motion.recordFinger(fromNs, 33 * kMs, 10.0f, 0.0f);   // the finger moved through the whole of this frame
+        motion.addMeasurement(fromNs, toNs, -20.0f, 0.0f, 1.0f);
+    }
+    float dx, dy;
+    motion.shiftBetween(30 * 33 * kMs, 30 * 33 * kMs + 100 * kMs, &dx, &dy);
+    CHECK_NEAR(dx, 0.0, 0.5);   // nothing more is coming: the finger stopped
+}

@@ -81,6 +81,19 @@ public:
     /// Start of the oldest entry, or 0 when there is none.
     int64_t earliestNs() const { return count_ == 0 ? 0 : entries_[head_].fromNs; }
 
+    /// Start of the entry that covers `ns`; of the oldest entry when `ns` is before all of them; 0 when there is none.
+    int64_t entryStartAtOrBefore(int64_t ns) const {
+        int64_t start = earliestNs();
+        for (int i = 0; i < count_; ++i) {
+            const Entry& entry = entries_[(head_ + i) % kCapacity];
+            if (entry.fromNs > ns) {
+                break;
+            }
+            start = entry.fromNs;
+        }
+        return start;
+    }
+
     /// End of the newest entry, or 0 when there is none.
     int64_t latestNs() const { return count_ == 0 ? 0 : entries_[(head_ + count_ - 1) % kCapacity].toNs; }
 

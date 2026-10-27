@@ -90,6 +90,9 @@ public:
 
 private:
     void modelShift(int64_t fromNs, int64_t toNs, float* dx, float* dy) const;
+
+    /// How far the player's own turning carries the scene between two instants after the newest frame, going by how it was sliding just before.
+    void playerMomentum(int64_t seenUntilNs, int64_t fromNs, int64_t toNs, float* dx, float* dy) const;
     void adopt(const ResponseEstimator::Estimate& estimate);
 
     mutable std::mutex mutex_;

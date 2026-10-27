@@ -49,7 +49,7 @@ public:
         const char* backend = "";
     };
 
-    DetectionPipeline() = default;
+    DetectionPipeline();
     ~DetectionPipeline() { stop(); }
     DetectionPipeline(const DetectionPipeline&) = delete;
     DetectionPipeline& operator=(const DetectionPipeline&) = delete;
@@ -77,7 +77,11 @@ public:
     void setConfidenceThreshold(float threshold) { confidence_.store(threshold, std::memory_order_relaxed); }
 
     /// The most detections a second to run, for when the phone is getting hot. Zero or less lifts the limit. Thread safe.
-    void setMaxRate(float perSecond) { thinner_.setMaxRate(perSecond); }
+    /// The camera is looked at no more often than that either.
+    void setMaxRate(float perSecond) {
+        thinner_.setMaxRate(perSecond);
+        maxRate_.store(perSecond, std::memory_order_relaxed);
+    }
 
     /// What each class of the loaded model means.
     const ModelProfile& profile() const { return detector_.profile(); }
@@ -104,7 +108,7 @@ public:
 private:
     void run();
     void applyConfidenceIfChanged(float& applied);
-    void measureCameraMotion(const RoiFrame& frame, const DetectionBatch* detections);
+    void measureCameraMotion(const RoiFrame& frame);
 #ifdef AIMBUDDY_DEBUG_HOOKS
     bool detectSynthetic(const RoiFrame& frame, DetectionBatch& batch);
 #endif
@@ -116,11 +120,13 @@ private:
     Tracker tracker_;
     BatchObserver observer_;
     CameraMotion* cameraMotion_ = nullptr;
-    GlobalMotionEstimator sceneMotion_;   ///< Reads how the picture slid between frames. Pipeline thread only.
-    int64_t lastFrameNs_ = 0;
+    std::mutex motionMutex_;              ///< Guards everything about reading the picture's slide: it runs on the capture thread, the log line on the pipeline's.
+    GlobalMotionEstimator sceneMotion_;   ///< Reads how the picture slid between frames.
+    int64_t lastFrameNs_ = 0;             ///< The last frame it was read on.
     float slideSum_ = 0.0f;               ///< Over the frames since the last log line: summed slide (screen pixels)...
     float qualitySum_ = 0.0f;             ///< ...summed quality...
     int slideFrames_ = 0;                 ///< ...and how many frames that is.
+    std::atomic<float> maxRate_{0.0f};
     std::thread worker_;
     std::atomic<bool> running_{false};
     std::atomic<float> confidence_{0.5f};

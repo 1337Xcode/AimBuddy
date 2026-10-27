@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <vector>
 
@@ -31,8 +32,14 @@ struct RoiFrame {
  */
 class RoiCapture {
 public:
+    /// Called on the capture thread with every frame, once it is filled in and before the detector can see it. Must return quickly.
+    using FrameObserver = std::function<void(const RoiFrame&)>;
+
     /// Sets the grid sizes. Call before frames arrive (capture stopped).
     void configure(const CaptureGeometry& geometry);
+
+    /// Sets who is told about every frame. Call before frames arrive (capture stopped).
+    void setFrameObserver(FrameObserver observer) { observer_ = std::move(observer); }
 
     /// Updates only the screen grid, for when the overlay surface changes size.
     void setScreenSize(int width, int height);
@@ -61,6 +68,7 @@ private:
     std::atomic<float> zoneRadius_{200.0f};
     std::atomic<int> modelSize_{256};
     LatestMailbox<RoiFrame> mailbox_;
+    FrameObserver observer_;
     bool loggedBadFormat_ = false;
 };
 
