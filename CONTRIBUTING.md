@@ -27,13 +27,21 @@ flowchart LR
 
 ## Required Validation
 
-### Android Build
+### Build and tests
 
 Run before opening a pull request:
 
 ```powershell
-./gradlew.bat clean assembleDebug
+./gradlew.bat clean assembleDebug testDebugUnitTest
 ```
+
+The C++ core (tracker, aim controller, camera motion, touch merger, decoder, settings) has its own tests that need no phone, only a C++17 compiler:
+
+```sh
+sh app/src/test/native/run.sh
+```
+
+Changes to that code should come with a test.
 
 ### Runtime Validation
 
@@ -41,7 +49,7 @@ If your change affects detection, tracking, or aim control:
 
 1. Install the debug APK on a test device.
 2. Verify basic detection works (enemies detected and boxes drawn).
-3. Verify aim assist tracks and releases correctly (if root available).
+3. Verify aim assist tracks and releases correctly (with Shizuku or root).
 4. Check logcat for errors or warnings.
 
 ### Training Pipeline
@@ -65,16 +73,16 @@ These paths run every frame. Extra care is required:
 
 | Path | File | Rules |
 |------|------|-------|
-| Inference loop | `esp_jni.cpp` | No allocs, no locks, pre-allocated buffers only |
-| Target tracker | `target_tracker.cpp` | Fixed-size arrays, no heap, no logging |
-| Aim controller | `aimbot_controller.cpp` | Snapshot settings, no blocking, bounded math |
-| Overlay render | `imgui_menu.cpp` | No setting writes during draw, defer saves |
+| Detection loop | `pipeline/detection_pipeline.cpp`, `detector/yolo_detector.cpp` | No allocs, no locks, pre-allocated buffers only |
+| Tracker | `core/tracker.cpp` | Fixed-size arrays, no heap, no logging |
+| Aim controller | `core/aim_controller.cpp` | Snapshot settings, no blocking, bounded math |
+| Overlay render | `renderer/imgui_menu.cpp` | No setting writes during draw, defer saves |
 
 ### Settings Safety
 
-- All settings changes go through `UnifiedSettings::validate()` before hot-path use.
-- New settings must have safe defaults and clamp ranges.
-- Preset values must be updated when adding or changing defaults.
+- Every value is clamped by `Settings::clamp()` when it is stored, so no other code checks ranges.
+- A new setting is a field in `settings/settings.h` with a safe default and a range in `clamp()`, one line in `visitFields` in `settings/settings_store.cpp`, a control in the Settings screen, and a line in `docs/SettingsGuide.md`.
+- A setting that moves the aim by itself must not be saved as on.
 
 ## Pull Request Content
 
@@ -102,7 +110,7 @@ A pull request can be rejected if it:
 - Use tables for structured data, mermaid diagrams for flows.
 - No em dashes. Use commas, periods, or parentheses instead.
 - Keep Android and training commands aligned with current repository behavior.
-- Use "aim assistant" terminology in user-facing documentation.
+- Say "aim assist", as the app does.
 - Update these files when relevant: `README.md`, `docs/`, and `training/README.md`.
 
 ## File Reference
@@ -111,10 +119,14 @@ A pull request can be rejected if it:
 |----------------|------|
 | `README.md` | New features, build steps, dependencies |
 | `docs/Architecture.md` | Module changes, threading, data flow |
-| `docs/SettingsGuide.md` | New settings, preset changes, default changes |
+| `docs/SettingsGuide.md` | New settings, default changes |
 | `docs/Performance.md` | Optimization changes, new telemetry |
 | `docs/Training.md` | Pipeline steps, dataset format, export changes |
-| `docs/Troubleshooting.md` | New known issues, diagnostic steps |
+| `docs/Troubleshooting.md` | New messages in the app, new known issues, diagnostic steps |
+| `docs/ShizukuSetup.md` | Changes to how touch access is started |
+| `docs/Releasing.md` | Signing, the release workflow, how updates are found |
+| `model/README.md` | The store's format and the rules for adding a model |
+| `CHANGELOG.md` | Every change a player or a contributor can notice, under `## [Unreleased]` |
 
 ## Licensing
 
