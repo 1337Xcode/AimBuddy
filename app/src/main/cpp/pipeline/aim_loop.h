@@ -132,10 +132,13 @@ private:
     uint32_t configuredDisplayVersion_ = 0;
     bool wasActive_ = false;    ///< The assist was working on the previous step, so there is something to undo.
     bool wasMerging_ = false;
+    int64_t mergingSinceNs_ = 0;           ///< When the helper took the touchscreen over.
+    int64_t handledDisplayChangeNs_ = 0;   ///< The display change the loop has acted on.
     touch::protocol::State loggedState_ = touch::protocol::State::kStarting;   ///< What the log last said about the helper...
     bool loggedTouching_ = false;                                              ///< ...and about the assist finger...
     int loggedDeadFingers_ = 0;                                                ///< ...and about fingers the game ignored.
 
+    std::atomic<int64_t> displayChangedNs_{0};   ///< When the display last changed shape (steady clock).
     std::atomic<bool> fingerDown_{false};
     std::atomic<int> lockedTrack_{-1};
 

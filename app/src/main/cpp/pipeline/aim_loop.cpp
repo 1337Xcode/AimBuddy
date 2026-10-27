@@ -3,6 +3,7 @@
 #include <sys/resource.h>
 #include <time.h>
 
+#include <algorithm>
 #include <cstdio>
 
 #include "../utils/logger.h"
@@ -31,6 +32,11 @@ constexpr int64_t kEngageRetryAfterRefusalNs = 2'000'000'000;
 constexpr int64_t kHeartbeatNs = 100'000'000;
 constexpr int64_t kIdleHeartbeatNs = 1'000'000'000;
 
+/// Time the system is given to settle on its touchscreen, after the helper takes it over and
+/// after the screen turns, before the assist's finger goes down. A touch that begins sooner can be
+/// lost without a trace, and a finger that went down before the screen turned is lost with it.
+constexpr int64_t kSettleNs = 700'000'000;
+
 /// Priority of the loop thread; a late step is a late correction. The system may refuse a value this low.
 constexpr int kThreadNice = -8;
 
@@ -51,6 +57,7 @@ AimLoop::AimLoop(Tracker* tracker, const ModelProfile* profile, touch::TouchLink
     : tracker_(tracker), profile_(profile), link_(link), motion_(motion), controller_(AimSettings(), motion) {}
 
 void AimLoop::setDisplay(int width, int height, int rotation) {
+    displayChangedNs_.store(steadyNowNs(), std::memory_order_release);
     std::lock_guard<std::mutex> lock(displayMutex_);
     display_.width = width;
     display_.height = height;
@@ -193,7 +200,20 @@ void AimLoop::stepWhileActive(int64_t nowNs) {
     wasActive_ = true;
     const touch::protocol::State state = link_->state();
     if (state == touch::protocol::State::kMerging) {
+        if (!wasMerging_) {
+            mergingSinceNs_ = nowNs;
+        }
         wasMerging_ = true;
+        const int64_t displayChangedNs = displayChangedNs_.load(std::memory_order_acquire);
+        if (displayChangedNs != handledDisplayChangeNs_) {
+            handledDisplayChangeNs_ = displayChangedNs;
+            controller_.release();   // a finger that went down before the screen turned may have been lost with it
+            sendOutput(controller_.step(nowNs, *tracker_, *profile_, PlayerInput()));
+        }
+        if (nowNs - std::max(mergingSinceNs_, displayChangedNs) < kSettleNs) {
+            keepHeartbeat(nowNs, kHeartbeatNs);
+            return;
+        }
         sendOutput(controller_.step(nowNs, *tracker_, *profile_, PlayerInput()));
 #ifdef AIMBUDDY_DEBUG_HOOKS
         recordTrace(nowNs);
