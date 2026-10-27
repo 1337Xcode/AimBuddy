@@ -49,6 +49,8 @@
     <string name="models_in_use">In use</string>
     <string name="models_use">Use</string>
     <string name="models_get">Get</string>
+    <string name="models_update">Update</string>
+    <string name="models_version">Version %1$d</string>
     <string name="models_delete">Delete</string>
     <string name="models_built_in">Built in</string>
     <string name="models_from_store">From the store</string>
@@ -56,6 +58,7 @@
     <string name="models_installed_label">Installed</string>
     <string name="models_loading">Loading models</string>
     <string name="models_store_error">Can\'t reach the store.</string>
+    <string name="models_download_failed">That model could not be downloaded.</string>
     <string name="models_store_empty">No models to show yet.</string>
     <string name="models_retry">Try again</string>
     <string name="models_delete_title">Delete this model?</string>

@@ -8,4 +8,7 @@ object Project {
 
     const val URL = "https://github.com/$OWNER/$REPOSITORY"
     const val LICENSE_URL = "$URL/blob/$BRANCH/LICENSE"
+
+    /** Where the model store's files are served from: the project's `model` folder. */
+    const val STORE_URL = "https://raw.githubusercontent.com/$OWNER/$REPOSITORY/$BRANCH/model"
 }

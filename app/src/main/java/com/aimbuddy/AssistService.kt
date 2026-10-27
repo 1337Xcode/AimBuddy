@@ -133,9 +133,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     private fun loadSettingsAndModel(): Boolean {
         NativeBridge.loadSettings(File(filesDir, SETTINGS_FILE).path)
         val catalog = ModelCatalog(this)
-        val hasParam = assetExists(ASSET_MODEL_PARAM)
-        val hasBin = assetExists(ASSET_MODEL_BIN)
-        catalog.ensureDefaultAssetModel(hasParam, hasBin)
+        catalog.ensureBundledModel(BundledModel.read(this))
         val model = catalog.getActiveModel() ?: run {
             Log.e(TAG, "No model is installed")
             return false
@@ -345,20 +343,11 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     private fun foregroundType(): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0
 
-    private fun assetExists(path: String): Boolean = try {
-        assets.open(path).use { }
-        true
-    } catch (_: Exception) {
-        false
-    }
-
     companion object {
         private const val TAG = "AssistService"
         private const val CHANNEL_ID = "aimbuddy_assist"
         private const val NOTIFICATION_ID = 12345
         private const val SETTINGS_FILE = "settings.cfg"
-        private const val ASSET_MODEL_PARAM = "models/yolo26n-opt.param"
-        private const val ASSET_MODEL_BIN = "models/yolo26n-opt.bin"
 
         const val ACTION_START = "com.aimbuddy.action.START"
         const val ACTION_STOP = "com.aimbuddy.action.STOP"

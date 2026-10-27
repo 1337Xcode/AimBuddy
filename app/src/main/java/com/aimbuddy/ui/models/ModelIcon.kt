@@ -1,5 +1,7 @@
 package com.aimbuddy.ui.models
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -7,11 +9,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import com.aimbuddy.ui.theme.Space
 
@@ -28,16 +33,28 @@ private val TileColors = listOf(
 )
 
 /**
- * The tile that stands for a model in a list: its first letter on a gradient that is always the same
- * for the same [id], so every model is easy to tell apart and recognise.
+ * The tile that stands for a model in a list: the model's own picture when it has one (the file at
+ * [picturePath]), otherwise its first letter on a gradient that is always the same for the same
+ * [id], so every model is easy to tell apart and recognise.
  */
 @Composable
-fun ModelIcon(id: String, title: String, modifier: Modifier = Modifier, size: Dp = Space.xxl - Space.xs) {
+fun ModelIcon(id: String, title: String, modifier: Modifier = Modifier, size: Dp = Space.xxl - Space.xs, picturePath: String? = null) {
+    val shape = RoundedCornerShape(size * 0.225f)
+    val picture = remember(picturePath) { picturePath?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() } }
+    if (picture != null) {
+        Image(
+            bitmap = picture,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = modifier.size(size).clip(shape),
+        )
+        return
+    }
     val (from, to) = TileColors[(id.hashCode() and Int.MAX_VALUE) % TileColors.size]
     Box(
         modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(size * 0.225f))
+            .clip(shape)
             .background(Brush.linearGradient(listOf(from, to))),
         contentAlignment = Alignment.Center,
     ) {

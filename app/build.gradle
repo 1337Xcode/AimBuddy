@@ -10,6 +10,19 @@ plugins {
 def aimbuddyVersionName = providers.gradleProperty('aimbuddy.versionName').getOrElse('0.0.0-dev')
 def aimbuddyVersionCode = providers.gradleProperty('aimbuddy.versionCode').getOrElse('1').toInteger()
 
+// The default model lives once, in the store's folder (model/aimbuddy-general). The build copies it
+// into the app's assets under the names the native code loads it by, so a first run needs no
+// connection. The app tells it apart from a downloaded copy by its version (see BundledModel.kt).
+def bundledModelDir = layout.buildDirectory.dir('generated/bundledModel')
+def copyBundledModel = tasks.register('copyBundledModel', Copy) {
+    from(rootProject.file('model/aimbuddy-general')) {
+        include 'model.param', 'model.bin', 'model.json'
+        rename 'model.param', 'yolo26n-opt.param'
+        rename 'model.bin', 'yolo26n-opt.bin'
+    }
+    into(bundledModelDir.map { it.dir('models') })
+}
+
 // ---------------------------------------------------------------------------
 // Release signing.
 //
@@ -168,7 +181,7 @@ android {
     // Source sets for assets
     sourceSets {
         main {
-            assets.srcDirs = ['src/main/assets']
+            assets.srcDirs = ['src/main/assets', bundledModelDir]
         }
     }
 
@@ -207,6 +220,9 @@ android {
     buildToolsVersion = '36.0.0'
     ndkVersion = '29.0.13113456 rc1'
 }
+
+// Assets are merged only after the model has been copied.
+tasks.matching { it.name ==~ /merge.*Assets/ }.configureEach { dependsOn copyBundledModel }
 
 // Guard: never let a release APK leave CI signed with an ephemeral debug key.
 // A debug-signed release is fine locally (fast install-and-test loop) but if it

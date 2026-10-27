@@ -158,7 +158,11 @@ private fun InstalledRow(model: InstalledModel, active: Boolean, onUse: (String)
         ModelSource.STORE -> stringResource(R.string.models_from_store)
         ModelSource.LOCAL -> stringResource(R.string.models_from_file)
     }
-    val subtitle = if (model.totalSizeBytes > 0) "${formatBytes(model.totalSizeBytes)} · $source" else source
+    val subtitle = listOfNotNull(
+        source,
+        model.version.takeIf { it > 0 }?.let { stringResource(R.string.models_version, it) },
+        model.totalSizeBytes.takeIf { it > 0 }?.let { formatBytes(it) },
+    ).joinToString(" · ")
     ModelRow(
         id = model.id,
         title = model.title,
@@ -216,8 +220,10 @@ private fun LazyStaggeredGridScope.storeTab(state: ModelsState, onGet: (StoreMod
                             row {
                                 StoreRow(
                                     model = model,
-                                    installed = state.installed.any { it.id == model.id },
+                                    installedVersion = state.installedVersion(model.id),
                                     busy = state.busyId == model.id,
+                                    progress = state.progress,
+                                    picturePath = store.icons[model.id],
                                     onGet = onGet,
                                 )
                             }
@@ -229,24 +235,45 @@ private fun LazyStaggeredGridScope.storeTab(state: ModelsState, onGet: (StoreMod
     }
 }
 
-/** One model in the store: its tile, its name, what it is for and how big it is, and a way to get it. */
+/**
+ * One model in the store: its tile, its name, what it is for, who made it and how big it is, and a
+ * way to get it, update it to a newer version, or see that it is already on the phone.
+ */
 @Composable
-private fun StoreRow(model: StoreModelDefinition, installed: Boolean, busy: Boolean, onGet: (StoreModelDefinition) -> Unit) {
-    val size = if (model.totalSizeBytes > 0) formatBytes(model.totalSizeBytes) else null
+private fun StoreRow(
+    model: StoreModelDefinition,
+    installedVersion: Int?,
+    busy: Boolean,
+    progress: Float,
+    picturePath: String?,
+    onGet: (StoreModelDefinition) -> Unit,
+) {
+    val details = listOfNotNull(
+        model.author.takeIf { it.isNotBlank() },
+        stringResource(R.string.models_version, model.version),
+        formatBytes(model.totalSizeBytes),
+    ).joinToString(" · ")
     ModelRow(
         id = model.id,
         title = model.title,
-        lines = listOfNotNull(model.description.takeIf { it.isNotBlank() }, size),
+        lines = listOfNotNull(model.description.takeIf { it.isNotBlank() }, details),
+        picturePath = picturePath,
     ) {
         when {
-            busy -> CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 3.dp, modifier = Modifier.size(MarkSize))
-            installed -> Icon(
+            busy -> CircularProgressIndicator(
+                progress = { progress },
+                color = AppTheme.palette.accent,
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(MarkSize),
+            )
+            installedVersion == null -> SmallPill(text = stringResource(R.string.models_get), onClick = { onGet(model) })
+            model.version > installedVersion -> SmallPill(text = stringResource(R.string.models_update), onClick = { onGet(model) })
+            else -> Icon(
                 imageVector = Icons.Rounded.Check,
                 contentDescription = stringResource(R.string.models_installed_label),
                 tint = AppTheme.palette.textDim,
                 modifier = Modifier.size(MarkSize),
             )
-            model.isDownloadable -> SmallPill(text = stringResource(R.string.models_get), onClick = { onGet(model) })
         }
     }
 }
@@ -261,6 +288,7 @@ private fun ModelRow(
     title: String,
     lines: List<String>,
     onClick: (() -> Unit)? = null,
+    picturePath: String? = null,
     trailing: @Composable () -> Unit,
 ) {
     val clickable = if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier
@@ -272,7 +300,7 @@ private fun ModelRow(
             .padding(horizontal = Space.l, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ModelIcon(id = id, title = title)
+        ModelIcon(id = id, title = title, picturePath = picturePath)
         Spacer(Modifier.width(Space.m))
         Column(modifier = Modifier.weight(1f)) {
             Text(

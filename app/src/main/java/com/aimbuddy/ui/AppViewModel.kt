@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aimbuddy.BundledModel
 import com.aimbuddy.InstalledModel
 import com.aimbuddy.ModelCatalog
 import com.aimbuddy.ModelSource
@@ -37,21 +38,28 @@ data class UiMessage(@StringRes val resId: Int, val args: List<Any> = emptyList(
 /** How the app's look is set. Kept in the app's preferences. */
 data class Appearance(val mode: ThemeMode = ThemeMode.SYSTEM, val accent: Accent = Accent.BLUE)
 
-/** What the models screens show about the store. */
+/** What the models screens show about the store. `icons` holds the picture file of each model that has one, by id. */
 sealed interface StoreState {
     data object Idle : StoreState
     data object Loading : StoreState
-    data class Ready(val models: List<StoreModelDefinition>) : StoreState
+    data class Ready(val models: List<StoreModelDefinition>, val icons: Map<String, String> = emptyMap()) : StoreState
     data object Failed : StoreState
 }
 
-/** What the models screens show. `busyId` is the model being downloaded or imported, if any. */
+/**
+ * What the models screens show. `busyId` is the model being downloaded or imported, if any, and
+ * `progress` how far a download has got (0 to 1).
+ */
 data class ModelsState(
     val installed: List<InstalledModel> = emptyList(),
     val activeId: String? = null,
     val busyId: String? = null,
+    val progress: Float = 0f,
     val store: StoreState = StoreState.Idle,
-)
+) {
+    /** The version of the model with this id that is on the phone, or null when it is not there. */
+    fun installedVersion(id: String): Int? = installed.firstOrNull { it.id == id }?.version
+}
 
 /** The settings as the native side keeps them, read by name. */
 class SettingsView(private val values: Map<String, String> = emptyMap()) {
@@ -80,7 +88,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val context: Context = application
     private val catalog = ModelCatalog(application)
-    private val storeRepository = ModelStoreRepository(owner = Project.OWNER, repo = Project.REPOSITORY, branch = Project.BRANCH)
+    private val storeRepository = ModelStoreRepository(Project.STORE_URL, File(application.filesDir, "store"))
     private val preferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _appearance = MutableStateFlow(readAppearance())
@@ -184,9 +192,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Re-reads which models are installed and which one is in use. */
     fun refreshModels() {
-        val hasParam = assetExists(ASSET_MODEL_PARAM)
-        val hasBin = assetExists(ASSET_MODEL_BIN)
-        catalog.ensureDefaultAssetModel(hasParam, hasBin)
+        catalog.ensureBundledModel(BundledModel.read(context))
         migrateLegacyModel()
         _models.update {
             it.copy(installed = catalog.getInstalledModels(), activeId = catalog.getActiveModel()?.id)
@@ -205,51 +211,71 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         refreshModels()
     }
 
-    /** Loads the store's list of models in the background. */
+    /** Loads the store's list of models in the background, then the pictures of the ones that have one. */
     fun loadStore() {
         if (_models.value.store is StoreState.Loading) {
             return
         }
         _models.update { it.copy(store = StoreState.Loading) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { storeRepository.fetchAvailableModels() } }
+            val result = withContext(Dispatchers.IO) { runCatching { storeRepository.fetchModels() } }
             _models.update {
                 it.copy(store = result.fold({ list -> StoreState.Ready(list) }, { StoreState.Failed }))
             }
             result.exceptionOrNull()?.let { Log.w(TAG, "The store could not be read: ${it.message}") }
+            result.getOrNull()?.let { loadIcons(it) }
         }
     }
 
-    /** Downloads a model from the store and makes it the one in use. */
+    /** Fetches the picture of each model that has one, showing each as it arrives. */
+    private suspend fun loadIcons(models: List<StoreModelDefinition>) {
+        val icons = mutableMapOf<String, String>()
+        for (model in models) {
+            val file = withContext(Dispatchers.IO) { storeRepository.iconFor(model) } ?: continue
+            icons[model.id] = file.absolutePath
+            _models.update { state ->
+                val store = state.store
+                if (store is StoreState.Ready) state.copy(store = store.copy(icons = icons.toMap())) else state
+            }
+        }
+    }
+
+    /** Downloads a model from the store, or the newer version of one that is installed, and makes it the one in use. */
     fun downloadModel(model: StoreModelDefinition) {
         if (_models.value.busyId != null) {
             return
         }
-        _models.update { it.copy(busyId = model.id) }
+        val wasInUse = _models.value.activeId == model.id
+        val isNew = _models.value.installedVersion(model.id) == null
+        _models.update { it.copy(busyId = model.id, progress = 0f) }
         viewModelScope.launch {
             val installed = withContext(Dispatchers.IO) {
                 runCatching {
                     val id = catalog.sanitizeModelId(model.id)
-                    val files = storeRepository.downloadModel(model, File(context.filesDir, "models/$id"))
+                    val files = storeRepository.install(model, File(context.filesDir, "models/$id")) { progress ->
+                        _models.update { it.copy(progress = progress) }
+                    }
                     InstalledModel(
                         id = id,
                         title = model.title,
                         description = model.description,
                         source = ModelSource.STORE,
-                        paramPath = files.first.absolutePath,
-                        binPath = files.second.absolutePath,
-                        totalSizeBytes = files.first.length() + files.second.length(),
+                        paramPath = files.param.absolutePath,
+                        binPath = files.bin.absolutePath,
+                        totalSizeBytes = files.param.length() + files.bin.length(),
+                        version = model.version,
                     )
                 }
             }
             installed.onSuccess {
-                catalog.addOrUpdateModel(it, makeActive = true)
+                // A new model becomes the one in use; an update only replaces the one that was in use.
+                catalog.addOrUpdateModel(it, makeActive = isNew || wasInUse)
                 _messages.tryEmit(UiMessage(R.string.models_next_start))
             }.onFailure {
                 Log.w(TAG, "Download failed: ${it.message}")
-                _messages.tryEmit(UiMessage(R.string.models_store_error))
+                _messages.tryEmit(UiMessage(R.string.models_download_failed))
             }
-            _models.update { it.copy(busyId = null) }
+            _models.update { it.copy(busyId = null, progress = 0f) }
             refreshModels()
         }
     }
@@ -317,13 +343,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return name
     }
 
-    private fun assetExists(path: String): Boolean = try {
-        context.assets.open(path).use { }
-        true
-    } catch (_: Exception) {
-        false
-    }
-
     /** A model saved by an older version of the app as a single pair of paths is moved into the catalog. */
     private fun migrateLegacyModel() {
         val param = preferences.getString(KEY_LEGACY_PARAM, null)
@@ -353,8 +372,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         const val KEY_ACCENT = "accent"
         const val KEY_LEGACY_PARAM = "model_param_path"
         const val KEY_LEGACY_BIN = "model_bin_path"
-        const val ASSET_MODEL_PARAM = "models/yolo26n-opt.param"
-        const val ASSET_MODEL_BIN = "models/yolo26n-opt.bin"
         const val SETTINGS_FILE = "settings.cfg"
     }
 }

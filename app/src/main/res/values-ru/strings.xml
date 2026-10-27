@@ -49,6 +49,8 @@
     <string name="models_in_use">Используется</string>
     <string name="models_use">Выбрать</string>
     <string name="models_get">Скачать</string>
+    <string name="models_update">Обновить</string>
+    <string name="models_version">Версия %1$d</string>
     <string name="models_delete">Удалить</string>
     <string name="models_built_in">Встроена</string>
     <string name="models_from_store">Из магазина</string>
@@ -56,6 +58,7 @@
     <string name="models_installed_label">Установлена</string>
     <string name="models_loading">Загрузка моделей</string>
     <string name="models_store_error">Не удаётся связаться с магазином.</string>
+    <string name="models_download_failed">Не удалось скачать модель.</string>
     <string name="models_store_empty">Пока нет моделей.</string>
     <string name="models_retry">Повторить</string>
     <string name="models_delete_title">Удалить модель?</string>
