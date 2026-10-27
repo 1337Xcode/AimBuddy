@@ -21,3 +21,5 @@ python -m fontTools.subset NotoSansSC-Regular-static.ttf --text-file=chars.txt \
 ```
 
 where `chars.txt` holds every character that is not plain ASCII in `i18n.h`.
+
+`MenuFontTest` (run with `./gradlew testDebugUnitTest`) fails, and names the characters, when a Chinese character in `i18n.h` has no glyph in this font.
