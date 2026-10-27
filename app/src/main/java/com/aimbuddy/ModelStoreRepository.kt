@@ -133,13 +133,15 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
         if (file.isFile) {
             return file
         }
+        // Through a temporary file, so a download that was cut short is never taken for the picture.
+        val temporary = File(file.path + ".part")
         return try {
             file.parentFile?.mkdirs()
-            download(icon, file) { }
-            file
+            download(icon, temporary) { }
+            if (temporary.renameTo(file)) file else null
         } catch (e: IOException) {
             Log.w(TAG, "The icon of ${model.id} could not be fetched: ${e.message}")
-            file.delete()
+            temporary.delete()
             null
         }
     }
