@@ -1,15 +1,18 @@
 # Training Guide
 
-How to train a YOLOv26n model and export it for AimBuddy runtime using the bundled training pipeline.
+How to train a YOLOv26n model for your game and bring it into AimBuddy using the bundled training pipeline.
 
 ## Model Contract
 
-AimBuddy expects a single-class YOLOv26n model (class 0 = enemy). The NCNN runtime loads two files from `app/src/main/assets/models/`:
+The pipeline trains a single-class YOLOv26n model (class 0 = enemy) and exports it for the NCNN runtime as three files:
 
 | File | Purpose |
 |------|---------|
-| `yolo26n-opt.param` | NCNN model graph definition |
-| `yolo26n-opt.bin` | NCNN model weights |
+| `model.param` | NCNN model graph definition |
+| `model.bin` | NCNN model weights |
+| `model.json` | What the model is and how to read its output (see [model/README.md](../model/README.md)) |
+
+The network input is `runtime_imgsz` pixels (256 by default). The app reads the input size and the classes from the model itself, so a model trained with other settings works as long as its files are valid NCNN.
 
 ## Environment Requirements
 
@@ -32,7 +35,7 @@ flowchart LR
     B --> C[Validate Dataset]
     C --> D[Train Model]
     D --> E[Export to NCNN]
-    E --> F[Deploy to App Assets]
+    E --> F[Model files in outputs/export]
 ```
 
 For the fully automated path (`00_automate.bat`), the pipeline is:
@@ -48,7 +51,7 @@ flowchart LR
     S --> D[Validate dataset]
     D --> TR[Train at imgsz=640]
     TR --> EX[Export NCNN at imgsz=256]
-    EX --> DEP[app/src/main/assets/models]
+    EX --> DEP[outputs/export]
     TR --> AL[Active learning sweep]
     AL --> R[outputs/review/uncertain]
 ```
@@ -280,18 +283,15 @@ flowchart LR
     A["YOLOv26n (.pt)"] --> B["ONNX export"]
     B --> C["ONNX simplify"]
     C --> D["NCNN convert"]
-    D --> E["yolo26n-opt.param + .bin"]
+    D --> E["model.param + model.bin + model.json"]
 ```
 
-The exported NCNN files must be copied to:
+The export writes its files to `training/outputs/export/` and leaves the app alone. `model.json` is only written when there is none yet, so the edits you make to it survive the next export.
 
-```
-app/src/main/assets/models/
-```
+### Using the model
 
-File names must match the constants in `settings.h`:
-- `MODEL_PARAM_FILE = "models/yolo26n-opt.param"`
-- `MODEL_BIN_FILE = "models/yolo26n-opt.bin"`
+- **On your own phone.** Copy `model.param` and `model.bin` to the phone and pick them in the app under Models, Import.
+- **For everyone.** Put the three files in a folder `model/<id>/`, fill in the title, description and author in `model.json`, raise its `version` whenever the files change, run `python model/index.py` and open a pull request. [model/README.md](../model/README.md) has the details. The weights must be yours to share under a license the project can redistribute.
 
 Path format note:
 - Configuration paths intentionally use forward slashes (`/`) for cross-platform behavior, including on Windows.
@@ -302,10 +302,7 @@ Path format note:
 |--------|------|
 | Training reports | `training/outputs/reports/` |
 | Trained weights | `training/outputs/runs/detect/train/weights/` |
-| NCNN export working copy | `training/outputs/export/` |
-| Deployment target used by app runtime | `app/src/main/assets/models/` |
-
-The export step writes to `training/outputs/export/` and copies the same files into app assets.
+| Model files (`model.param`, `model.bin`, `model.json`) | `training/outputs/export/` |
 
 ## Preflight Checks
 
@@ -352,7 +349,7 @@ python src\check_model_contract.py --weights outputs\runs\detect\train\weights\b
 |---------|----------|
 | CUDA not detected by torch | Install CUDA 12.1, reinstall torch with CUDA wheel |
 | Dataset validation fails | Fix label format, check normalized coordinates |
-| Export succeeds but app does not detect | Copy NCNN files to `app/src/main/assets/models/`, rebuild |
+| Export succeeds but app does not detect | Import the files under Models, Import. If Start says the detection model could not be loaded, the two files are not from the same export |
 | Base model download fails during setup | Manually place `yolo26n.pt` in `training/` root, rerun setup |
 | Training is very slow | Use NVIDIA GPU, or reduce dataset size for faster iterations |
 | Out of memory during training | Reduce batch size in `config.ini`, or use adaptive mode |

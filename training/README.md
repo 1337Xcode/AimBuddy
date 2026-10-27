@@ -97,7 +97,7 @@ Preflight strictness behavior:
 
 Config file: `training/config/config.ini`
 
-- `[paths]`: model, dataset, outputs, deployment paths
+- `[paths]`: model, dataset and output paths
 - `[training]`: manual hyperparameters
 - `[adaptive]`: dataset-size adaptive training rules
 - `[export]`: NCNN export options
@@ -138,13 +138,9 @@ Expected dataset paths:
 
 - Reports: `training/outputs/reports`
 - Weights: `training/outputs/runs/detect/train/weights`
-- Exported NCNN artifacts (working copy): `training/outputs/export`
-- Deployment target for app runtime: `app/src/main/assets/models`
+- Exported model: `training/outputs/export` (`model.param`, `model.bin` and `model.json`)
 
-The export script writes both locations and keeps filenames aligned with runtime constants:
-
-- `models/yolo26n-opt.param`
-- `models/yolo26n-opt.bin`
+The export does not touch the app. Import the two NCNN files on the phone under Models, Import, or publish the model through the store (see `model/README.md`).
 
 ## Preflight and Error Reports
 
@@ -169,6 +165,6 @@ python src\check_model_contract.py --weights outputs\runs\detect\train\weights\b
 
 - NVIDIA GPU detected but no CUDA in torch: reinstall CUDA-enabled torch and verify Python 3.10 to 3.12.
 - Validation errors: fix dataset labels before retraining.
-- Export completes but runtime fails to load model: verify files in `app/src/main/assets/models`.
+- Export completes but the app says the detection model could not be loaded: check that `model.param` and `model.bin` come from the same export.
 
 For end-to-end training context, see [docs/Training.md](../docs/Training.md).
