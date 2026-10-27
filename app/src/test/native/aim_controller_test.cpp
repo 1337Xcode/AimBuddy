@@ -348,3 +348,40 @@ TEST(aim_waits_longer_each_time_the_game_keeps_ignoring_the_finger) {
     CHECK(lifts >= 5);
     CHECK(lifts <= 7);   // with a wait that did not grow it would be one every 2 s: about 10
 }
+
+TEST(aim_does_not_run_away_when_a_saved_camera_figure_is_far_wrong) {
+    // An earlier run left the belief that the scene slides 0.9 px per finger pixel, with high
+    // confidence; this game really slides it 6 px. The figures are only trusted as a guess, so the
+    // first moves are small, the camera is measured, and the target is never lost on the way.
+    SimulatedGame::Truth truth;
+    truth.gain = 6.0f;
+    truth.delayS = 0.1f;
+    SimulatedGame game(truth, baseSettings(), stationary(100.0f, -60.0f));
+    game.camera().seed({0.9f, 0.9f, 0.05f, false}, 0.9f);
+    const Outcome result = measure(game, 5.0f, 100.0f);
+    CHECK(result.peakError < 220.0f);      // never past the field of view, where the assist would let go
+    CHECK(result.settleSeconds >= 0.0f);
+    CHECK(result.settleSeconds < 3.5f);
+    CHECK(result.finalRms < 8.0f);
+}
+
+TEST(aim_does_not_run_away_when_the_camera_cannot_be_watched_and_its_gain_is_wrong) {
+    // The odometry reads nothing (a bare sky, a scene too busy to read), so the controller can only
+    // go by what the detector shows and by a belief of 1.5 px of slide per finger pixel. The game
+    // really slides the scene 6 px, or 12. The assist then moves with less authority: the target
+    // stays within reach and is settled on (6), or at least never lost (12).
+    for (const float gain : {6.0f, 12.0f}) {
+        SimulatedGame::Truth truth;
+        truth.gain = gain;
+        truth.delayS = 0.1f;
+        truth.measureCamera = false;
+        SimulatedGame game(truth, baseSettings(), stationary(260.0f, 80.0f));
+        const Outcome result = measure(game, 8.0f, 260.0f);
+        CHECK(result.peakError < 300.0f);
+        if (gain < 8.0f) {
+            CHECK(result.settleSeconds >= 0.0f);
+            CHECK(result.settleSeconds < 6.0f);
+        }
+        CHECK(result.finalRms < 120.0f);
+    }
+}

@@ -79,10 +79,16 @@ float lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 float nsToSeconds(int64_t ns) { return static_cast<float>(ns) * 1e-9f; }
 
-/// Finger travel that may be on its way at once, for a camera response trusted to `confidence` (0 to 1).
-float travelCapFor(float confidence) {
+/// While the camera cannot be watched, the finger moves, closes the gap and leads a moving target by
+/// this much less at the most (each by its own share of the blindness, 0 to 1).
+constexpr float kBlindTravelLoss = 0.75f;
+constexpr float kBlindClosingLoss = 0.5f;
+
+/// Finger travel that may be on its way at once, for a camera response trusted to `confidence` (0 to 1)
+/// and a camera that could not be watched for the share `blindness` of the last second.
+float travelCapFor(float confidence, float blindness) {
     const float c = std::clamp(confidence, 0.0f, 1.0f);
-    return kMinTravelCapPx + kTravelCapRangePx * c * c * c;
+    return (kMinTravelCapPx + kTravelCapRangePx * c * c * c) * (1.0f - kBlindTravelLoss * blindness);
 }
 
 /**
@@ -353,10 +359,11 @@ AimOutput AimController::putFingerDown(int64_t nowNs, const Pursuit& pursuit) {
     return {AimAction::kTouchDown, fingerX_, fingerY_};
 }
 
-AimController::FingerStep AimController::planFingerStep(int64_t /* nowNs */, const CameraResponse& response,
+AimController::FingerStep AimController::planFingerStep(int64_t nowNs, const CameraResponse& response,
                                                         const Pursuit& pursuit, const PlayerInput& player,
                                                         float dt) const {
     const TrackView& body = *pursuit.body;
+    const float blindness = motion_->blindness(nowNs);
     const float gainX = std::max(response.gainX, 0.05f);
     const float gainY = std::max(response.gainY, 0.05f);
     const float yDirection = response.invertY ? -1.0f : 1.0f;
@@ -365,7 +372,8 @@ AimController::FingerStep AimController::planFingerStep(int64_t /* nowNs */, con
     // Feed-forward: a target running at speed v needs the scene to slide at v too, so the finger
     // is kept moving at v / gain even when the error is zero. Without it the aim would trail a
     // moving target by speed / (closing rate), several body widths at a run.
-    const float followShare = pursuit.movingShare * std::clamp(0.5f + settings_.strength, 0.0f, 1.0f);
+    // It leans on the camera's response being known, so it fades out while the camera cannot be watched.
+    const float followShare = pursuit.movingShare * std::clamp(0.5f + settings_.strength, 0.0f, 1.0f) * (1.0f - blindness);
     step.x += body.velocityX / gainX * dt * followShare;
     step.y += body.velocityY / gainY * dt * followShare * yDirection;
 
@@ -376,7 +384,7 @@ AimController::FingerStep AimController::planFingerStep(int64_t /* nowNs */, con
         const float strength = player.lookActive ? settings_.strength * settings_.yieldWhileLooking : settings_.strength;
         const float timeConstant =
             lerp(kSlowestTimeConstantS, kFastestTimeConstantS, std::pow(std::clamp(strength, 0.0f, 1.0f), 0.7f));
-        const float closing = (1.0f - std::exp(-dt / timeConstant)) * stability_;
+        const float closing = (1.0f - std::exp(-dt / timeConstant)) * stability_ * (1.0f - kBlindClosingLoss * blindness);
         step.x += pursuit.errorX * shrink / gainX * closing;
         step.y += pursuit.errorY * shrink / gainY * closing * yDirection;
     }
@@ -391,7 +399,7 @@ AimController::FingerStep AimController::planFingerStep(int64_t /* nowNs */, con
     float pendingX = 0.0f;
     float pendingY = 0.0f;
     motion_->unseenFinger(&pendingX, &pendingY);
-    const float room = std::max(0.0f, travelCapFor(motion_->confidence()) - std::hypot(pendingX, pendingY));
+    const float room = std::max(0.0f, travelCapFor(motion_->confidence(), blindness) - std::hypot(pendingX, pendingY));
     allowed = std::min(allowed, room);
 
     const float length = std::hypot(step.x, step.y);

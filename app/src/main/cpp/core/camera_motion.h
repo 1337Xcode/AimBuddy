@@ -60,6 +60,13 @@ public:
     /// Finger travel in pixels that has been moved but whose effect no captured frame shows yet.
     void unseenFinger(float* dx, float* dy) const;
 
+    /**
+     * 0 to 1: how much of the last second the picture could not be compared between frames (a bare
+     * sky, a scene too busy to read, no frames at all). While it is high, the camera's real answer
+     * to the finger is unknown, and the figures in use are only a belief.
+     */
+    float blindness(int64_t nowNs) const;
+
     /// What the scene did in answer to the assist's finger over a stretch of time.
     enum class Answer {
         kUnknown,   ///< The finger moved too little, or the frames could not be compared well enough, to say.

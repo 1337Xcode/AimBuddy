@@ -32,6 +32,10 @@ constexpr float kAnswerMinShare = 0.15f;
 constexpr float kAnswerMinFingerPx = 30.0f;
 constexpr float kAnswerMinCoverage = 0.85f;
 
+/// The stretch of time over which it is judged how much of the camera's movement could be watched.
+constexpr int64_t kBlindnessWindowNs = 1'000'000'000;
+constexpr int64_t kBlindnessMinNs = 300'000'000;
+
 /// A time later than any move can land, for "everything from here on".
 constexpr int64_t kForeverNs = INT64_MAX / 4;
 
@@ -170,6 +174,24 @@ void CameraMotion::unseenFinger(float* dx, float* dy) const {
     std::lock_guard<std::mutex> lock(mutex_);
     // Everything that lands after the newest captured frame, however far ahead.
     fingers_.landedBetween(current_.delayS, measured_.latestNs(), kForeverNs, dx, dy);
+}
+
+float CameraMotion::blindness(int64_t nowNs) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Judged over the last second, or over what has been watched so far if that is less. With
+    // hardly any history nothing can be said, unless frames came and none could be read.
+    if (measured_.empty()) {
+        return 0.0f;
+    }
+    const int64_t fromNs = std::max(nowNs - kBlindnessWindowNs, measured_.earliestNs());
+    float slideX = 0.0f;
+    float slideY = 0.0f;
+    int64_t coveredNs = 0;
+    measured_.seenShiftBetween(fromNs, nowNs, &slideX, &slideY, &coveredNs);
+    if (nowNs - fromNs < kBlindnessMinNs) {
+        return coveredNs == 0 ? 1.0f : 0.0f;
+    }
+    return std::clamp(1.0f - static_cast<float>(coveredNs) / static_cast<float>(nowNs - fromNs), 0.0f, 1.0f);
 }
 
 CameraMotion::Answer CameraMotion::fingerAnswered(int64_t fromNs, int64_t toNs, float* fingerPx, float* slidePx) const {

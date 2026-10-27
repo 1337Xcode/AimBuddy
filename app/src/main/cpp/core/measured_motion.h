@@ -78,6 +78,9 @@ public:
         *dy = sumY;
     }
 
+    /// Start of the oldest entry, or 0 when there is none.
+    int64_t earliestNs() const { return count_ == 0 ? 0 : entries_[head_].fromNs; }
+
     /// End of the newest entry, or 0 when there is none.
     int64_t latestNs() const { return count_ == 0 ? 0 : entries_[(head_ + count_ - 1) % kCapacity].toNs; }
 
