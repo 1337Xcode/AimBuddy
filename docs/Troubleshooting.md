@@ -1,270 +1,161 @@
 # Troubleshooting
 
-Common setup, build, runtime, and training issues for AimBuddy with step-by-step resolution.
+When something does not work: first what the app says, then the build, the touch access, detection, the aim, the models and the training pipeline.
 
-## Build Issues
+## Starting
 
-### NDK or CMake Mismatch
+The Home screen says what is wrong in a sentence. What each one means:
 
-Symptoms:
-- Gradle native build fails with CMake errors
-- Linking errors or missing symbols
+| Message | Cause and fix |
+|---------|---------------|
+| Display over other apps is not allowed. | Open Settings, find AimBuddy in the list of apps that may display over other apps, and turn it on. Then press Start. |
+| Screen capture was not allowed. | Press Start again and accept the system's screen capture question. The assist needs to see the whole screen to see the game. |
+| Screen capture ended. | The system stopped the screen capture. Press Start again. |
+| The detection model could not be loaded. | The chosen model's files are missing or are not a valid NCNN model. Choose AimBuddy General under Models, or import the model again. |
+| AimBuddy could not start. | Something unexpected failed. Run `adb logcat -s AssistService:W AimBuddy_Native:E` and look for the first error. |
 
-Fix:
-1. Install Android NDK `29.0.13113456 rc1` through SDK Manager.
-2. Install CMake `3.22.1` through SDK Manager.
-3. Clean and rebuild:
+If AimBuddy stops by itself during a game, the phone's battery manager probably ended it. Exclude AimBuddy from battery optimization, see the table in [Shizuku setup](ShizukuSetup.md).
 
-```powershell
-./gradlew.bat clean assembleDebug
+## Touch access
+
+Without it AimBuddy still outlines enemies, but the assist cannot move your aim. See [Shizuku setup](ShizukuSetup.md) for starting Shizuku. For root, grant it when your root manager asks.
+
+| What the Home screen says | Cause and fix |
+|---------------------------|---------------|
+| Aim assist needs Shizuku or root. | Neither is available. Start Shizuku, or grant root, then press Stop and Start. |
+| This phone does not let the touch helper use the touchscreen. | Shizuku or root started the helper, but this phone refused it access to the touchscreen. Under Settings, Touch, try the other choice: root if you were using Shizuku, or Shizuku if you were using root. |
+| Another program is holding the touchscreen. | Another app that reads the touchscreen directly is running. Close it. |
+| The touch helper could not be started. | Press Stop and Start again. If it keeps happening, check `adb logcat -s TouchHelper:W aimtouch:V` for the reason. |
+
+Other things you may notice:
+
+- **The touchscreen does not answer for a moment after AimBuddy starts, or after the screen turns.** That is on purpose. The system ignores a touch that begins right after the touchscreen changes hands, so the assist waits 700 ms.
+- **The touchscreen does not answer at all.** Hold both volume keys: the helper gives the touchscreen back and stops. Or press Stop in the notification. If the helper is killed, the system gives the touchscreen back by itself.
+- **The assist does nothing although touch access is ready.** The assist starts switched off every time. Open the in-game menu, go to the Aim tab and switch it on.
+
+## Detection
+
+- **No boxes at all.** If streamer mode is on, nothing is drawn over the game, so turn it off to see them. Otherwise lower the detection confidence, and check that the enemies are inside the detection area (the square that shows while the menu is open).
+- **Boxes on things that are not enemies.** Raise the detection confidence. If it keeps happening in your game, train a model on it, see [Training](Training.md).
+- **Boxes arrive late or only a few times a second.** See [Performance](Performance.md), which also explains the numbers of the performance readout.
+
+## Aim
+
+| Symptom | What to do |
+|---------|------------|
+| The aim overshoots, swings or crawls | Give it a minute: with Calibrate automatically on, the first moves are small on purpose while it measures how your game reacts. If it still misbehaves, turn calibration off and set Camera sensitivity and Response delay by hand. |
+| The aim goes up when the target is below | Switch on Invert vertical. |
+| The assist's finger keeps lifting and landing again | The game does not answer it. The touch area is probably on something that does not turn the view, such as a button. Move it in the in-game menu to where a finger would turn the camera, away from your own thumbs. |
+| It jumps between two targets | Choose another Target pick. The assist already keeps its target until another is clearly better. |
+| It aims at the wrong part | Change Aim at. A model that detects heads is aimed at exactly; for one that does not, the point is worked out from the shape of the box. |
+
+## The overlay
+
+- **The floating button is gone.** In streamer mode it is invisible but still there: tap where it was, or use the Menu button in the notification.
+- **A recording shows black while the menu is open.** That is on purpose in streamer mode, so that the menu never reaches the recording. It is a few moments.
+- **The menu does not open or close.** Hold the button to stop AimBuddy, then start it again.
+
+## Models and the store
+
+| Message | Cause and fix |
+|---------|---------------|
+| Can't reach the store. | The list is one small file on GitHub. Check the connection and try again. AimBuddy General is built in and works without it. |
+| That model could not be downloaded. | The connection dropped or a file did not match its checksum. The model you had is untouched. Try again. |
+| That model could not be imported. | Choose the `.param` file first and then the matching `.bin` file of the same export. |
+| Can't reach GitHub. (an update) | Check the connection and try again. |
+| The download could not be verified. (an update) | The file does not match what GitHub lists for it, is not a newer build of AimBuddy, or is signed with another key than the installed copy, for example when a debug build is installed. Try again. If the installed copy is a debug build, remove it and install the release by hand, see [Releasing](Releasing.md). The settings go with it. |
+| The update could not be installed. | The system's installer refused the update. Free some storage and try again; if it repeats, install the release by hand. |
+| Allow AimBuddy to install apps, then come back. | Open Settings, Apps, Special app access, Install unknown apps, choose AimBuddy and allow it. |
+
+## Settings
+
+- Settings are kept in `settings.cfg` in AimBuddy's private storage. A change is saved a moment after you make it and again when the app goes out of sight.
+- The assist's on/off switch is not saved, on purpose.
+- Settings, About, Reset all settings puts everything back to how it started and keeps the language.
+
+## Building
+
+### NDK or CMake does not match
+
+Gradle's native build fails with CMake errors or missing symbols. Install Android NDK 29.0.13113456 and CMake 3.22.1 with the SDK Manager, then rebuild clean:
+
+```sh
+./gradlew clean assembleDebug
 ```
 
-### NCNN Library Not Found
+### NCNN is not found
 
-Symptoms:
-- Native linker errors referencing NCNN symbols
+Native linker errors that name NCNN symbols mean the prebuilt libraries under `app/src/main/cpp/ncnn/` are missing or are for another ABI. AimBuddy builds for `arm64-v8a` only.
 
-Fix:
-1. Verify NCNN prebuilt libraries exist under `app/src/main/cpp/ncnn/`.
-2. Check that `CMakeLists.txt` references the correct NCNN path for your ABI (`arm64-v8a`).
-3. Rebuild after syncing.
+### `__libcpp_verbose_abort` is undefined
 
-### __libcpp_verbose_abort Linker Error
+The NCNN libraries were built with a different libc++ than the NDK's. `esp_jni.cpp` defines the missing symbol; if you see this after updating NCNN, check that definition is still there.
 
-Symptoms:
-- Undefined symbol `__libcpp_verbose_abort` during native link
+### The build says the model to bundle is missing
 
-This is caused by an NCNN library built against a different NDK libc++ version. The fix is already in `esp_jni.cpp` which defines the missing symbol. If you see this after updating NCNN, verify the compatibility shim is still present.
+The build copies `model/aimbuddy-general/` into the app and stops if `model.param`, `model.bin` or `model.json` is missing, because an app without its model cannot start. Restore the folder from the repository.
 
-## Installation Issues
+### The installer says the package is invalid or conflicts with an existing package
 
-### App Installs But Overlay Does Not Appear
+See "Installing a build by hand" in [Releasing](Releasing.md).
 
-```mermaid
-flowchart TD
-    A[Overlay not showing?] --> B{Overlay permission granted?}
-    B -->|No| C[Grant overlay permission in Settings]
-    B -->|Yes| D{MediaProjection accepted?}
-    D -->|No| E[Tap Start and accept the screen capture prompt]
-    D -->|Yes| F{Screen recording prompt accepted?}
-    F -->|No| G[Re-accept the recording prompt for this session]
-    F -->|Yes| H[Check logcat for init errors]
-```
+## Training
 
-### App Crashes on Launch
+### The environment does not set up
 
-Possible causes:
-1. Model files missing from `app/src/main/assets/models/`. Need `yolo26n-opt.param` and `yolo26n-opt.bin`.
-2. Vulkan not supported on the device. Check `adb logcat -s AimBuddy_Native:E` for GPU initialization errors.
-3. Incorrect ABI. AimBuddy only supports `arm64-v8a`.
+1. Use Python 3.10 to 3.12; 3.11 is recommended.
+2. Run the setup again, then read `training/outputs/reports/preflight_report.json`:
 
-### App Fails to Install ("Package Appears to be Invalid" / "App Not Installed")
+   ```powershell
+   cd training
+   scripts\01_setup_environment.bat
+   ```
 
-Symptoms:
-- Sideloading the release APK fails with a package parsing or installation error.
+3. If strict preflight blocks scripts `04` or `05`, run the whole pipeline with the relaxed check:
 
-Cause:
-- Android requires all sideloaded APKs to be cryptographically signed. If an APK is unsigned, the package manager rejects it with an invalid package error.
+   ```powershell
+   scripts\07_run_full_pipeline.bat --non-strict-preflight
+   ```
 
-Fix:
-- We have configured the release build type in `app/build.gradle` to automatically sign release builds using the debug key configuration by default.
-- If you are building locally or on GitHub without repository secrets, the output APK will still be signed and installable.
-- To verify if your APK is signed, use:
-  ```powershell
-  apksigner verify --verbose app-release.apk
-  ```
+### CUDA is not available in torch
 
-## Runtime Issues
+An NVIDIA GPU is found but training runs on the CPU. Use Python 3.10 to 3.12, install CUDA 12.1 and the matching torch wheel, and check with `python -c "import torch; print(torch.cuda.is_available())"`.
 
-### No Detections Showing
+### The dataset does not validate
 
-1. Verify model files are present in `app/src/main/assets/models/`.
-2. Check `confidenceThreshold` is not set too high (try lowering to 0.3).
-3. Verify the game is in landscape orientation (capture is 1280x720 landscape).
-4. Check logcat for inference errors:
+Read `training/outputs/reports/dataset_report.json`. The usual causes are label rows that are not `class_id x_center y_center width height`, coordinates outside 0 to 1, the same image in two splits, and no background-only images.
 
-```powershell
-adb logcat -s AimBuddy_Native:E
-```
+### The export works but the app does not detect
 
-### Low Inference FPS (Below 60)
+1. The pipeline writes `model.param`, `model.bin` and `model.json` to `training/outputs/export/` and does not touch the app. Import the two NCNN files under Models, Import.
+2. If Start says the detection model could not be loaded, the two files are not from the same export.
+3. Lower the detection confidence: a model that was trained briefly gives low scores.
 
-1. Check pipeline stats in logcat:
+### The model contract check fails
 
-```powershell
-adb logcat -s AimBuddy_Native:I | findstr "Pipeline stats"
-```
-
-2. If `avg infer` is high (> 15ms), the GPU may be slow. The adaptive crop will automatically shrink to compensate.
-3. If `dropped_push` is high, the ring buffer is filling up. This should not happen with triple buffering (3 ImageReader buffers).
-4. Ensure no other GPU-heavy apps are running.
-
-### Aim Assist Not Working (Visual Assist Mode Only)
-
-Root is required for assisted input. Without root:
-- ESP overlays work normally.
-- The "Enable Aim Assist" toggle is grayed out.
-- The app shows "Root not granted (ESP mode)" in the menu.
-
-To enable aim assist:
-1. Install a root manager (Magisk or KernelSU).
-2. Grant root when prompted on app start.
-3. If root was denied, tap Start again to retry.
-
-### Touch Injection Fails After Root Grant
-
-1. Verify `/dev/uinput` exists and is accessible:
-
-```powershell
-adb shell su -c "ls -la /dev/uinput"
-```
-
-2. The app sets permissions automatically (`chmod 666 /dev/uinput`), but some ROMs may block this.
-3. SELinux enforcement is temporarily disabled (`setenforce 0`). If your ROM re-enables it, touch injection will fail.
-4. Check logcat:
-
-```powershell
-adb logcat -s TouchHelper:E
-```
-
-### Aim Is Shaky on Still Targets
-
-Cause: Detector jitter passing through the aim filter.
-
-Fixes:
-1. Select the EMA or Kalman stabilization filter (Aim tab > Stabilization filter).
-2. Lower `EMA alpha` (try 0.20 to 0.30). Lower values smooth more.
-3. Use a preset like "Balanced" or "Precision" which have stronger smoothing.
-
-### Aim Does Not Track Moving Targets
-
-Cause: Velocity lead is too low or disabled.
-
-Fixes:
-1. Increase `Velocity lead` slider (try 0.20 to 0.30).
-2. Increase `Lead clamp` slider (try 16 to 20 px).
-3. Use the "Competitive" preset which has the highest lead values.
-
-### Touch Stays On When No Enemies Visible
-
-Cause: Ghost tracks lingering in the tracker.
-
-Fixes:
-1. Reduce `Miss grace` slider (try 1 to 2).
-2. This controls how many frames the locked target survives without a detection match.
-3. The zero-detection fast-release should handle this automatically. If it does not, check logcat for tracker anomalies.
-
-### Aim Oscillates Near Target
-
-Cause: Overshoot from aggressive settings.
-
-Fixes:
-1. Enable "Anti overshoot" checkbox.
-2. Increase "Damp radius" (try 30 to 50 px).
-3. Reduce "Aim speed" (try 0.40 to 0.55).
-4. Increase "Derivative damping" (try 0.04 to 0.06).
-5. Use the "Balanced" or "Precision" preset.
-
-### Settings Not Persisting After Restart
-
-1. Settings are saved to `/data/local/tmp/settings.bin`.
-2. Verify the app has write access:
-
-```powershell
-adb shell ls -la /data/local/tmp/settings.bin
-```
-
-3. If the file does not exist, tap "Save now" in the menu.
-4. If settings load but values seem wrong, tap a preset button to reset to known-good values.
-
-## Training Pipeline Issues
-
-### Environment Setup Fails
-
-1. Use Python 3.10 to 3.12 (3.11 recommended).
-2. Re-run setup:
-
-```powershell
-cd training
-scripts\01_setup_environment.bat
-```
-
-3. Review the preflight report: `training/outputs/reports/preflight_report.json`.
-
-If strict preflight fails on scripts `04` or `05`, run the full pipeline with non-strict preflight:
-
-```powershell
-cd training
-scripts\07_run_full_pipeline.bat --non-strict-preflight
-```
-
-### CUDA Not Available in Torch
-
-Symptoms:
-- NVIDIA GPU detected but training runs CPU-only
-
-Fix:
-1. Confirm Python version is 3.10 to 3.12.
-2. Install CUDA 12.1 and the matching torch wheel.
-3. Verify with: `python -c "import torch; print(torch.cuda.is_available())"`
-
-### Dataset Validation Fails
-
-Review: `training/outputs/reports/dataset_report.json`
-
-Common fixes:
-1. Fix malformed YOLO label rows (format: `class_id x_center y_center width height`).
-2. Ensure all coordinates are normalized to [0, 1].
-3. Remove duplicate images across train/valid/test splits.
-4. Include background-only images to reduce false positives.
-
-### Export Succeeds But App Cannot Detect
-
-1. Verify exported files are copied to `app/src/main/assets/models/`.
-2. File names must match `settings.h`: `yolo26n-opt.param` and `yolo26n-opt.bin`.
-3. Rebuild and reinstall the app.
-
-### Model Contract Check Fails
-
-Symptoms:
-- `check_model_contract.py` reports class-count or shape mismatch.
-
-Fix:
-1. Verify `training/dataset/data.yaml` uses exactly one class (`nc: 1`, class id `0`).
-2. Retrain and re-run contract check:
+`check_model_contract.py` reports a class count or shape that does not match. Check that `training/dataset/data.yaml` has exactly one class (`nc: 1`), then retrain and check again:
 
 ```powershell
 cd training
 python src\check_model_contract.py --weights outputs\runs\detect\train\weights\best.pt
 ```
 
-## Useful Commands
+## Useful commands
 
-```powershell
-# Build
-./gradlew.bat clean assembleDebug
-
-# Install
-./gradlew.bat installDebug
-
-# View runtime logs
-adb logcat -s AimBuddy_Native:I
-
-# View errors only
-adb logcat -s AimBuddy_Native:E
-
-# Check touch device
-adb shell su -c "ls -la /dev/uinput"
-
-# Full training pipeline
-cd training
-scripts\07_run_full_pipeline.bat
+```sh
+./gradlew assembleDebug                                   # build
+./gradlew testDebugUnitTest                               # Kotlin tests
+sh app/src/test/native/run.sh                             # C++ core tests
+adb install -r app/build/outputs/apk/debug/app-debug.apk  # install a debug build
+adb logcat -s AimBuddy_Native:I                           # what the native code does (debug builds)
+adb logcat -s AimBuddy_Native:E                           # errors only (release builds)
 ```
 
-## Related Documentation
+## Related
 
 - [README](../README.md)
 - [Architecture](Architecture.md)
-- [Settings Guide](SettingsGuide.md)
-- [Training](Training.md)
+- [Settings guide](SettingsGuide.md)
 - [Performance](Performance.md)
+- [Shizuku setup](ShizukuSetup.md)
+- [Training](Training.md)
