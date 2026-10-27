@@ -21,6 +21,7 @@ import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executors
 
 /**
@@ -48,6 +49,9 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
 
     /** Between the start and the end of a run; false once [shutdown] has begun. */
     private var running = false
+
+    /** Whether streamer mode is on, which decides what the notification's icon shows. */
+    private var streamerMode = false
 
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) {}
@@ -86,6 +90,10 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     // ---------------------------------------------------------------------------------------
 
     private fun startRun(intent: Intent) {
+        if (!running) {
+            // Streamer mode set in an earlier run holds from the first moment, even for the notification's icon.
+            streamerMode = savedStreamerMode()
+        }
         // The notification must exist before anything else: a foreground service has seconds to show one.
         showForegroundNotification()
         if (running) {
@@ -182,10 +190,11 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         val controller = OverlayController(this) { mainHandler.post { shutdown() } }
         overlay = controller
         // Streamer mode set in an earlier run holds from the start, so the button is never on the screen even for a moment.
-        val streamerMode = NativeBridge.settingsSnapshot().lineSequence().any { it.trim() == "streamerMode=1" }
+        val streamerWas = streamerMode
+        streamerMode = NativeBridge.settingsSnapshot().lineSequence().any { it.trim() == "streamerMode=1" }
         controller.show(streamerMode)
-        if (streamerMode) {
-            showForegroundNotification(streamerMode = true)
+        if (streamerMode != streamerWas) {
+            showForegroundNotification()   // changed since the file was written
         }
 
         displayManager = (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager).also {
@@ -294,6 +303,13 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         Log.i(TAG, "Stopped" + (failure?.let { " ($it)" } ?: ""))
     }
 
+    /** Whether the settings file says streamer mode is on. Read straight from the file: this runs before the settings are loaded. */
+    private fun savedStreamerMode(): Boolean = try {
+        File(filesDir, SETTINGS_FILE).useLines { lines -> lines.any { it.trim() == "streamerMode=1" } }
+    } catch (e: IOException) {
+        false   // no file yet: the defaults hold
+    }
+
     /** Removes the notification and ends the service. */
     private fun leaveForeground() {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -314,9 +330,10 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
 
     override fun onStreamerModeChanged(enabled: Boolean) {
         mainHandler.post {
+            streamerMode = enabled
             overlay?.setStreamerMode(enabled)
             if (running) {
-                showForegroundNotification(streamerMode = enabled)
+                showForegroundNotification()
             }
         }
     }
@@ -334,7 +351,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
      * mode its small icon is empty: the system never lets a foreground service's notification out of the
      * status bar, so what shows there must be nothing, or a recording that includes the status bar would show AimBuddy.
      */
-    private fun showForegroundNotification(streamerMode: Boolean = false) {
+    private fun showForegroundNotification() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW)
