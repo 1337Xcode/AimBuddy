@@ -39,6 +39,8 @@ namespace std {
  * requests to the part that owns the decision.
  */
 
+extern "C" bool IsZoneEditorOpen();   // renderer/imgui_menu.cpp
+
 namespace {
 
 using aimbuddy::Settings;
@@ -75,7 +77,8 @@ aimbuddy::AimLoopConfig makeAimLoopConfig() {
     const float displayHeight = geometry.isValid() ? static_cast<float>(geometry.screenHeight) : 0.0f;
 
     aimbuddy::AimLoopConfig config;
-    config.enabled = settings.assistEnabled;
+    // While the player moves the touch area on screen, the assist stays out of the way.
+    config.enabled = settings.assistEnabled && !IsZoneEditorOpen();
     config.aim.zone = static_cast<aimbuddy::AimZone>(settings.aimZone);
     config.aim.strength = settings.aimStrength;
     config.aim.fovRadiusPx = settings.aimFovRadius;

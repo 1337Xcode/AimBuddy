@@ -1,6 +1,7 @@
 package com.aimbuddy
 
 import android.content.Context
+import android.content.res.AssetManager
 import android.graphics.SurfaceTexture
 import android.opengl.EGL14
 import android.opengl.EGLConfig
@@ -38,7 +39,8 @@ class OverlayView(context: Context) : TextureView(context), TextureView.SurfaceT
 
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
         Log.i(TAG, "Surface available: ${width}x$height")
-        renderer = RenderThread(surface, width, height).also { it.start() }
+        renderer = RenderThread(surface, width, height, context.assets, context.resources.displayMetrics.density)
+            .also { it.start() }
     }
 
     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
@@ -101,6 +103,8 @@ private class RenderThread(
     private val texture: SurfaceTexture,
     private val width: Int,
     private val height: Int,
+    private val assets: AssetManager,
+    private val density: Float,
 ) : Thread("aimbuddy-overlay-gl") {
 
     private val tasks = ConcurrentLinkedQueue<Runnable>()
@@ -121,7 +125,7 @@ private class RenderThread(
         var egl: EglSession? = null
         try {
             egl = EglSession(texture)
-            OverlayNative.attach(width, height)
+            OverlayNative.attach(assets, width, height, density)
             while (!quitting) {
                 while (true) {
                     (tasks.poll() ?: break).run()

@@ -1,44 +1,23 @@
-# ImGui font assets (optional)
+# Fonts used by the in-game menu
 
-This folder is empty on purpose. CJK rendering does not require any file
-here on a modern Android device.
+The overlay menu draws its text with fonts that ship in the app, so it looks the same on every phone and never
+depends on what the phone's maker installed (the system Chinese font on recent Android cannot be read by the
+font engine the menu uses, which used to leave the menu blank).
 
-## How CJK loading works
+| File | What it is | Licence |
+| --- | --- | --- |
+| `Geist-Regular.ttf` | Geist by Vercel: Latin and Cyrillic text | SIL OFL 1.1 (`Geist-OFL.txt`) |
+| `NotoSansSC-Subset.ttf` | Noto Sans SC reduced to the characters the Chinese texts use | SIL OFL 1.1 (`NotoSansSC-OFL.txt`) |
 
-At startup the overlay tries to load a CJK font in this order:
+## Adding or changing Chinese text
 
-1. **System fonts** (works on every modern Android with no APK changes):
-   - `/system/fonts/NotoSansCJK-Regular.ttc`
-   - `/system/fonts/NotoSerifCJK-Regular.ttc`
-   - `/system/fonts/DroidSansFallback.ttf`
-   - `/system/fonts/NotoSansSC-Regular.otf`
-   - `/system/fonts/MiSans-Regular.ttf` (Xiaomi)
-   - `/system/fonts/HarmonyOS_Sans_SC.ttf` (HarmonyOS)
-   - `/product/fonts/NotoSansCJK-Regular.ttc`
-2. **Bundled fallback in this folder**:
-   - `fonts/cjk.ttf`
-   - `fonts/cjk.otf`
-   - `fonts/NotoSansSC-Regular.ttf`
-   - `fonts/NotoSansCJKsc-Regular.otf`
-
-The first match wins. Once a font is loaded the glyphs are merged on top
-of the default ImGui font, so English stays crisp and Chinese slots in
-only where the base font has no glyph.
-
-## When you would drop a font here
-
-Only if your device is missing the system-bundled CJK font, which is
-extremely rare on Android 10+. To check:
+The Chinese font only has the characters that appear in `app/src/main/cpp/utils/i18n.h`. After changing those texts,
+rebuild it from the full Noto Sans SC variable font (`NotoSansSC-VF.ttf` from https://github.com/notofonts/noto-cjk):
 
 ```bash
-adb shell ls /system/fonts | grep -i cjk
+python -m fontTools.varLib.instancer NotoSansSC-VF.ttf wght=400 -o NotoSansSC-Regular-static.ttf
+python -m fontTools.subset NotoSansSC-Regular-static.ttf --text-file=chars.txt \
+  --output-file=NotoSansSC-Subset.ttf --layout-features= --no-hinting
 ```
 
-If the grep returns nothing, download `NotoSansSC-Regular.otf` from
-https://github.com/notofonts/noto-cjk, rename it to `cjk.ttf` and drop
-it here. Rebuild the APK.
-
-## License
-
-If you bundle a font, only ship one you have the right to redistribute.
-Noto Sans SC is OFL 1.1.
+where `chars.txt` holds every character that is not plain ASCII in `i18n.h`.

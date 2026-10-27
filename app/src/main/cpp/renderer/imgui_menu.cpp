@@ -9,6 +9,8 @@
  */
 
 #include <jni.h>
+#include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
 #include <GLES3/gl3.h>
 
 #include <algorithm>
@@ -48,8 +50,6 @@ constexpr int kMenuFpsCap = 90;
 // Settings are written this long after the last change, once no control is being dragged.
 constexpr double kSaveDelaySeconds = 0.35;
 
-// Size of the floating icon the menu opens beside, in pixels.
-constexpr float kIconRadius = 44.0f;
 
 bool g_contextCreated = false;      ///< The ImGui context, fonts and theme exist (made once, kept for the process's life).
 bool g_backendReady = false;        ///< The OpenGL backend is set up for the current GL context (GL thread only).
@@ -58,6 +58,7 @@ int g_windowWidth = 0;
 int g_windowHeight = 0;
 
 std::atomic<bool> g_menuVisible{false};
+std::atomic<bool> g_zoneEditing{false};   ///< The touch area editor is open. Like the menu, it makes the window take touches.
 std::atomic<uint64_t> g_frameCount{0};
 
 // Where the overlay window's top-left corner sits on the display. Game space drawing (targets, the
@@ -83,23 +84,25 @@ float g_measuredFps = 0.0f;
 // Fonts and theme
 // ---------------------------------------------------------------------------------------------
 
-/// Reads a file into memory that the font atlas will own, or returns nullptr.
-unsigned char* readFile(const char* path, size_t* size) {
-    FILE* file = std::fopen(path, "rb");
-    if (!file) {
+// Pixels per dp. The menu is laid out in dp, so it is the same physical size on every phone.
+float g_dp = 2.0f;
+
+float dp(float value) { return value * g_dp; }
+
+// Size of the menu's text, in dp.
+constexpr float kFontDp = 15.0f;
+
+/// Reads a file that ships inside the app into memory that the font atlas will own, or returns nullptr.
+unsigned char* readAsset(AAssetManager* assets, const char* name, size_t* size) {
+    AAsset* asset = AAssetManager_open(assets, name, AASSET_MODE_BUFFER);
+    if (asset == nullptr) {
         return nullptr;
     }
-    std::fseek(file, 0, SEEK_END);
-    const long length = std::ftell(file);
-    std::fseek(file, 0, SEEK_SET);
-    if (length <= 0) {
-        std::fclose(file);
-        return nullptr;
-    }
-    unsigned char* buffer = static_cast<unsigned char*>(IM_ALLOC(static_cast<size_t>(length)));
-    const size_t got = buffer ? std::fread(buffer, 1, static_cast<size_t>(length), file) : 0;
-    std::fclose(file);
-    if (got != static_cast<size_t>(length)) {
+    const off_t length = AAsset_getLength(asset);
+    unsigned char* buffer = length > 0 ? static_cast<unsigned char*>(IM_ALLOC(static_cast<size_t>(length))) : nullptr;
+    const int got = buffer != nullptr ? AAsset_read(asset, buffer, static_cast<size_t>(length)) : -1;
+    AAsset_close(asset);
+    if (buffer == nullptr || got != length) {
         IM_FREE(buffer);
         return nullptr;
     }
@@ -107,88 +110,122 @@ unsigned char* readFile(const char* path, size_t* size) {
     return buffer;
 }
 
-/// Adds the first readable font among `paths` to the atlas, for the glyphs in `ranges`. `merge` puts them in the previous font.
-bool addFont(const char* const* paths, int count, float pixelSize, const ImWchar* ranges, bool merge) {
-    ImGuiIO& io = ImGui::GetIO();
-    for (int i = 0; i < count; ++i) {
-        size_t size = 0;
-        unsigned char* data = readFile(paths[i], &size);
-        if (!data) {
-            continue;
-        }
-        ImFontConfig config;
-        config.FontDataOwnedByAtlas = true;
-        config.MergeMode = merge;
-        config.PixelSnapH = true;
-        if (io.Fonts->AddFontFromMemoryTTF(data, static_cast<int>(size), pixelSize, &config, ranges)) {
-            LOGI("Menu font: %s", paths[i]);
-            return true;
-        }
+/// Adds a font that ships in the app to the atlas. `merge` puts its glyphs into the previous font. Returns false if it is missing.
+bool addFont(AAssetManager* assets, const char* name, float pixelSize, bool merge) {
+    size_t size = 0;
+    unsigned char* data = readAsset(assets, name, &size);
+    if (data == nullptr) {
+        return false;
     }
-    return false;
+    ImFontConfig config;
+    config.FontDataOwnedByAtlas = true;
+    config.MergeMode = merge;
+    config.PixelSnapH = true;
+    if (ImGui::GetIO().Fonts->AddFontFromMemoryTTF(data, static_cast<int>(size), pixelSize, &config) == nullptr) {
+        IM_FREE(data);
+        return false;
+    }
+    return true;
 }
 
 /**
- * Builds the menu's font: a Latin and Cyrillic base with Chinese added where needed. Every phone
- * ships fonts for all of these, so none has to be bundled.
+ * Builds the menu's font from fonts that ship in the app: Geist for Latin and Cyrillic, and a small
+ * Noto Sans SC with just the characters the Chinese texts use. They are bundled because the fonts
+ * a phone carries differ by maker and by Android version, and some of them cannot be read by the
+ * font engine (the system Chinese font on recent Android is one), which left the menu blank.
+ * Glyphs are made when first drawn, so nothing is built for characters that are never shown.
  */
-void loadFonts(float pixelSize) {
-    ImGuiIO& io = ImGui::GetIO();
-
-    static const char* const kBaseFonts[] = {
-        "/system/fonts/Roboto-Regular.ttf",
-        "/system/fonts/RobotoStatic-Regular.ttf",
-        "/system/fonts/NotoSans-Regular.ttf",
-        "/system/fonts/DroidSans.ttf",
-    };
-    static const char* const kChineseFonts[] = {
-        "/system/fonts/NotoSansCJK-Regular.ttc",
-        "/system/fonts/NotoSerifCJK-Regular.ttc",
-        "/system/fonts/DroidSansFallback.ttf",
-        "/system/fonts/NotoSansSC-Regular.otf",
-        "/system/fonts/MiSans-Regular.ttf",
-        "/system/fonts/HarmonyOS_Sans_SC.ttf",
-        "/product/fonts/NotoSansCJK-Regular.ttc",
-    };
-
-    static ImVector<ImWchar> baseRanges;
-    ImFontGlyphRangesBuilder builder;
-    builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
-    builder.AddRanges(io.Fonts->GetGlyphRangesCyrillic());
-    builder.BuildRanges(&baseRanges);
-
-    if (!addFont(kBaseFonts, 4, pixelSize, baseRanges.Data, false)) {
-        io.Fonts->AddFontDefault();   // Latin only, but always there
-        LOGW("No system font with Latin and Cyrillic glyphs; using ImGui's built-in font");
+void loadFonts(AAssetManager* assets, float pixelSize) {
+    if (!addFont(assets, "fonts/Geist-Regular.ttf", pixelSize, false)) {
+        LOGW("The menu font is missing from the app; using ImGui's built-in font (Latin only)");
+        ImGui::GetIO().Fonts->AddFontDefault();
+        return;
     }
-    if (!addFont(kChineseFonts, 7, pixelSize, io.Fonts->GetGlyphRangesChineseSimplifiedCommon(), true)) {
-        LOGI("No Chinese font on this device; Chinese text will show as boxes");
+    if (!addFont(assets, "fonts/NotoSansSC-Subset.ttf", pixelSize, true)) {
+        LOGW("The Chinese font is missing from the app; Chinese text will show as boxes");
     }
 }
 
+/// A colour from its 0xRRGGBB value and an opacity.
+ImVec4 rgb(uint32_t value, float alpha = 1.0f) {
+    return ImVec4(static_cast<float>((value >> 16) & 0xFF) / 255.0f, static_cast<float>((value >> 8) & 0xFF) / 255.0f,
+                  static_cast<float>(value & 0xFF) / 255.0f, alpha);
+}
+
+/// The menu's look: one dark surface, one blue accent, soft corners, and controls sized for a finger.
 void applyTheme() {
     ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 8.0f;
-    style.FrameRounding = 4.0f;
-    style.GrabRounding = 4.0f;
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.08f, 0.08f, 0.12f, 0.97f);
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.9f, 0.2f, 0.3f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.95f, 0.3f, 0.4f, 1.0f);
-    style.Colors[ImGuiCol_Button] = ImVec4(0.15f, 0.6f, 0.45f, 1.0f);
-    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.2f, 0.7f, 0.55f, 1.0f);
-    style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.9f, 0.3f, 0.4f, 1.0f);
-    style.Colors[ImGuiCol_CheckMark] = ImVec4(0.2f, 0.9f, 0.5f, 1.0f);
-    style.Colors[ImGuiCol_Header] = ImVec4(0.2f, 0.2f, 0.3f, 1.0f);
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.3f, 0.3f, 0.4f, 1.0f);
+    style = ImGuiStyle();
+    ImGui::StyleColorsDark(&style);
 
-    // Scale for fingers rather than a mouse.
-    style.ScaleAllSizes(1.15f);
-    style.WindowPadding = ImVec2(16.0f, 14.0f);
-    style.FramePadding = ImVec2(10.0f, 8.0f);
-    style.ItemSpacing = ImVec2(10.0f, 10.0f);
-    style.ItemInnerSpacing = ImVec2(8.0f, 6.0f);
+    const ImVec4 background = rgb(0x0F1218, 0.98f);
+    const ImVec4 surface = rgb(0x171C24);
+    const ImVec4 raised = rgb(0x222935);
+    const ImVec4 raisedHover = rgb(0x2B3444);
+    const ImVec4 accent = rgb(0x6EA8FF);
+    const ImVec4 accentSoft = rgb(0x6EA8FF, 0.28f);
+    const ImVec4 text = rgb(0xE6EAF0);
+    const ImVec4 textDim = rgb(0x8B95A5);
+    const ImVec4 hairline = rgb(0xFFFFFF, 0.08f);
+    const ImVec4 clear = rgb(0x000000, 0.0f);
+
+    ImVec4* colors = style.Colors;
+    colors[ImGuiCol_Text] = text;
+    colors[ImGuiCol_TextDisabled] = textDim;
+    colors[ImGuiCol_WindowBg] = background;
+    colors[ImGuiCol_ChildBg] = clear;
+    colors[ImGuiCol_PopupBg] = surface;
+    colors[ImGuiCol_Border] = hairline;
+    colors[ImGuiCol_FrameBg] = raised;
+    colors[ImGuiCol_FrameBgHovered] = raisedHover;
+    colors[ImGuiCol_FrameBgActive] = raisedHover;
+    colors[ImGuiCol_TitleBg] = background;
+    colors[ImGuiCol_TitleBgActive] = background;
+    colors[ImGuiCol_TitleBgCollapsed] = background;
+    colors[ImGuiCol_ScrollbarBg] = clear;
+    colors[ImGuiCol_ScrollbarGrab] = raisedHover;
+    colors[ImGuiCol_ScrollbarGrabHovered] = accentSoft;
+    colors[ImGuiCol_ScrollbarGrabActive] = accent;
+    colors[ImGuiCol_CheckMark] = accent;
+    colors[ImGuiCol_SliderGrab] = accent;
+    colors[ImGuiCol_SliderGrabActive] = rgb(0x9DC2FF);
+    colors[ImGuiCol_Button] = raised;
+    colors[ImGuiCol_ButtonHovered] = raisedHover;
+    colors[ImGuiCol_ButtonActive] = accentSoft;
+    colors[ImGuiCol_Header] = raised;
+    colors[ImGuiCol_HeaderHovered] = raisedHover;
+    colors[ImGuiCol_HeaderActive] = accentSoft;
+    colors[ImGuiCol_Separator] = hairline;
+    colors[ImGuiCol_Tab] = clear;
+    colors[ImGuiCol_TabHovered] = raisedHover;
+    colors[ImGuiCol_TabSelected] = raised;
+    colors[ImGuiCol_TabSelectedOverline] = accent;
+    colors[ImGuiCol_TabDimmed] = clear;
+    colors[ImGuiCol_TabDimmedSelected] = raised;
+    colors[ImGuiCol_TabDimmedSelectedOverline] = accent;
+    colors[ImGuiCol_ResizeGrip] = clear;
+    colors[ImGuiCol_ResizeGripHovered] = accentSoft;
+    colors[ImGuiCol_ResizeGripActive] = accent;
+
+    style.WindowRounding = dp(14.0f);
+    style.ChildRounding = dp(10.0f);
+    style.PopupRounding = dp(12.0f);
+    style.FrameRounding = dp(10.0f);
+    style.GrabRounding = dp(10.0f);
+    style.ScrollbarRounding = dp(10.0f);
+    style.TabRounding = dp(10.0f);
+    style.WindowPadding = ImVec2(dp(16.0f), dp(14.0f));
+    style.FramePadding = ImVec2(dp(12.0f), dp(9.0f));
+    style.ItemSpacing = ImVec2(dp(12.0f), dp(10.0f));
+    style.ItemInnerSpacing = ImVec2(dp(8.0f), dp(6.0f));
+    style.IndentSpacing = dp(16.0f);
+    style.ScrollbarSize = dp(10.0f);
+    style.GrabMinSize = dp(22.0f);
     style.WindowBorderSize = 1.0f;
-    style.ScrollbarSize = 18.0f;
+    style.FrameBorderSize = 0.0f;
+    style.TabBarBorderSize = 0.0f;
+    style.SeparatorTextBorderSize = 1.0f;
+    style.WindowTitleAlign = ImVec2(0.0f, 0.5f);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -262,8 +299,9 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
         }
     }
 
-    // Where the assist's finger rests, so the player can keep their own thumb away from it.
-    if (settings.assistEnabled && settings.showAnchor) {
+    // Where the assist's finger rests, so the player can keep their own thumb away from it. The
+    // editor draws the area itself while it is open.
+    if (settings.assistEnabled && settings.showAnchor && !g_zoneEditing.load(std::memory_order_relaxed)) {
         const ImVec2 anchor(settings.anchorX * displayWidth - origin.x, settings.anchorY * displayHeight - origin.y);
         const int alpha = static_cast<int>(255.0f * settings.anchorOpacity);
         list->AddCircleFilled(anchor, settings.anchorRadius, IM_COL32(120, 200, 255, alpha / 4), 64);
@@ -347,6 +385,26 @@ void feedTouchToImGui() {
     }
 }
 
+/// Keeps what a finger does on the menu for feedTouchToImGui() to show to ImGui, in order.
+void queueImGuiDown(float x, float y) {
+    g_touchSteps.push_back({TouchStep::Kind::kMove, x, y});
+    g_touchSteps.push_back({TouchStep::Kind::kPress, x, y});
+}
+
+void queueImGuiMove(float x, float y) {
+    // Several moves between two frames collapse into the last.
+    if (!g_touchSteps.empty() && g_touchSteps.back().kind == TouchStep::Kind::kMove) {
+        g_touchSteps.back() = {TouchStep::Kind::kMove, x, y};
+    } else {
+        g_touchSteps.push_back({TouchStep::Kind::kMove, x, y});
+    }
+}
+
+void queueImGuiUp(float x, float y) {
+    g_touchSteps.push_back({TouchStep::Kind::kRelease, x, y});
+    g_touchSteps.push_back({TouchStep::Kind::kLeave, x, y});
+}
+
 /// Forgets the finger, so a press that was cut short (the menu closed) cannot stay down for next time.
 void resetTouch() {
     if (!g_pressShown && g_touchSteps.empty()) {
@@ -359,6 +417,183 @@ void resetTouch() {
     }
     g_touchSteps.clear();
     io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The touch area editor
+// ---------------------------------------------------------------------------------------------
+
+// The touch area is the circle where the assist's finger rests. The editor lets the player drag it
+// to move it and drag the dot on its rim to resize it. While it is open the window takes every
+// touch and the assist is paused, so the player's finger and the assist's never meet.
+
+constexpr float kZoneHandleSlope = 0.70710678f;   // the dot sits at the lower right of the circle
+
+float zoneHandleRadius() { return dp(9.0f); }       // the dot on the rim
+float zoneHandleGrabRadius() { return dp(26.0f); }  // how near a finger must land to take the dot
+
+/// Half the width of the floating icon the menu opens beside, in pixels (the icon is 44 dp wide).
+float iconHalf() { return dp(22.0f); }
+
+/// What the finger that is down took hold of.
+enum class Grab { kNone, kToolbar, kMove, kResize };
+
+Grab g_grab = Grab::kNone;                           ///< GL thread only.
+ImVec2 g_grabOffset = ImVec2(0.0f, 0.0f);            ///< From the finger to the area's centre while moving.
+float g_toolbarRect[4] = {0.0f, 0.0f, 0.0f, 0.0f};   ///< The editor's buttons as drawn last: left, top, right, bottom.
+
+/// The size of the display the detector and the assist work in, in pixels.
+ImVec2 displayExtent() {
+    const aimbuddy::CaptureGeometry geometry = aimbuddy::pipeline().capture().geometry();
+    if (geometry.isValid()) {
+        return ImVec2(static_cast<float>(geometry.screenWidth), static_cast<float>(geometry.screenHeight));
+    }
+    return ImVec2(static_cast<float>(g_windowWidth), static_cast<float>(g_windowHeight));
+}
+
+/// Where the touch area is, in overlay window pixels.
+struct ZoneGeometry {
+    ImVec2 centre;
+    float radius;
+    ImVec2 handle;
+};
+
+ZoneGeometry zoneGeometry(const Settings& settings, const ImVec2& origin) {
+    const ImVec2 extent = displayExtent();
+    ZoneGeometry zone;
+    zone.centre = ImVec2(settings.anchorX * extent.x - origin.x, settings.anchorY * extent.y - origin.y);
+    zone.radius = settings.anchorRadius;
+    zone.handle = ImVec2(zone.centre.x + zone.radius * kZoneHandleSlope, zone.centre.y + zone.radius * kZoneHandleSlope);
+    return zone;
+}
+
+float distanceBetween(const ImVec2& a, const ImVec2& b) { return std::hypot(a.x - b.x, a.y - b.y); }
+
+bool insideRect(const float rect[4], float x, float y) {
+    return x >= rect[0] && y >= rect[1] && x <= rect[2] && y <= rect[3];
+}
+
+/// Puts the touch area back where it starts.
+void resetZone(Settings& settings) {
+    const Settings defaults;
+    settings.anchorX = defaults.anchorX;
+    settings.anchorY = defaults.anchorY;
+    settings.anchorRadius = defaults.anchorRadius;
+}
+
+/// Closes the menu and opens the editor in its place.
+void openZoneEditor() {
+    g_menuVisible.store(false, std::memory_order_relaxed);
+    g_zoneEditing.store(true, std::memory_order_relaxed);
+    g_grab = Grab::kNone;
+    resetTouch();
+}
+
+/// Draws the area, the dot that resizes it, and the small panel with Done and Reset.
+void drawZoneEditor(const Settings& settings, const ImVec2& origin) {
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    const ImVec2 windowSize = ImGui::GetIO().DisplaySize;
+    list->AddRectFilled(ImVec2(0.0f, 0.0f), windowSize, IM_COL32(0, 0, 0, 110));   // dim the game so the area stands out
+
+    const ZoneGeometry zone = zoneGeometry(settings, origin);
+    const ImU32 accent = IM_COL32(120, 200, 255, 255);
+    list->AddCircleFilled(zone.centre, zone.radius, IM_COL32(120, 200, 255, 46), 96);
+    list->AddCircle(zone.centre, zone.radius, accent, 96, dp(1.6f));
+    const float arm = dp(7.0f);
+    list->AddLine(ImVec2(zone.centre.x - arm, zone.centre.y), ImVec2(zone.centre.x + arm, zone.centre.y), accent, dp(1.0f));
+    list->AddLine(ImVec2(zone.centre.x, zone.centre.y - arm), ImVec2(zone.centre.x, zone.centre.y + arm), accent, dp(1.0f));
+    list->AddCircleFilled(zone.handle, zoneHandleRadius(), accent);
+    list->AddCircle(zone.handle, zoneHandleRadius(), IM_COL32(255, 255, 255, 255), 24, dp(1.6f));
+
+    char size[32];
+    std::snprintf(size, sizeof(size), "%.0f px", zone.radius);
+    const ImVec2 sizeText = ImGui::CalcTextSize(size);
+    list->AddText(ImVec2(zone.centre.x - sizeText.x * 0.5f, zone.centre.y + arm + 6.0f), IM_COL32(255, 255, 255, 255), size);
+
+    ImGui::SetNextWindowPos(ImVec2(windowSize.x * 0.5f, dp(12.0f)), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize |
+                                   ImGuiWindowFlags_NoTitleBar;
+    if (ImGui::Begin("##ZoneEditor", nullptr, flags)) {
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + std::min(dp(280.0f), windowSize.x - dp(40.0f)));
+        ImGui::TextUnformatted(T(Key::ZoneEditorHint));
+        ImGui::PopTextWrapPos();
+        if (ImGui::Button(T(Key::Done), ImVec2(dp(84.0f), 0.0f))) {
+            g_zoneEditing.store(false, std::memory_order_relaxed);
+            g_menuVisible.store(true, std::memory_order_relaxed);
+            g_grab = Grab::kNone;
+            resetTouch();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(T(Key::ResetTouchArea))) {
+            Settings edited = settings;
+            resetZone(edited);
+            aimbuddy::settingsStore().set(edited);
+        }
+        const ImVec2 position = ImGui::GetWindowPos();
+        const ImVec2 extent = ImGui::GetWindowSize();
+        g_toolbarRect[0] = position.x;
+        g_toolbarRect[1] = position.y;
+        g_toolbarRect[2] = position.x + extent.x;
+        g_toolbarRect[3] = position.y + extent.y;
+    }
+    ImGui::End();
+}
+
+/// Moves the area so that its centre keeps the same distance from the finger.
+void moveZoneTo(const ImVec2& finger, const ImVec2& origin) {
+    const ImVec2 extent = displayExtent();
+    Settings settings = aimbuddy::settingsStore().get();
+    settings.anchorX = (finger.x + g_grabOffset.x + origin.x) / extent.x;
+    settings.anchorY = (finger.y + g_grabOffset.y + origin.y) / extent.y;
+    aimbuddy::settingsStore().set(settings);   // keeps the area inside its allowed range
+}
+
+/// Sets the radius to the distance from the area's centre to the finger.
+void resizeZoneTo(const ImVec2& finger, const ImVec2& origin) {
+    Settings settings = aimbuddy::settingsStore().get();
+    const ZoneGeometry zone = zoneGeometry(settings, origin);
+    settings.anchorRadius = distanceBetween(finger, zone.centre);
+    aimbuddy::settingsStore().set(settings);
+}
+
+/// Handles a touch while the editor is open: the panel's buttons go to ImGui, the rest moves or resizes the area.
+bool handleZoneTouch(int action, float x, float y) {
+    const ImVec2 finger(x, y);
+    const ImVec2 origin(static_cast<float>(g_overlayOriginX.load(std::memory_order_relaxed)),
+                        static_cast<float>(g_overlayOriginY.load(std::memory_order_relaxed)));
+    if (action == 0) {   // finger down: take hold of whatever is under it
+        g_grab = Grab::kNone;
+        if (insideRect(g_toolbarRect, x, y)) {
+            g_grab = Grab::kToolbar;
+            queueImGuiDown(x, y);
+            return true;
+        }
+        const ZoneGeometry zone = zoneGeometry(aimbuddy::settingsStore().get(), origin);
+        if (distanceBetween(finger, zone.handle) <= zoneHandleGrabRadius()) {
+            g_grab = Grab::kResize;
+        } else if (distanceBetween(finger, zone.centre) <= zone.radius) {
+            g_grab = Grab::kMove;
+            g_grabOffset = ImVec2(zone.centre.x - x, zone.centre.y - y);
+        }
+        return true;
+    }
+    // The finger keeps what it took hold of until it lifts, wherever it travels.
+    if (action == 2) {
+        if (g_grab == Grab::kToolbar) {
+            queueImGuiMove(x, y);
+        } else if (g_grab == Grab::kMove) {
+            moveZoneTo(finger, origin);
+        } else if (g_grab == Grab::kResize) {
+            resizeZoneTo(finger, origin);
+        }
+        return true;
+    }
+    if (g_grab == Grab::kToolbar) {
+        queueImGuiUp(x, y);
+    }
+    g_grab = Grab::kNone;
+    return true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -447,20 +682,41 @@ bool drawAimTab(Settings& s) {
     changed |= ImGui::Checkbox(T(Key::InvertVertical), &s.invertY);
 
     ImGui::SeparatorText(T(Key::TouchAreaTitle));
-    changed |= ImGui::SliderFloat(T(Key::AnchorX), &s.anchorX, 0.5f, 0.95f, "%.2f");
-    changed |= ImGui::SliderFloat(T(Key::AnchorY), &s.anchorY, 0.2f, 0.8f, "%.2f");
-    changed |= ImGui::SliderFloat(T(Key::AnchorSize), &s.anchorRadius, 50.0f, 400.0f, "%.0f px");
+    if (ImGui::Button(T(Key::MoveTouchArea))) {
+        openZoneEditor();
+    }
+    ImGui::SameLine();
     if (ImGui::Button(T(Key::ResetTouchArea))) {
-        const Settings defaults;
-        s.anchorX = defaults.anchorX;
-        s.anchorY = defaults.anchorY;
-        s.anchorRadius = defaults.anchorRadius;
+        resetZone(s);
         changed = true;
+    }
+    if (ImGui::CollapsingHeader(T(Key::FineTune))) {
+        changed |= ImGui::SliderFloat(T(Key::AnchorX), &s.anchorX, 0.05f, 0.95f, "%.2f");
+        changed |= ImGui::SliderFloat(T(Key::AnchorY), &s.anchorY, 0.05f, 0.95f, "%.2f");
+        changed |= ImGui::SliderFloat(T(Key::AnchorSize), &s.anchorRadius, 50.0f, 500.0f, "%.0f px");
     }
     return changed;
 }
 
-void drawInfoTab(int bodyCount) {
+/// Resets everything but the language to how it starts, once the button has been pressed twice.
+bool drawResetAllButton(Settings& s) {
+    static double armedUntil = 0.0;   // while ImGui's clock is before this, the next press confirms
+    const bool armed = ImGui::GetTime() < armedUntil;
+    if (!ImGui::Button(armed ? T(Key::ResetAllConfirm) : T(Key::ResetAllSettings))) {
+        return false;
+    }
+    if (!armed) {
+        armedUntil = ImGui::GetTime() + 4.0;
+        return false;
+    }
+    armedUntil = 0.0;
+    const int language = s.language;
+    s = Settings();
+    s.language = language;
+    return true;
+}
+
+bool drawInfoTab(Settings& s, int bodyCount) {
     const aimbuddy::DetectionPipeline::Stats stats = aimbuddy::pipeline().stats();
     ImGui::TextUnformatted(T(Key::InfoTitle));
     ImGui::TextUnformatted(T(Key::InfoVersion));
@@ -472,28 +728,30 @@ void drawInfoTab(int bodyCount) {
     ImGui::TextDisabled("github.com/1337XCode/AimBuddy");
     ImGui::Separator();
     ImGui::TextWrapped("%s", T(Key::InfoTip));
+    ImGui::Spacing();
+    return drawResetAllButton(s);
 }
 
 /// Draws the menu beside the floating icon. Returns true if a setting changed.
 bool drawMenu(Settings& settings, int bodyCount) {
     const ImVec2 windowSize = ImGui::GetIO().DisplaySize;
     if (!g_menuWasVisible || g_menuSize.x <= 0.0f || g_menuSize.y <= 0.0f) {
-        g_menuSize = ImVec2(std::max(460.0f, std::min(windowSize.x * 0.48f, 860.0f)),
-                            std::max(560.0f, std::min(windowSize.y * 0.92f, 1060.0f)));
+        g_menuSize = ImVec2(std::max(dp(300.0f), std::min(windowSize.x * 0.46f, dp(440.0f))),
+                            std::max(dp(280.0f), std::min(windowSize.y * 0.90f, dp(560.0f))));
     }
     const float iconX = g_iconX.load(std::memory_order_relaxed);
     const float iconY = g_iconY.load(std::memory_order_relaxed);
-    float x = iconX + kIconRadius + 52.0f;
+    float x = iconX + iconHalf() + dp(14.0f);
     float y = iconY - g_menuSize.y * 0.5f;
     if (x + g_menuSize.x > windowSize.x) {
-        x = iconX - kIconRadius - 52.0f - g_menuSize.x;
+        x = iconX - iconHalf() - dp(14.0f) - g_menuSize.x;
     }
     x = std::max(4.0f, std::min(x, windowSize.x - g_menuSize.x - 4.0f));
     y = std::max(4.0f, std::min(y, windowSize.y - g_menuSize.y - 4.0f));
 
     ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
     ImGui::SetNextWindowSize(g_menuSize, ImGuiCond_Appearing);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(420.0f, 460.0f), ImVec2(windowSize.x - 8.0f, windowSize.y - 8.0f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(dp(280.0f), dp(240.0f)), ImVec2(windowSize.x - dp(4.0f), windowSize.y - dp(4.0f)));
 
     bool changed = false;
     bool open = true;
@@ -517,13 +775,13 @@ bool drawMenu(Settings& settings, int bodyCount) {
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem(T(Key::TabInfo))) {
-                drawInfoTab(bodyCount);
+                changed |= drawInfoTab(settings, bodyCount);
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
         }
         ImGui::EndChild();
-        if (ImGui::Button(T(Key::Close), ImVec2(160.0f, 0.0f))) {
+        if (ImGui::Button(T(Key::Close), ImVec2(dp(84.0f), 0.0f))) {
             open = false;
         }
         ImGui::SameLine();
@@ -587,9 +845,11 @@ float limitFrameRate() {
  * made once and kept; the OpenGL backend, which holds objects of one GL context, is set up again.
  */
 extern "C" JNIEXPORT void JNICALL
-Java_com_aimbuddy_OverlayNative_attach(JNIEnv* /* env */, jclass /* clazz */, jint width, jint height) {
+Java_com_aimbuddy_OverlayNative_attach(JNIEnv* env, jclass /* clazz */, jobject assetManager, jint width, jint height,
+                                       jfloat density) {
     g_windowWidth = width;
     g_windowHeight = height;
+    g_dp = density > 0.0f ? density : 2.0f;
     LOGI("Overlay window: %dx%d", g_windowWidth, g_windowHeight);
 
     if (!g_contextCreated) {
@@ -599,7 +859,7 @@ Java_com_aimbuddy_OverlayNative_attach(JNIEnv* /* env */, jclass /* clazz */, ji
         io.IniFilename = nullptr;
         io.ConfigFlags |= ImGuiConfigFlags_IsTouchScreen;
         io.ConfigWindowsMoveFromTitleBarOnly = true;
-        loadFonts(20.0f);   // before the backend, which builds the atlas
+        loadFonts(AAssetManager_fromJava(env, assetManager), dp(kFontDp));
         applyTheme();
         g_contextCreated = true;
     }
@@ -665,7 +925,10 @@ Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */)
         int bodyCount = 0;
         drawGameOverlay(settings, origin, &bodyCount);
 
-        if (g_menuVisible.load(std::memory_order_relaxed)) {
+        if (g_zoneEditing.load(std::memory_order_relaxed)) {
+            drawZoneEditor(settings, origin);
+            g_menuWasVisible = false;
+        } else if (g_menuVisible.load(std::memory_order_relaxed)) {
             Settings edited = settings;
             if (drawMenu(edited, bodyCount)) {
                 aimbuddy::settingsStore().set(edited);
@@ -704,31 +967,28 @@ Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */)
  */
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_aimbuddy_OverlayNative_touch(JNIEnv* /* env */, jclass /* clazz */, jint action, jfloat x, jfloat y) {
-    if (!g_imguiReady.load(std::memory_order_acquire) || !g_menuVisible.load(std::memory_order_relaxed)) {
+    if (!g_imguiReady.load(std::memory_order_acquire)) {
         return JNI_FALSE;
     }
-    using Kind = TouchStep::Kind;
+    if (g_zoneEditing.load(std::memory_order_relaxed)) {
+        return handleZoneTouch(action, x, y) ? JNI_TRUE : JNI_FALSE;
+    }
+    if (!g_menuVisible.load(std::memory_order_relaxed)) {
+        return JNI_FALSE;
+    }
     switch (action) {
-        case 0: {   // finger down
-            const bool insideMenu = x >= g_menuRect[0] && y >= g_menuRect[1] && x <= g_menuRect[2] && y <= g_menuRect[3];
-            if (!insideMenu) {
+        case 0:   // finger down: outside the menu it closes it
+            if (!insideRect(g_menuRect, x, y)) {
                 g_menuVisible.store(false, std::memory_order_relaxed);
                 return JNI_TRUE;
             }
-            g_touchSteps.push_back({Kind::kMove, x, y});
-            g_touchSteps.push_back({Kind::kPress, x, y});
+            queueImGuiDown(x, y);
             break;
-        }
-        case 2:   // finger moved; several moves between two frames collapse into the last
-            if (!g_touchSteps.empty() && g_touchSteps.back().kind == Kind::kMove) {
-                g_touchSteps.back() = {Kind::kMove, x, y};
-            } else {
-                g_touchSteps.push_back({Kind::kMove, x, y});
-            }
+        case 2:   // finger moved
+            queueImGuiMove(x, y);
             break;
         default:  // finger up or cancelled
-            g_touchSteps.push_back({Kind::kRelease, x, y});
-            g_touchSteps.push_back({Kind::kLeave, x, y});
+            queueImGuiUp(x, y);
             break;
     }
     return JNI_TRUE;
@@ -737,13 +997,21 @@ Java_com_aimbuddy_OverlayNative_touch(JNIEnv* /* env */, jclass /* clazz */, jin
 /// Whether the overlay window should be touchable: only while the menu is open.
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_aimbuddy_OverlayNative_wantsTouches(JNIEnv* /* env */, jclass /* clazz */) {
-    return g_menuVisible.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
+    const bool wanted = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed);
+    return wanted ? JNI_TRUE : JNI_FALSE;
 }
 
+/// Opens the menu, or closes everything that takes touches (the menu and the touch area editor).
 extern "C" JNIEXPORT void JNICALL
 Java_com_aimbuddy_OverlayNative_showMenu(JNIEnv* /* env */, jclass /* clazz */, jboolean visible) {
     g_menuVisible.store(visible == JNI_TRUE, std::memory_order_relaxed);
+    if (visible != JNI_TRUE) {
+        g_zoneEditing.store(false, std::memory_order_relaxed);
+    }
 }
+
+/// Whether the touch area editor is open, so the assist can be paused while the player moves the area.
+extern "C" bool IsZoneEditorOpen() { return g_zoneEditing.load(std::memory_order_relaxed); }
 
 /// How many frames the overlay has drawn, so Kotlin can tell a stuck renderer from a working one.
 extern "C" JNIEXPORT jlong JNICALL
@@ -753,8 +1021,9 @@ Java_com_aimbuddy_OverlayNative_framesDrawn(JNIEnv* /* env */, jclass /* clazz *
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_aimbuddy_OverlayNative_setIconPosition(JNIEnv* /* env */, jclass /* clazz */, jfloat x, jfloat y) {
-    g_iconX.store(x + kIconRadius * 0.5f, std::memory_order_relaxed);
-    g_iconY.store(y + kIconRadius * 0.5f, std::memory_order_relaxed);
+    // Kotlin gives the icon's top-left corner; the menu opens beside its centre.
+    g_iconX.store(x + iconHalf(), std::memory_order_relaxed);
+    g_iconY.store(y + iconHalf(), std::memory_order_relaxed);
 }
 
 /**
@@ -765,6 +1034,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_aimbuddy_OverlayNative_detach(JNIEnv* /* env */, jclass /* clazz */) {
     g_imguiReady.store(false, std::memory_order_release);
     g_menuVisible.store(false, std::memory_order_relaxed);
+    g_zoneEditing.store(false, std::memory_order_relaxed);
     resetTouch();
     if (g_backendReady) {
         ImGui_ImplOpenGL3_Shutdown();

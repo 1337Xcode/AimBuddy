@@ -107,6 +107,10 @@ enum class Key : int {
     AnchorY,
     AnchorSize,
     ResetTouchArea,
+    MoveTouchArea,
+    FineTune,
+    ZoneEditorHint,
+    Done,
 
     // Info tab
     InfoTitle,
@@ -117,6 +121,8 @@ enum class Key : int {
     InfoTargets,
     InfoScreen,
     InfoTip,
+    ResetAllSettings,
+    ResetAllConfirm,
 
     Count,
 };
@@ -182,6 +188,12 @@ inline const char* kTranslations[static_cast<int>(Key::Count)][static_cast<int>(
     /* AnchorY */              {"Position down", "垂直位置", "Позиция по вертикали"},
     /* AnchorSize */           {"Size", "大小", "Размер"},
     /* ResetTouchArea */       {"Reset touch area", "重置触控区域", "Сбросить зону касания"},
+    /* MoveTouchArea */        {"Move or resize on screen", "在屏幕上移动或调整大小", "Переместить или изменить размер на экране"},
+    /* FineTune */             {"Fine tune", "微调", "Точная настройка"},
+    /* ZoneEditorHint */       {"Drag the circle to move it. Drag the dot to resize it.",
+                                "拖动圆圈来移动,拖动圆点来调整大小。",
+                                "Перетащите круг, чтобы переместить. Перетащите точку, чтобы изменить размер."},
+    /* Done */                 {"Done", "完成", "Готово"},
 
     /* InfoTitle */            {"AimBuddy (open source)", "AimBuddy(开源)", "AimBuddy (открытый код)"},
     /* InfoVersion */          {"Version: " AIMBUDDY_VERSION, "版本: " AIMBUDDY_VERSION, "Версия: " AIMBUDDY_VERSION},
@@ -193,6 +205,8 @@ inline const char* kTranslations[static_cast<int>(Key::Count)][static_cast<int>(
     /* InfoTip */              {"Tip: start with the defaults, then change one setting at a time.",
                                 "提示:先使用默认设置,再逐项调整。",
                                 "Совет: начните с настроек по умолчанию и меняйте по одной."},
+    /* ResetAllSettings */     {"Reset all settings", "重置所有设置", "Сбросить все настройки"},
+    /* ResetAllConfirm */      {"Tap again to reset", "再次点击以重置", "Нажмите ещё раз для сброса"},
 };
 
 /// The text for a key in the current language; English when that language has none.

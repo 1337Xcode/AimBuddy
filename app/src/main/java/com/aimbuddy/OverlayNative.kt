@@ -1,5 +1,7 @@
 package com.aimbuddy
 
+import android.content.res.AssetManager
+
 /**
  * The native half of the overlay: draws the targets and the settings menu with ImGui (see
  * imgui_menu.cpp). The window and the OpenGL context belong to [OverlayView].
@@ -13,9 +15,12 @@ object OverlayNative {
         System.loadLibrary("esp_native")
     }
 
-    /** Starts drawing into the current OpenGL context, for a surface of this size. GL thread. */
+    /**
+     * Starts drawing into the current OpenGL context, for a surface of this size. `assets` holds the
+     * fonts and `density` is the screen's pixels per dp, which the menu's sizes follow. GL thread.
+     */
     @JvmStatic
-    external fun attach(width: Int, height: Int)
+    external fun attach(assets: AssetManager, width: Int, height: Int, density: Float)
 
     /** The surface changed size. GL thread. */
     @JvmStatic
