@@ -10,9 +10,8 @@ Pipeline:
   5. Hash-split dataset/train/ into train/valid/test
   6. Validate dataset
   7. Train at imgsz=640 with strong augmentations
-  8. Export NCNN at runtime_imgsz=256 (FP16)
-  9. Copy to app/src/main/assets/models/
- 10. Active-learning sweep -> outputs/review/uncertain/
+  8. Export NCNN at runtime_imgsz=256 (FP16)  -> outputs/export/{model.param,model.bin,model.json}
+  9. Active-learning sweep -> outputs/review/uncertain/
 
 Each step writes a checkpoint to outputs/reports/automate_state.json so
 re-running the script resumes from the last failure point.

@@ -13,7 +13,7 @@ echo   3. Mine negatives from raw_frames\negatives\ (optional)
 echo   4. Hash-split train/valid/test (80/15/5, no leakage)
 echo   5. Validate dataset
 echo   6. Train (imgsz=640, mosaic+mixup+copy-paste)
-echo   7. Export NCNN at imgsz=256 (FP16) -^> app assets
+echo   7. Export NCNN at imgsz=256 (FP16) -^> outputs\export\
 echo   8. Active-learning sweep -^> outputs\review\uncertain\
 echo.
 echo State is checkpointed at each step; re-run to resume.
@@ -43,7 +43,6 @@ if %RC% EQU 0 (
   echo - Reports:        training\outputs\reports
   echo - Weights:        training\outputs\runs\detect\train\weights\best.pt
   echo - NCNN model:     training\outputs\export
-  echo - Deployed to:    app\src\main\assets\models
   echo - Next-iter pool: training\outputs\review\uncertain
 ) else (
   echo.

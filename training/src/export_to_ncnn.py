@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 
@@ -14,6 +15,26 @@ try:
 except ImportError:
     print("ERROR: ultralytics not installed. Run scripts/01_setup_environment.bat first.")
     raise SystemExit(2)
+
+
+def write_model_description(path: Path, input_size: int) -> None:
+    """Writes the model.json the app and the model store read, unless one is already there.
+
+    The pipeline trains one class (an enemy), so the description says so. The title, description and
+    author are for the person who publishes the model: the store refuses a model without an author.
+    """
+    if path.exists():
+        print(f"Kept the existing {path.name}; raise its version if the model's files changed")
+        return
+    description = {
+        "title": "Custom model",
+        "description": "Trained with the AimBuddy training pipeline.",
+        "author": "",
+        "version": 1,
+        "roles": ["body"],
+        "inputSize": input_size,
+    }
+    path.write_text(json.dumps(description, indent=2) + "\n", encoding="utf-8")
 
 
 def run_export(config_path: Path | None = None, weights: Path | None = None) -> int:
@@ -32,8 +53,6 @@ def run_export(config_path: Path | None = None, weights: Path | None = None) -> 
 
     export_dir = cfg.paths.output_dir / "export"
     export_dir.mkdir(parents=True, exist_ok=True)
-    assets_dir = cfg.paths.app_assets_models_dir
-    assets_dir.mkdir(parents=True, exist_ok=True)
 
     # Export at the runtime imgsz, NOT the training imgsz. We train at 640
     # (to learn small/distant targets) but deploy at 256 for mobile latency.
@@ -62,17 +81,16 @@ def run_export(config_path: Path | None = None, weights: Path | None = None) -> 
     param_src = param_files[0]
     bin_src = bin_files[0]
 
-    param_dst = export_dir / "yolo26n-opt.param"
-    bin_dst = export_dir / "yolo26n-opt.bin"
+    # The names the app's Models screen and the model store use for a model's files.
+    param_dst = export_dir / "model.param"
+    bin_dst = export_dir / "model.bin"
 
     shutil.copy2(param_src, param_dst)
     shutil.copy2(bin_src, bin_dst)
+    write_model_description(export_dir / "model.json", export_imgsz)
 
-    shutil.copy2(param_dst, assets_dir / param_dst.name)
-    shutil.copy2(bin_dst, assets_dir / bin_dst.name)
-
-    print(f"Export complete: {param_dst} and {bin_dst}")
-    print(f"Copied to app assets: {assets_dir}")
+    print(f"Export complete: {param_dst}, {bin_dst} and {export_dir / 'model.json'}")
+    print("To try it, import the .param and .bin on the phone (Models, Import). To publish it, see model/README.md.")
     return 0
 
 

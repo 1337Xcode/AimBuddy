@@ -14,7 +14,6 @@ class TrainingPaths:
     videos_dir: Path
     raw_frames_dir: Path
     output_dir: Path
-    app_assets_models_dir: Path
     base_model: Path
 
 
@@ -103,7 +102,6 @@ def load_config(config_path: Path | None = None) -> TrainingConfig:
         videos_dir=(root_dir / parser.get("paths", "videos_dir", fallback="videos")).resolve(),
         raw_frames_dir=(root_dir / parser.get("paths", "raw_frames_dir", fallback="raw_frames")).resolve(),
         output_dir=(root_dir / parser.get("paths", "output_dir", fallback="outputs")).resolve(),
-        app_assets_models_dir=(root_dir / parser.get("paths", "app_assets_models_dir", fallback="../app/src/main/assets/models")).resolve(),
         base_model=(root_dir / parser.get("paths", "base_model", fallback="yolo26n.pt")).resolve(),
     )
 

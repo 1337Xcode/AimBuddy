@@ -23,7 +23,6 @@ def ensure_workspace_structure(cfg: TrainingConfig) -> None:
     cfg.paths.dataset_dir.mkdir(parents=True, exist_ok=True)
     cfg.paths.videos_dir.mkdir(parents=True, exist_ok=True)
     cfg.paths.raw_frames_dir.mkdir(parents=True, exist_ok=True)
-    cfg.paths.app_assets_models_dir.mkdir(parents=True, exist_ok=True)
 
     for split in ("train", "valid", "test"):
         (cfg.paths.dataset_dir / split / "images").mkdir(parents=True, exist_ok=True)
