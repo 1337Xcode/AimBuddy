@@ -25,7 +25,9 @@ import com.aimbuddy.update.UpdateInfo
 import com.aimbuddy.update.UpdateProblem
 import com.aimbuddy.update.UpdateState
 import com.aimbuddy.update.UpdateStatus
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -188,7 +190,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         UpdateState.set(UpdateStatus.Checking)
-        viewModelScope.launch {
+        work.launch {
             val result = withContext(Dispatchers.IO) { runCatching { updater.findUpdate() } }
             result.exceptionOrNull()?.let { Log.w(TAG, "The update check failed: ${it.message}", it) }
             UpdateState.set(
@@ -208,7 +210,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             else -> return
         }
         UpdateState.set(UpdateStatus.Downloading(info, 0f))
-        viewModelScope.launch {
+        work.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { updater.download(info) { progress -> UpdateState.set(UpdateStatus.Downloading(info, progress)) } }
             }
@@ -227,7 +229,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Hands a downloaded update to the system's installer. */
     fun installUpdate(ready: UpdateStatus.ReadyToInstall) {
         UpdateState.set(UpdateStatus.Installing(ready.info))
-        viewModelScope.launch {
+        work.launch {
             val result = withContext(Dispatchers.IO) { runCatching { updater.install(ready.file) } }
             result.exceptionOrNull()?.let {
                 Log.w(TAG, "The update could not be handed to the installer: ${it.message}", it)
@@ -339,7 +341,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val wasInUse = _models.value.activeId == model.id
         val isNew = _models.value.installedVersion(model.id) == null
         _models.update { it.copy(busyId = model.id, progress = 0f) }
-        viewModelScope.launch {
+        work.launch {
             val installed = withContext(Dispatchers.IO) {
                 runCatching {
                     val id = catalog.sanitizeModelId(model.id)
@@ -382,7 +384,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val paramUri = pendingParam ?: return
         pendingParam = null
         val name = pendingName
-        viewModelScope.launch {
+        work.launch {
             val installed = withContext(Dispatchers.IO) {
                 runCatching {
                     val id = catalog.sanitizeModelId("local-$name-${System.currentTimeMillis()}")
@@ -457,6 +459,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private companion object {
+        /**
+         * Where work runs that has to finish even when the screen is closed halfway: checking for an
+         * update, downloading, installing and importing. Their results go into state that outlives
+         * the screen (the update state, the catalog), so none of them is left half done.
+         */
+        val work = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
         const val TAG = "AppViewModel"
         const val PREFS_NAME = "aimbuddy_prefs"
         const val KEY_THEME_MODE = "theme_mode"
