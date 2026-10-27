@@ -1,5 +1,10 @@
+#include <atomic>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "settings/settings_store.h"
 #include "test_harness.h"
@@ -100,6 +105,57 @@ TEST(store_writes_and_reads_a_file) {
     CHECK_NEAR(reader.get().aimFovRadius, 333.0, 1e-4);
     CHECK(!reader.hasUnsavedChanges());
     std::remove(path.c_str());
+}
+
+TEST(saves_from_several_threads_never_leave_half_a_file) {
+    const std::string path = std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/tmp") + "/aimbuddy-settings-race.cfg";
+    std::remove(path.c_str());
+    SettingsStore store;
+    store.saveIfChanged(path);   // nothing changed yet, so nothing is written
+    Settings first = store.get();
+    first.language = 1;
+    store.set(first);
+    CHECK(store.saveIfChanged(path));
+
+    std::atomic<bool> writing{true};
+    std::atomic<int> halfFiles{0};
+    std::thread reader([&] {
+        while (writing.load()) {
+            std::ifstream file(path);
+            std::stringstream text;
+            text << file.rdbuf();
+            // The last setting in the file is the language: a file that stops short lacks it.
+            if (text.str().find("language=") == std::string::npos) {
+                ++halfFiles;
+            }
+        }
+    });
+    std::vector<std::thread> writers;
+    for (int writer = 0; writer < 3; ++writer) {
+        writers.emplace_back([&, writer] {
+            for (int round = 0; round < 300; ++round) {
+                Settings settings = store.get();
+                settings.aimStrength = 0.1f + 0.001f * static_cast<float>(round + writer);
+                store.set(settings);
+                store.saveIfChanged(path);
+            }
+        });
+    }
+    for (std::thread& thread : writers) {
+        thread.join();
+    }
+    writing = false;
+    reader.join();
+
+    CHECK(halfFiles.load() == 0);
+    std::remove(path.c_str());   // a host whose rename does not replace a file (Windows) needs the way cleared
+    store.set(store.get());
+    CHECK(store.saveIfChanged(path));
+    SettingsStore reloaded;
+    CHECK(reloaded.load(path));
+    CHECK(reloaded.get().language == 1);
+    std::remove(path.c_str());
+    std::remove((path + ".tmp").c_str());
 }
 
 TEST(a_single_setting_can_be_changed_by_its_file_name) {

@@ -232,6 +232,7 @@ bool SettingsStore::hasUnsavedChanges(int64_t* changedAtNs) const {
 }
 
 bool SettingsStore::saveIfChanged(const std::string& path) {
+    std::lock_guard<std::mutex> saving(saveMutex_);
     std::string text;
     {
         std::lock_guard<std::mutex> lock(mutex_);

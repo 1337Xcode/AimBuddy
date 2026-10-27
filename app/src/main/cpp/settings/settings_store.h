@@ -43,6 +43,7 @@ public:
 
 private:
     mutable std::mutex mutex_;
+    std::mutex saveMutex_;   ///< One save at a time, so two never write the same temporary file.
     Settings settings_;
     bool dirty_ = false;
     int64_t changedAtNs_ = 0;
