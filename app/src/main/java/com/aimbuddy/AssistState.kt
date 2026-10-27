@@ -15,6 +15,9 @@ object AssistState {
 
     enum class Phase { IDLE, STARTING, RUNNING, STOPPING }
 
+    /** Why a run ended when it was not the player's choice. The screen turns each into a sentence. */
+    enum class Failure { CAPTURE_DENIED, OVERLAY_DENIED, MODEL_FAILED, START_FAILED, CAPTURE_ENDED }
+
     /** How the touch helper, which adds the assist's finger to the touchscreen, is doing. */
     sealed interface Touch {
         /** Not started, or the assist has not been asked for. */
@@ -28,15 +31,11 @@ object AssistState {
         data class Unavailable(val reason: Int, val detail: String) : Touch
     }
 
-    /**
-     * One reading of the state. `message` says in a few words why the assist is in this phase, and
-     * `failed` marks an end that was not the player's choice, so the screen can show it as a problem.
-     */
+    /** One reading of the state. */
     data class Snapshot(
         val phase: Phase = Phase.IDLE,
-        val message: String = "Ready",
+        val failure: Failure? = null,
         val touch: Touch = Touch.Off,
-        val failed: Boolean = false,
     ) {
         val isActive: Boolean get() = phase == Phase.STARTING || phase == Phase.RUNNING
     }
@@ -44,8 +43,7 @@ object AssistState {
     private val mutable = MutableStateFlow(Snapshot())
     val state: StateFlow<Snapshot> = mutable.asStateFlow()
 
-    fun set(phase: Phase, message: String, failed: Boolean = false) =
-        mutable.update { it.copy(phase = phase, message = message, failed = failed) }
+    fun set(phase: Phase, failure: Failure? = null) = mutable.update { it.copy(phase = phase, failure = failure) }
 
     fun setTouch(touch: Touch) = mutable.update { it.copy(touch = touch) }
 }

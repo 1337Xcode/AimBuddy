@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AimBuddy</string>
+
+    <!-- 主页 -->
+    <string name="status_ready">就绪</string>
+    <string name="status_starting">正在启动</string>
+    <string name="status_running">运行中</string>
+    <string name="status_stopping">正在停止</string>
+    <string name="status_failed">无法启动</string>
+    <string name="hint_ready">点按“开始”,然后切换到游戏。</string>
+    <string name="hint_starting">正在准备。</string>
+    <string name="hint_running_assist">目标已高亮,瞄准辅助已就绪。</string>
+    <string name="hint_running_no_assist">目标已高亮。瞄准辅助需要 Shizuku 或 root。</string>
+    <string name="hint_connecting">目标已高亮。正在连接瞄准辅助。</string>
+    <string name="hint_stopping">正在归还触摸屏。</string>
+    <string name="action_start">开始</string>
+    <string name="action_stop">停止</string>
+    <string name="row_model">模型</string>
+    <string name="row_touch_access">触控方式</string>
+    <string name="row_settings">设置</string>
+    <string name="touch_shizuku">Shizuku</string>
+    <string name="touch_root">Root</string>
+    <string name="touch_not_set_up">未设置</string>
+    <string name="touch_dialog_title">瞄准辅助需要更多权限</string>
+    <string name="touch_dialog_message">AimBuddy 可以独自高亮目标。要移动你的准星,它会在触摸屏上加一根手指,这需要 Shizuku 或 root。</string>
+    <string name="touch_dialog_open_shizuku">打开 Shizuku</string>
+    <string name="open_source">免费开源</string>
+
+    <!-- 启动流程 -->
+    <string name="overlay_title">允许显示在其他应用上层</string>
+    <string name="overlay_message">AimBuddy 需要绘制在游戏之上。请在列表中找到 AimBuddy 并开启,然后返回并点按“开始”。</string>
+    <string name="overlay_open_settings">打开设置</string>
+    <string name="capture_denied">未允许屏幕录制。</string>
+    <string name="overlay_denied">未允许显示在其他应用上层。</string>
+    <string name="model_failed">无法加载检测模型。</string>
+    <string name="start_failed">AimBuddy 无法启动。</string>
+    <string name="capture_ended">屏幕录制已结束。</string>
+    <string name="shizuku_ask">请在 Shizuku 的请求中允许 AimBuddy。</string>
+    <string name="shizuku_denied">未允许 Shizuku。目标仍会高亮。</string>
+    <string name="dialog_cancel">取消</string>
+    <string name="dialog_close">关闭</string>
+
+    <!-- 模型 -->
+    <string name="models_title">模型</string>
+    <string name="models_installed">已安装</string>
+    <string name="models_store">商店</string>
+    <string name="models_import">导入</string>
+    <string name="models_in_use">使用中</string>
+    <string name="models_use">使用</string>
+    <string name="models_get">获取</string>
+    <string name="models_delete">删除</string>
+    <string name="models_built_in">内置</string>
+    <string name="models_from_store">来自商店</string>
+    <string name="models_from_file">来自文件</string>
+    <string name="models_installed_label">已安装</string>
+    <string name="models_loading">正在加载模型</string>
+    <string name="models_store_error">无法连接商店。</string>
+    <string name="models_store_empty">暂无模型。</string>
+    <string name="models_retry">重试</string>
+    <string name="models_delete_title">删除此模型?</string>
+    <string name="models_delete_message">将从此手机移除“%1$s”。</string>
+    <string name="models_next_start">下次点按“开始”时生效。</string>
+    <string name="models_import_hint">先选择 .param 文件,再选择对应的 .bin 文件。</string>
+    <string name="models_import_failed">无法导入该模型。</string>
+    <string name="models_none_installed">尚未安装模型。</string>
+    <string name="models_missing_bundled">此版本没有内置模型。请从商店获取。</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_overlay">悬浮层</string>
+    <string name="settings_aim">瞄准辅助</string>
+    <string name="settings_touch">触控</string>
+    <string name="settings_app">应用</string>
+    <string name="s_box_color">方框颜色</string>
+    <string name="s_box_thickness">线条粗细</string>
+    <string name="s_labels">置信度标签</string>
+    <string name="s_aim_point">瞄准点</string>
+    <string name="s_count">目标数量</string>
+    <string name="s_snap_line">指向最近目标的线</string>
+    <string name="s_performance">性能读数</string>
+    <string name="s_confidence">检测置信度</string>
+    <string name="s_zone">检测区域</string>
+    <string name="s_aim_at">瞄准部位</string>
+    <string name="s_head">头部</string>
+    <string name="s_chest">胸部</string>
+    <string name="s_centre">中心</string>
+    <string name="s_strength">强度</string>
+    <string name="s_reach">范围</string>
+    <string name="s_prefer">选择目标</string>
+    <string name="s_nearest">靠近准星</string>
+    <string name="s_largest">最大</string>
+    <string name="s_certain">最可信</string>
+    <string name="s_sensitivity">视角灵敏度</string>
+    <string name="s_delay">响应延迟</string>
+    <string name="s_invert">反转垂直方向</string>
+    <string name="s_calibration_footer">这两项对应游戏对手指的反应。数值不对会让准星冲过头或爬行。</string>
+    <string name="s_access">触控方式</string>
+    <string name="s_automatic">自动</string>
+    <string name="s_touch_area">触控区域</string>
+    <string name="s_touch_area_footer">AimBuddy 运行时,可在游戏内菜单中移动和调整它的大小。</string>
+    <string name="s_language">语言</string>
+    <string name="s_appearance">外观</string>
+    <string name="s_system">跟随系统</string>
+    <string name="s_dark">深色</string>
+    <string name="s_light">浅色</string>
+    <string name="s_accent">强调色</string>
+    <string name="s_streamer">录屏时隐藏悬浮层</string>
+    <string name="s_streamer_footer">让悬浮层不出现在截图和直播中,也不会进入 AimBuddy 分析的画面。</string>
+    <string name="s_reset">重置所有设置</string>
+    <string name="s_reset_title">重置所有设置?</string>
+    <string name="s_reset_message">所有内容都会恢复初始状态。语言保持不变。</string>
+    <string name="s_reset_confirm">重置</string>
+    <string name="color_red">红色</string>
+    <string name="color_orange">橙色</string>
+    <string name="color_yellow">黄色</string>
+    <string name="color_green">绿色</string>
+    <string name="color_cyan">青色</string>
+    <string name="color_blue">蓝色</string>
+    <string name="color_purple">紫色</string>
+    <string name="color_pink">粉色</string>
+    <string name="color_white">白色</string>
+    <string name="color_indigo">靛蓝</string>
+    <string name="color_graphite">石墨</string>
+    <string name="back">返回</string>
+    <string name="more">更多</string>
+
+    <!-- 通知 -->
+    <string name="notification_channel">AimBuddy</string>
+    <string name="notification_title">AimBuddy 正在运行</string>
+    <string name="notification_text">点按打开。随时可用“停止”结束。</string>
+    <string name="notification_stop">停止</string>
+
+    <!-- 首次运行 -->
+    <string name="notice_title">免费开源</string>
+    <string name="notice_message">AimBuddy 不收费。如果你花钱买了它,说明你被骗了。</string>
+    <string name="notice_open_github">打开 GitHub</string>
+    <string name="notice_dismiss">知道了</string>
+    <string name="no_browser">找不到浏览器。</string>
+</resources>

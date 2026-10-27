@@ -66,7 +66,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         when (intent?.action) {
             ACTION_START -> startRun(intent)
             ACTION_STOP -> {
-                shutdown("Stopped")
+                shutdown()
                 stopSelf()   // also covers a stop that reaches a service which was not running
             }
         }
@@ -74,7 +74,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     }
 
     override fun onDestroy() {
-        shutdown("Stopped")
+        shutdown()
         worker.shutdownNow()
         super.onDestroy()
     }
@@ -91,17 +91,17 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
             return
         }
         running = true
-        AssistState.set(AssistState.Phase.STARTING, "Starting")
+        AssistState.set(AssistState.Phase.STARTING)
         AssistState.setTouch(AssistState.Touch.Off)
 
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
         val resultData = intent.getParcelableExtraCompat<Intent>(EXTRA_RESULT_DATA)
         if (resultData == null) {
-            fail("Screen capture was not allowed.")
+            fail(AssistState.Failure.CAPTURE_DENIED, "Screen capture was not allowed")
             return
         }
         if (!Settings.canDrawOverlays(this)) {
-            fail("The 'display over other apps' permission is needed.")
+            fail(AssistState.Failure.OVERLAY_DENIED, "The display over other apps permission is missing")
             return
         }
 
@@ -116,14 +116,14 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
                     return@post
                 }
                 if (!loaded) {
-                    fail("The detection model could not be loaded. Check the model files.")
+                    fail(AssistState.Failure.MODEL_FAILED, "The detection model could not be loaded")
                     return@post
                 }
                 try {
                     beginCapture(resultCode, resultData)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to start: ${e.message}", e)
-                    fail("Could not start: ${e.message}")
+                    fail(AssistState.Failure.START_FAILED, "Could not start: ${e.message}")
                 }
             }
         }
@@ -163,7 +163,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         val shape = readDisplayShape()
         val session = try {
             CaptureSession(projection, resources.displayMetrics.densityDpi) {
-                mainHandler.post { shutdown("Screen capture ended") }
+                mainHandler.post { shutdown(AssistState.Failure.CAPTURE_ENDED) }
             }
         } catch (e: Exception) {
             projection.stop()   // nothing owns the projection yet, so it would otherwise stay shared
@@ -178,7 +178,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
             throw IllegalStateException("The detector would not start")
         }
 
-        val controller = OverlayController(this) { mainHandler.post { shutdown("Stopped") } }
+        val controller = OverlayController(this) { mainHandler.post { shutdown() } }
         overlay = controller
         controller.show(secure = false)
 
@@ -186,7 +186,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
             it.registerDisplayListener(displayListener, mainHandler)
         }
 
-        AssistState.set(AssistState.Phase.RUNNING, "Running")
+        AssistState.set(AssistState.Phase.RUNNING)
         startTouchHelper()
     }
 
@@ -213,9 +213,9 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         }
     }
 
-    private fun fail(message: String) {
-        Log.w(TAG, message)
-        shutdown(message, failed = true)
+    private fun fail(failure: AssistState.Failure, log: String) {
+        Log.w(TAG, log)
+        shutdown(failure)
     }
 
     // ---------------------------------------------------------------------------------------
@@ -259,12 +259,12 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
      * goes back to the system), then the helper, then the overlay and the capture. Each step is
      * guarded so a failure in one cannot leave the rest undone.
      */
-    private fun shutdown(message: String, failed: Boolean = false) {
+    private fun shutdown(failure: AssistState.Failure? = null) {
         if (!running && AssistState.state.value.phase == AssistState.Phase.IDLE) {
             return
         }
         running = false
-        AssistState.set(AssistState.Phase.STOPPING, "Stopping")
+        AssistState.set(AssistState.Phase.STOPPING)
 
         guarded("native stop") { NativeBridge.stop() }
         guarded("touch helper") { touchHelper?.stop() }
@@ -280,9 +280,9 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         NativeBridge.setStopListener(null)
 
         AssistState.setTouch(AssistState.Touch.Off)
-        AssistState.set(AssistState.Phase.IDLE, message, failed)
+        AssistState.set(AssistState.Phase.IDLE, failure)
         leaveForeground()
-        Log.i(TAG, "Stopped: $message")
+        Log.i(TAG, "Stopped" + (failure?.let { " ($it)" } ?: ""))
     }
 
     /** Removes the notification and ends the service. */
@@ -308,7 +308,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     }
 
     override fun onStopRequested() {
-        mainHandler.post { shutdown("Stopped") }
+        mainHandler.post { shutdown() }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -318,7 +318,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     private fun showForegroundNotification() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "AimBuddy", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW)
         )
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
@@ -327,12 +327,12 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
             this, 1, Intent(this, AssistService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE
         )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("AimBuddy is running")
-            .setContentText("Tap to open. Use Stop to end it at any time.")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(getString(R.string.notification_title))
+            .setContentText(getString(R.string.notification_text))
+            .setSmallIcon(R.drawable.ic_stat_aim)
             .setOngoing(true)
             .setContentIntent(open)
-            .addAction(0, "Stop", stop)
+            .addAction(0, getString(R.string.notification_stop), stop)
             .build()
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, foregroundType())
     }

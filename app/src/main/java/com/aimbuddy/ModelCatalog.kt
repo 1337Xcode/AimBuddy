@@ -39,8 +39,8 @@ class ModelCatalog(private val context: Context) {
         private const val KEY_ACTIVE_MODEL_ID = "active_model_id"
 
         private const val ASSET_MODEL_ID = "asset-default"
-        private const val ASSET_MODEL_TITLE = "Default Asset Model"
-        private const val ASSET_MODEL_DESCRIPTION = "Bundled with the app assets."
+        private const val ASSET_MODEL_TITLE = "AimBuddy standard"
+        private const val ASSET_MODEL_DESCRIPTION = "Built into the app."
     }
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

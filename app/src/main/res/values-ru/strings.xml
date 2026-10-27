@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AimBuddy</string>
+
+    <!-- Главный экран -->
+    <string name="status_ready">Готово</string>
+    <string name="status_starting">Запуск</string>
+    <string name="status_running">Работает</string>
+    <string name="status_stopping">Остановка</string>
+    <string name="status_failed">Не удалось запустить</string>
+    <string name="hint_ready">Нажмите «Старт», затем перейдите в игру.</string>
+    <string name="hint_starting">Подготовка.</string>
+    <string name="hint_running_assist">Цели подсвечены, помощь в прицеливании готова.</string>
+    <string name="hint_running_no_assist">Цели подсвечены. Для помощи в прицеливании нужен Shizuku или root.</string>
+    <string name="hint_connecting">Цели подсвечены. Подключаем помощь в прицеливании.</string>
+    <string name="hint_stopping">Возвращаем сенсорный экран.</string>
+    <string name="action_start">Старт</string>
+    <string name="action_stop">Стоп</string>
+    <string name="row_model">Модель</string>
+    <string name="row_touch_access">Доступ к касаниям</string>
+    <string name="row_settings">Настройки</string>
+    <string name="touch_shizuku">Shizuku</string>
+    <string name="touch_root">Root</string>
+    <string name="touch_not_set_up">Не настроено</string>
+    <string name="touch_dialog_title">Нужно больше доступа</string>
+    <string name="touch_dialog_message">AimBuddy подсвечивает цели сам. Чтобы двигать прицел, он добавляет второй палец на сенсорный экран, а для этого нужен Shizuku или root.</string>
+    <string name="touch_dialog_open_shizuku">Открыть Shizuku</string>
+    <string name="open_source">Бесплатно и с открытым кодом</string>
+
+    <!-- Запуск -->
+    <string name="overlay_title">Разрешите показ поверх других приложений</string>
+    <string name="overlay_message">AimBuddy рисует поверх игры. Найдите AimBuddy в списке, включите, затем вернитесь и нажмите «Старт».</string>
+    <string name="overlay_open_settings">Открыть настройки</string>
+    <string name="capture_denied">Запись экрана не разрешена.</string>
+    <string name="overlay_denied">Показ поверх других приложений не разрешён.</string>
+    <string name="model_failed">Не удалось загрузить модель обнаружения.</string>
+    <string name="start_failed">AimBuddy не удалось запустить.</string>
+    <string name="capture_ended">Запись экрана завершена.</string>
+    <string name="shizuku_ask">Разрешите AimBuddy в запросе Shizuku.</string>
+    <string name="shizuku_denied">Shizuku не разрешён. Цели по-прежнему подсвечиваются.</string>
+    <string name="dialog_cancel">Отмена</string>
+    <string name="dialog_close">Закрыть</string>
+
+    <!-- Модели -->
+    <string name="models_title">Модели</string>
+    <string name="models_installed">Установлены</string>
+    <string name="models_store">Магазин</string>
+    <string name="models_import">Импорт</string>
+    <string name="models_in_use">Используется</string>
+    <string name="models_use">Выбрать</string>
+    <string name="models_get">Скачать</string>
+    <string name="models_delete">Удалить</string>
+    <string name="models_built_in">Встроена</string>
+    <string name="models_from_store">Из магазина</string>
+    <string name="models_from_file">Из файла</string>
+    <string name="models_installed_label">Установлена</string>
+    <string name="models_loading">Загрузка моделей</string>
+    <string name="models_store_error">Не удаётся связаться с магазином.</string>
+    <string name="models_store_empty">Пока нет моделей.</string>
+    <string name="models_retry">Повторить</string>
+    <string name="models_delete_title">Удалить модель?</string>
+    <string name="models_delete_message">«%1$s» будет удалена с этого телефона.</string>
+    <string name="models_next_start">Будет использована при следующем нажатии «Старт».</string>
+    <string name="models_import_hint">Выберите файл .param, затем подходящий файл .bin.</string>
+    <string name="models_import_failed">Не удалось импортировать модель.</string>
+    <string name="models_none_installed">Моделей нет.</string>
+    <string name="models_missing_bundled">В этой сборке нет встроенной модели. Скачайте её в магазине.</string>
+
+    <!-- Настройки -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_overlay">Оверлей</string>
+    <string name="settings_aim">Помощь в прицеливании</string>
+    <string name="settings_touch">Касания</string>
+    <string name="settings_app">Приложение</string>
+    <string name="s_box_color">Цвет рамки</string>
+    <string name="s_box_thickness">Толщина линии</string>
+    <string name="s_labels">Подписи уверенности</string>
+    <string name="s_aim_point">Точка прицеливания</string>
+    <string name="s_count">Число целей</string>
+    <string name="s_snap_line">Линия к ближайшей цели</string>
+    <string name="s_performance">Показатели работы</string>
+    <string name="s_confidence">Уверенность обнаружения</string>
+    <string name="s_zone">Область обнаружения</string>
+    <string name="s_aim_at">Целиться в</string>
+    <string name="s_head">Голова</string>
+    <string name="s_chest">Грудь</string>
+    <string name="s_centre">Центр</string>
+    <string name="s_strength">Сила</string>
+    <string name="s_reach">Дальность</string>
+    <string name="s_prefer">Выбор цели</string>
+    <string name="s_nearest">У прицела</string>
+    <string name="s_largest">Крупная</string>
+    <string name="s_certain">Надёжная</string>
+    <string name="s_sensitivity">Чувствительность камеры</string>
+    <string name="s_delay">Задержка отклика</string>
+    <string name="s_invert">Инвертировать вертикаль</string>
+    <string name="s_calibration_footer">Эти два значения описывают, как игра реагирует на палец. Неверные значения заставляют прицел перелетать цель или ползти.</string>
+    <string name="s_access">Доступ к касаниям</string>
+    <string name="s_automatic">Автоматически</string>
+    <string name="s_touch_area">Зона касания</string>
+    <string name="s_touch_area_footer">Перемещайте и меняйте размер в меню в игре, пока AimBuddy работает.</string>
+    <string name="s_language">Язык</string>
+    <string name="s_appearance">Оформление</string>
+    <string name="s_system">Системное</string>
+    <string name="s_dark">Тёмное</string>
+    <string name="s_light">Светлое</string>
+    <string name="s_accent">Цвет акцента</string>
+    <string name="s_streamer">Скрывать оверлей при записи</string>
+    <string name="s_streamer_footer">Оверлей не попадает в скриншоты и трансляции, а также в изображение, которое анализирует AimBuddy.</string>
+    <string name="s_reset">Сбросить все настройки</string>
+    <string name="s_reset_title">Сбросить все настройки?</string>
+    <string name="s_reset_message">Всё вернётся к начальному состоянию. Язык сохранится.</string>
+    <string name="s_reset_confirm">Сбросить</string>
+    <string name="color_red">Красный</string>
+    <string name="color_orange">Оранжевый</string>
+    <string name="color_yellow">Жёлтый</string>
+    <string name="color_green">Зелёный</string>
+    <string name="color_cyan">Голубой</string>
+    <string name="color_blue">Синий</string>
+    <string name="color_purple">Фиолетовый</string>
+    <string name="color_pink">Розовый</string>
+    <string name="color_white">Белый</string>
+    <string name="color_indigo">Индиго</string>
+    <string name="color_graphite">Графитовый</string>
+    <string name="back">Назад</string>
+    <string name="more">Ещё</string>
+
+    <!-- Уведомление -->
+    <string name="notification_channel">AimBuddy</string>
+    <string name="notification_title">AimBuddy работает</string>
+    <string name="notification_text">Нажмите, чтобы открыть. «Стоп» завершает работу в любой момент.</string>
+    <string name="notification_stop">Стоп</string>
+
+    <!-- Первый запуск -->
+    <string name="notice_title">Бесплатно и с открытым кодом</string>
+    <string name="notice_message">AimBuddy ничего не стоит. Если вы за него заплатили, вас обманули.</string>
+    <string name="notice_open_github">Открыть GitHub</string>
+    <string name="notice_dismiss">Понятно</string>
+    <string name="no_browser">Браузер не найден.</string>
+</resources>

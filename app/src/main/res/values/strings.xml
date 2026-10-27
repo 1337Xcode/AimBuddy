@@ -1,4 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AimBuddy</string>
-    <string name="accessibility_service_description">High-performance touch injection for AimBuddy.</string>
+
+    <!-- Home -->
+    <string name="status_ready">Ready</string>
+    <string name="status_starting">Starting</string>
+    <string name="status_running">Running</string>
+    <string name="status_stopping">Stopping</string>
+    <string name="status_failed">Couldn\'t start</string>
+    <string name="hint_ready">Press Start, then switch to your game.</string>
+    <string name="hint_starting">Getting everything ready.</string>
+    <string name="hint_running_assist">Targets are highlighted and aim assist is ready.</string>
+    <string name="hint_running_no_assist">Targets are highlighted. Aim assist needs Shizuku or root.</string>
+    <string name="hint_connecting">Targets are highlighted. Connecting aim assist.</string>
+    <string name="hint_stopping">Giving the touchscreen back.</string>
+    <string name="action_start">Start</string>
+    <string name="action_stop">Stop</string>
+    <string name="row_model">Model</string>
+    <string name="row_touch_access">Touch access</string>
+    <string name="row_settings">Settings</string>
+    <string name="touch_shizuku">Shizuku</string>
+    <string name="touch_root">Root</string>
+    <string name="touch_not_set_up">Not set up</string>
+    <string name="touch_dialog_title">Aim assist needs more access</string>
+    <string name="touch_dialog_message">AimBuddy highlights targets on its own. To move your aim it adds a second finger to the touchscreen, and that needs Shizuku or root.</string>
+    <string name="touch_dialog_open_shizuku">Open Shizuku</string>
+    <string name="open_source">Free and open source</string>
+
+    <!-- Start flow -->
+    <string name="overlay_title">Allow display over other apps</string>
+    <string name="overlay_message">AimBuddy draws over your game. Find AimBuddy in the list, turn it on, then come back and press Start.</string>
+    <string name="overlay_open_settings">Open settings</string>
+    <string name="capture_denied">Screen capture was not allowed.</string>
+    <string name="overlay_denied">Display over other apps is not allowed.</string>
+    <string name="model_failed">The detection model could not be loaded.</string>
+    <string name="start_failed">AimBuddy could not start.</string>
+    <string name="capture_ended">Screen capture ended.</string>
+    <string name="shizuku_ask">Allow AimBuddy in the Shizuku request.</string>
+    <string name="shizuku_denied">Shizuku was not allowed. Targets are still highlighted.</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_close">Close</string>
+
+    <!-- Models -->
+    <string name="models_title">Models</string>
+    <string name="models_installed">Installed</string>
+    <string name="models_store">Store</string>
+    <string name="models_import">Import</string>
+    <string name="models_in_use">In use</string>
+    <string name="models_use">Use</string>
+    <string name="models_get">Get</string>
+    <string name="models_delete">Delete</string>
+    <string name="models_built_in">Built in</string>
+    <string name="models_from_store">From the store</string>
+    <string name="models_from_file">From a file</string>
+    <string name="models_installed_label">Installed</string>
+    <string name="models_loading">Loading models</string>
+    <string name="models_store_error">Can\'t reach the store.</string>
+    <string name="models_store_empty">No models to show yet.</string>
+    <string name="models_retry">Try again</string>
+    <string name="models_delete_title">Delete this model?</string>
+    <string name="models_delete_message">\"%1$s\" will be removed from this phone.</string>
+    <string name="models_next_start">Used the next time you press Start.</string>
+    <string name="models_import_hint">Choose the .param file, then the matching .bin file.</string>
+    <string name="models_import_failed">That model could not be imported.</string>
+    <string name="models_none_installed">No models installed.</string>
+    <string name="models_missing_bundled">This build has no built-in model. Get one from the store.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_overlay">Overlay</string>
+    <string name="settings_aim">Aim assist</string>
+    <string name="settings_touch">Touch</string>
+    <string name="settings_app">App</string>
+    <string name="s_box_color">Box color</string>
+    <string name="s_box_thickness">Line thickness</string>
+    <string name="s_labels">Confidence labels</string>
+    <string name="s_aim_point">Aim point</string>
+    <string name="s_count">Target count</string>
+    <string name="s_snap_line">Line to nearest target</string>
+    <string name="s_performance">Performance readout</string>
+    <string name="s_confidence">Detection confidence</string>
+    <string name="s_zone">Detection area</string>
+    <string name="s_aim_at">Aim at</string>
+    <string name="s_head">Head</string>
+    <string name="s_chest">Chest</string>
+    <string name="s_centre">Centre</string>
+    <string name="s_strength">Strength</string>
+    <string name="s_reach">Reach</string>
+    <string name="s_prefer">Target pick</string>
+    <string name="s_nearest">Crosshair</string>
+    <string name="s_largest">Biggest</string>
+    <string name="s_certain">Certain</string>
+    <string name="s_sensitivity">Camera sensitivity</string>
+    <string name="s_delay">Response delay</string>
+    <string name="s_invert">Invert vertical</string>
+    <string name="s_calibration_footer">These two match how your game reacts to a finger. Wrong values make the aim overshoot or crawl.</string>
+    <string name="s_access">Touch access</string>
+    <string name="s_automatic">Automatic</string>
+    <string name="s_touch_area">Touch area</string>
+    <string name="s_touch_area_footer">Move and resize it from the in-game menu while AimBuddy is running.</string>
+    <string name="s_language">Language</string>
+    <string name="s_appearance">Appearance</string>
+    <string name="s_system">System</string>
+    <string name="s_dark">Dark</string>
+    <string name="s_light">Light</string>
+    <string name="s_accent">Accent color</string>
+    <string name="s_streamer">Hide overlay from recordings</string>
+    <string name="s_streamer_footer">Keeps the overlay out of screenshots and streams. It also stays out of the picture AimBuddy analyses.</string>
+    <string name="s_reset">Reset all settings</string>
+    <string name="s_reset_title">Reset all settings?</string>
+    <string name="s_reset_message">Everything goes back to how it started. Your language stays.</string>
+    <string name="s_reset_confirm">Reset</string>
+    <string name="color_red">Red</string>
+    <string name="color_orange">Orange</string>
+    <string name="color_yellow">Yellow</string>
+    <string name="color_green">Green</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_purple">Purple</string>
+    <string name="color_pink">Pink</string>
+    <string name="color_white">White</string>
+    <string name="color_indigo">Indigo</string>
+    <string name="color_graphite">Graphite</string>
+    <string name="back">Back</string>
+    <string name="more">More</string>
+
+    <!-- Notification -->
+    <string name="notification_channel">AimBuddy</string>
+    <string name="notification_title">AimBuddy is running</string>
+    <string name="notification_text">Tap to open. Use Stop to end it at any time.</string>
+    <string name="notification_stop">Stop</string>
+
+    <!-- First run -->
+    <string name="notice_title">Free and open source</string>
+    <string name="notice_message">AimBuddy costs nothing. If you paid for it, you were scammed.</string>
+    <string name="notice_open_github">Open GitHub</string>
+    <string name="notice_dismiss">Got it</string>
+    <string name="no_browser">No browser found.</string>
 </resources>
