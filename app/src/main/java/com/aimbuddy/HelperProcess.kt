@@ -1,5 +1,6 @@
 package com.aimbuddy
 
+import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -32,6 +33,8 @@ class HelperProcess(private val process: Process) {
                     }
                     LISTENING.matchEntire(line.trim())?.let { port.complete(it.groupValues[1].toInt()) }
                 }
+            } catch (_: IOException) {
+                // The helper was stopped while this thread waited for its output: there is nothing left to read.
             } finally {
                 port.complete(NOT_LISTENING)   // the output ended: the helper is gone (no effect if it already spoke)
             }
