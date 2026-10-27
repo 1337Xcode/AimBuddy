@@ -11,6 +11,7 @@
 #include "../capture/roi_capture.h"
 #include "../core/camera_motion.h"
 #include "../core/detection_batch.h"
+#include "../core/global_motion.h"
 #include "../core/model_profile.h"
 #include "../core/tracker.h"
 #include "../detector/yolo_detector.h"
@@ -20,7 +21,9 @@ namespace aimbuddy {
 /**
  * Turns captured frames into tracked targets.
  *
- * It owns the chain  capture mailbox -> detector -> tracker  and the thread that runs it. The
+ * It owns the chain  capture mailbox -> detector -> tracker  and the thread that runs it. Before
+ * each frame is detected, how far the whole picture slid since the frame before is measured and
+ * recorded, so the tracker knows how much of a target's apparent motion was the camera's. The
  * thread always takes the newest frame, so when the phone cannot keep up the pipeline drops
  * frames instead of falling behind, and what it reports is never older than one detection.
  *
@@ -78,7 +81,7 @@ public:
 private:
     void run();
     void applyConfidenceIfChanged(float& applied);
-    void recordCameraMotion(int64_t captureNs);
+    void measureCameraMotion(const RoiFrame& frame);
     void recordStats(const DetectionBatch& batch, int64_t finishedNs);
 
     RoiCapture capture_;
@@ -86,6 +89,7 @@ private:
     Tracker tracker_;
     BatchObserver observer_;
     CameraMotion* cameraMotion_ = nullptr;
+    GlobalMotionEstimator sceneMotion_;   ///< Reads how the picture slid between frames. Pipeline thread only.
     int64_t lastFrameNs_ = 0;
     std::thread worker_;
     std::atomic<bool> running_{false};

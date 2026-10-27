@@ -49,6 +49,7 @@ void DetectionPipeline::start() {
     }
     capture_.mailbox().reopen();
     tracker_.reset();
+    sceneMotion_.reset();
     lastBatchNs_ = 0;
     lastFrameNs_ = 0;
     running_.store(true, std::memory_order_release);
@@ -76,13 +77,17 @@ void DetectionPipeline::applyConfidenceIfChanged(float& applied) {
     applied = requested;
 }
 
-void DetectionPipeline::recordCameraMotion(int64_t captureNs) {
-    if (cameraMotion_ != nullptr && lastFrameNs_ > 0) {
-        // Nothing measures the slide of the scene yet, so the record is told it is unknown and
-        // fills the gap from the assist's own moves.
-        cameraMotion_->addMeasurement(lastFrameNs_, captureNs, 0.0f, 0.0f, 0.0f);
+void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
+    if (cameraMotion_ == nullptr) {
+        return;
     }
-    lastFrameNs_ = captureNs;
+    const GlobalShift shift = sceneMotion_.push(frame.rgba.data(), frame.roi.side, frame.roi.side * 4);
+    if (lastFrameNs_ > 0 && frame.captureTimeNs > lastFrameNs_) {
+        // The measurement is in capture pixels; everything else works in screen pixels.
+        const float scale = frame.geometry.screenPerCapture();
+        cameraMotion_->addMeasurement(lastFrameNs_, frame.captureTimeNs, shift.dx * scale, shift.dy * scale, shift.quality);
+    }
+    lastFrameNs_ = frame.captureTimeNs;
 }
 
 void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishedNs) {
@@ -121,13 +126,13 @@ void DetectionPipeline::run() {
             continue;
         }
         applyConfidenceIfChanged(appliedConfidence);
+        measureCameraMotion(*frame);
         const bool detected = detector_.detect(*frame, batch);
         capture_.mailbox().endRead();  // the pixels are consumed; let the capture thread reuse the slot
         if (!detected) {
             continue;
         }
 
-        recordCameraMotion(batch.captureNs);
         tracker_.update(batch.detections, batch.count, batch.captureNs, &batch.scanned);
         if (observer_) {
             observer_(batch);

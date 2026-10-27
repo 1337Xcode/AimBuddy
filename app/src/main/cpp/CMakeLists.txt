@@ -155,6 +155,7 @@ set(ESP_SOURCES
     core/detection_decoder.cpp
     core/aim_controller.cpp
     core/camera_motion.cpp
+    core/global_motion.cpp
     core/response_estimator.cpp
     detector/yolo_detector.cpp
     pipeline/aim_loop.cpp
