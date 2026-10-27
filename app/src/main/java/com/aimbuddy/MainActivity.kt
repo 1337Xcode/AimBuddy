@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.core.os.LocaleListCompat
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aimbuddy.ui.AppViewModel
 import com.aimbuddy.ui.UiMessage
@@ -214,7 +215,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         LaunchedEffect(Unit) {
-            viewModel.installRequests.collect { beginInstall(it) }
+            // The installer opens by itself only while the player is looking at AimBuddy and the assist is off:
+            // an update replaces the app, and that must never happen under a game. Otherwise the banner offers Install.
+            viewModel.installRequests.collect {
+                if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !AssistState.state.value.isActive) {
+                    beginInstall(it)
+                }
+            }
         }
         BackHandler(enabled = screen != Screen.HOME) { screen = Screen.HOME }
 
