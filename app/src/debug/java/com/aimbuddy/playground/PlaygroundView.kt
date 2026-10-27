@@ -61,6 +61,7 @@ internal class PlaygroundView(
     private var lookTravelX = 0.0f   // how far the looking finger has moved in all, to compare with what the assist meant to do
     private var lookTravelY = 0.0f
     private var lookPointerId = -1
+    private var lookTouches = 0   // looking touches so far, to ignore the first few when asked
     private var fireHeld = false
 
     private val drawOrder = characters.sortedByDescending { it.distance }   // far ones first, so near ones are drawn over them
@@ -308,7 +309,10 @@ internal class PlaygroundView(
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val index = event.actionIndex
                 val id = event.getPointerId(index)
-                val role = roleAt(event.getX(index), event.getY(index), id)
+                var role = roleAt(event.getX(index), event.getY(index), id)
+                if (role == Role.LOOK && ++lookTouches <= config.ignoreTouches) {
+                    role = Role.IGNORED
+                }
                 pointers.put(id, Pointer(event.getX(index), event.getY(index), event.eventTime, role))
                 if (role == Role.LOOK) lookPointerId = id
                 updateFire()

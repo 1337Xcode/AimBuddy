@@ -1,5 +1,6 @@
 package com.aimbuddy
 
+import android.util.Log
 import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -25,6 +26,9 @@ class HelperProcess(private val process: Process) {
         thread(name = "aimtouch-output", isDaemon = true) {
             try {
                 process.inputStream.bufferedReader().forEachLine { line ->
+                    if (BuildConfig.DEBUG) {
+                        Log.d(TAG, line)   // the helper runs with --verbose in debug builds
+                    }
                     synchronized(lock) {
                         lines.addLast(line)
                         while (lines.size > MAX_LINES) {
@@ -59,6 +63,8 @@ class HelperProcess(private val process: Process) {
     }
 
     companion object {
+        private const val TAG = "aimtouch"
+
         /** The answer when the helper never said where it listens. */
         const val NOT_LISTENING = -1
 

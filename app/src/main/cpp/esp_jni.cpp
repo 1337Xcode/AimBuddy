@@ -145,6 +145,8 @@ void RunFingerScript(const std::string& file) {
         LOGW("Finger script: the helper never held the touchscreen");
         return;
     }
+    // The aim loop tells the helper the display's size and turn as it takes over; the path starts after that.
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
     const Settings settings = g_settingsStore.get();
     const aimbuddy::CaptureGeometry geometry = g_pipeline.capture().geometry();
     const float anchorX = settings.anchorX * static_cast<float>(geometry.screenWidth);

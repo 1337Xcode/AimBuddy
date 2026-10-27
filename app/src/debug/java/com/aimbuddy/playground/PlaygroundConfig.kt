@@ -36,6 +36,8 @@ internal data class PlaygroundConfig(
     val trace: Boolean = false,
     /** Has the assist drag its finger along a fixed path, to check what the app sees of it. Needs [assist]. */
     val fingerTest: Boolean = false,
+    /** The scene takes no notice of this many looking touches, from the first, as a game may while the screen turns. */
+    val ignoreTouches: Int = 0,
 ) {
     companion object {
         fun from(intent: Intent) = PlaygroundConfig(
@@ -52,6 +54,7 @@ internal data class PlaygroundConfig(
             assist = intent.getBooleanExtra("assist", false),
             trace = intent.getBooleanExtra("trace", false),
             fingerTest = intent.getBooleanExtra("fingerTest", false),
+            ignoreTouches = intent.getIntExtra("ignoreTouches", 0),
         )
     }
 }
