@@ -29,9 +29,9 @@ import kotlin.math.abs
  *  - Holding the icon for a moment stops AimBuddy, whatever state the menu is in.
  *  - A secure window shows as solid black in a recording, and AimBuddy's own picture of the screen is
  *    a recording too. So streamer mode never makes a window secure while the game is being played:
- *    the full screen window draws nothing and the icon is taken away, and the menu is opened from the
- *    notification instead. The full screen window is secure only while the menu is open (see
- *    [setStreamerMode]).
+ *    the full screen window draws nothing and the icon is made invisible, but it stays where it is
+ *    and works, so the player is never locked out of the menu or of stopping. The full screen window
+ *    is secure only while the menu is open (see [setStreamerMode]).
  *  - Every window is removed in [hide], which cannot fail halfway: each step is guarded.
  *
  * Use it from the main thread only.
@@ -107,9 +107,7 @@ class OverlayController(
         surfaceParams = params
 
         try {
-            if (!streamerMode) {
-                addIcon()
-            }
+            addIcon()
         } catch (e: Exception) {
             hide()
             throw e
@@ -137,9 +135,9 @@ class OverlayController(
      *
      * A secure window is drawn as solid black in a recording, so it cannot sit over the game: it
      * would black out the game and the picture AimBuddy detects targets in. So while streamer mode
-     * is on, the icon is taken away (the notification opens the menu instead), the full screen window
-     * draws nothing (see the native overlay), and that window is secure only while the menu or the
-     * touch area editor is open, which is a few moments in which the recording shows black.
+     * is on, the icon is invisible (it still opens the menu and still stops AimBuddy when held), the
+     * full screen window draws nothing (see the native overlay), and that window is secure only while
+     * the menu or the touch area editor is open, which is a few moments in which the recording shows black.
      */
     fun setStreamerMode(enabled: Boolean) {
         streamerMode = enabled
@@ -147,18 +145,7 @@ class OverlayController(
             params.flags = surfaceFlags(touchable)
             update(surface, params)
         }
-        if (!isShown) {
-            return
-        }
-        if (enabled) {
-            removeIcon()
-        } else if (icon == null) {
-            try {
-                addIcon()
-            } catch (e: Exception) {
-                Log.w(TAG, "The icon could not be shown again: ${e.message}")
-            }
-        }
+        icon?.alpha = if (enabled) 0f else 1f
     }
 
     /** Opens the menu, or closes it if it is open. */
@@ -168,8 +155,30 @@ class OverlayController(
         }
         val show = !OverlayNative.wantsTouches()
         lastFrameChangeMs = SystemClock.uptimeMillis()
-        OverlayNative.showMenu(show)
-        setTouchable(show)
+        if (show) {
+            // In streamer mode the window turns secure before the menu is drawn into it, never after...
+            setTouchable(true)
+            OverlayNative.showMenu(true)
+        } else {
+            // ...and the menu stops being drawn before the window stops being secure.
+            OverlayNative.showMenu(false)
+            setTouchable(false)
+        }
+    }
+
+    /** Brings the button back inside the display after the screen has turned or changed size. */
+    fun keepIconOnScreen() {
+        val params = iconParams ?: return
+        val bounds = windowManager.maximumWindowMetrics.bounds
+        val size = params.width
+        iconX = iconX.coerceIn(0, maxOf(0, bounds.width() - size))
+        iconY = iconY.coerceIn(0, maxOf(0, bounds.height() - size))
+        if (iconX != params.x || iconY != params.y) {
+            params.x = iconX
+            params.y = iconY
+            update(icon, params)
+            OverlayNative.setIconPosition(params.x.toFloat(), params.y.toFloat())
+        }
     }
 
     private fun overlayType(): Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -239,6 +248,8 @@ class OverlayController(
         val sizePx = (ICON_SIZE_DP * context.resources.displayMetrics.density).toInt()
         val view = StaticBubbleView(context).apply {
             contentDescription = context.getString(R.string.overlay_button_description)
+            // Invisible, not gone, in streamer mode: it still takes touches.
+            alpha = if (streamerMode) 0f else 1f
         }
         val params = WindowManager.LayoutParams(
             sizePx, sizePx, overlayType(),

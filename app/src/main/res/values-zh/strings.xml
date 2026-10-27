@@ -126,7 +126,7 @@
     <string name="s_light">浅色</string>
     <string name="s_accent">强调色</string>
     <string name="s_streamer">主播模式</string>
-    <string name="s_streamer_footer">不会在游戏画面上绘制任何内容，按钮也会隐藏。请从通知中打开菜单。瞄准辅助照常工作。</string>
+    <string name="s_streamer_footer">不会在游戏画面上绘制任何内容，按钮会变为透明但仍在原处：轻点可打开菜单，长按可停止。通知中也有“菜单”按钮。瞄准辅助照常工作。</string>
     <string name="s_reset">重置所有设置</string>
     <string name="s_reset_title">重置所有设置？</string>
     <string name="s_reset_message">所有内容都会恢复初始状态。语言保持不变。</string>

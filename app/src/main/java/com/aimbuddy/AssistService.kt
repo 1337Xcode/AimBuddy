@@ -240,6 +240,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         } catch (e: Exception) {
             Log.e(TAG, "Could not follow the display change: ${e.message}", e)
         }
+            overlay?.keepIconOnScreen()
     }
 
     private fun realDisplay(): Display =
