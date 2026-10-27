@@ -222,7 +222,7 @@ class MainActivity : AppCompatActivity() {
                         onOpenModels = { screen = Screen.MODELS },
                         onOpenSettings = { screen = Screen.SETTINGS },
                         onTouchAccess = { showTouchDialog = true },
-                        onOpenProject = { openUrl(PROJECT_URL) },
+                        onOpenProject = { openUrl(Project.URL) },
                     )
                     Screen.MODELS -> ModelsScreen(
                         state = models,
@@ -307,7 +307,7 @@ class MainActivity : AppCompatActivity() {
                 confirmButton = {
                     TextButton(onClick = {
                         dismissNotice()
-                        openUrl(PROJECT_URL)
+                        openUrl(Project.URL)
                     }) { Text(stringResource(R.string.notice_open_github)) }
                 },
                 dismissButton = {
@@ -429,7 +429,6 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         const val TAG = "MainActivity"
         const val REQUEST_SHIZUKU_PERMISSION = 2001
-        const val PROJECT_URL = "https://github.com/1337XCode/AimBuddy"
         const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         const val PREFS_NAME = "aimbuddy_prefs"
         const val PREF_NOTICE_SHOWN = "oss_notice_shown"

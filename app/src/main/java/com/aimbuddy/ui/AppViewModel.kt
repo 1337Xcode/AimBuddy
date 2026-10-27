@@ -13,6 +13,7 @@ import com.aimbuddy.ModelCatalog
 import com.aimbuddy.ModelSource
 import com.aimbuddy.ModelStoreRepository
 import com.aimbuddy.NativeBridge
+import com.aimbuddy.Project
 import com.aimbuddy.R
 import com.aimbuddy.StoreModelDefinition
 import com.aimbuddy.ui.theme.Accent
@@ -79,7 +80,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val context: Context = application
     private val catalog = ModelCatalog(application)
-    private val storeRepository = ModelStoreRepository(owner = STORE_OWNER, repo = STORE_REPO, branch = STORE_BRANCH)
+    private val storeRepository = ModelStoreRepository(owner = Project.OWNER, repo = Project.REPOSITORY, branch = Project.BRANCH)
     private val preferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _appearance = MutableStateFlow(readAppearance())
@@ -355,8 +356,5 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         const val ASSET_MODEL_PARAM = "models/yolo26n-opt.param"
         const val ASSET_MODEL_BIN = "models/yolo26n-opt.bin"
         const val SETTINGS_FILE = "settings.cfg"
-        const val STORE_OWNER = "1337Xcode"
-        const val STORE_REPO = "AimBuddy"
-        const val STORE_BRANCH = "master"
     }
 }
