@@ -70,6 +70,13 @@ class OverlayController(
         onStopRequested()
     }
 
+    // Gives the touches back to the game once the menu has had time to be cleared away (see releaseTouches).
+    private val giveTouchesBack = Runnable {
+        if (!OverlayNative.wantsTouches()) {
+            setTouchable(false)
+        }
+    }
+
     private val monitor = object : Runnable {
         override fun run() {
             syncTouchability()
@@ -119,6 +126,7 @@ class OverlayController(
     /** Removes both windows. Safe to call at any time, any number of times. */
     fun hide() {
         handler.removeCallbacks(monitor)
+        handler.removeCallbacks(giveTouchesBack)
         removeIcon()
         surface?.let {
             runCatching { OverlayNative.showMenu(false) }
@@ -157,12 +165,29 @@ class OverlayController(
         lastFrameChangeMs = SystemClock.uptimeMillis()
         if (show) {
             // In streamer mode the window turns secure before the menu is drawn into it, never after...
+            handler.removeCallbacks(giveTouchesBack)
             setTouchable(true)
             OverlayNative.showMenu(true)
         } else {
             // ...and the menu stops being drawn before the window stops being secure.
             OverlayNative.showMenu(false)
+            releaseTouches()
+        }
+    }
+
+    /**
+     * Gives the touches back to the game. In streamer mode the window is secure while it takes touches,
+     * and a recording must not catch a last frame of the menu, so the window stays secure for a few
+     * frames: long enough for the renderer to draw the cleared picture and for the system to show it.
+     */
+    private fun releaseTouches() {
+        if (!touchable) {
+            return
+        }
+        if (!streamerMode) {
             setTouchable(false)
+        } else if (!handler.hasCallbacks(giveTouchesBack)) {
+            handler.postDelayed(giveTouchesBack, SECURE_RELEASE_DELAY_MS)
         }
     }
 
@@ -241,7 +266,11 @@ class OverlayController(
             setTouchable(false)
             return
         }
-        setTouchable(wanted)
+        if (wanted) {
+            setTouchable(true)
+        } else {
+            releaseTouches()
+        }
     }
 
     private fun addIcon() {
@@ -358,6 +387,7 @@ class OverlayController(
         const val ICON_START_Y = 120
         const val MONITOR_INTERVAL_MS = 100L
         const val STALL_MS = 1500L
+        const val SECURE_RELEASE_DELAY_MS = 60L   // a few frames
         const val HOLD_TO_STOP_MS = 1500L
         const val MOVE_SLOP_PX = 10
     }
