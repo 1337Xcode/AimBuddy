@@ -1,13 +1,17 @@
 package com.aimbuddy.ui.models
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
@@ -28,10 +32,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aimbuddy.InstalledModel
 import com.aimbuddy.ModelSource
@@ -40,7 +44,6 @@ import com.aimbuddy.StoreModelDefinition
 import com.aimbuddy.ui.ModelsState
 import com.aimbuddy.ui.StoreState
 import com.aimbuddy.ui.components.Group
-import com.aimbuddy.ui.components.ListRow
 import com.aimbuddy.ui.components.PillButton
 import com.aimbuddy.ui.components.ScreenScaffold
 import com.aimbuddy.ui.components.Segmented
@@ -49,6 +52,9 @@ import com.aimbuddy.ui.components.TopAction
 import com.aimbuddy.ui.formatBytes
 import com.aimbuddy.ui.theme.AppTheme
 import com.aimbuddy.ui.theme.Space
+
+/** The size of the check, the spinner and the other small marks at the end of a row. */
+private val MarkSize = Space.l + Space.xs
 
 /**
  * The models screen: the models on the phone and the store, one tab each. A model is picked with
@@ -83,7 +89,7 @@ fun ModelsScreen(
                     imageVector = Icons.Rounded.FileOpen,
                     contentDescription = stringResource(R.string.models_import),
                     tint = AppTheme.palette.accent,
-                    modifier = Modifier.size(Space.l + Space.xs),
+                    modifier = Modifier.size(MarkSize),
                 )
             }
         },
@@ -144,6 +150,7 @@ private fun LazyStaggeredGridScope.installedTab(
     }
 }
 
+/** One model on the phone: its tile, its name, where it came from, and whether it is the one in use. */
 @Composable
 private fun InstalledRow(model: InstalledModel, active: Boolean, onUse: (String) -> Unit, onRequestDelete: (InstalledModel) -> Unit) {
     val source = when (model.source) {
@@ -152,33 +159,33 @@ private fun InstalledRow(model: InstalledModel, active: Boolean, onUse: (String)
         ModelSource.LOCAL -> stringResource(R.string.models_from_file)
     }
     val subtitle = if (model.totalSizeBytes > 0) "${formatBytes(model.totalSizeBytes)} · $source" else source
-    ListRow(
+    ModelRow(
+        id = model.id,
         title = model.title,
-        subtitle = subtitle,
+        lines = listOf(subtitle),
         onClick = if (active) null else ({ onUse(model.id) }),
-        trailing = {
-            if (active) {
+    ) {
+        if (active) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = stringResource(R.string.models_in_use),
+                tint = AppTheme.palette.accent,
+                modifier = Modifier.size(MarkSize),
+            )
+        } else {
+            SmallPill(text = stringResource(R.string.models_use), onClick = { onUse(model.id) })
+        }
+        if (model.source != ModelSource.ASSET) {
+            TopAction(onClick = { onRequestDelete(model) }) {
                 Icon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = stringResource(R.string.models_in_use),
-                    tint = AppTheme.palette.accent,
-                    modifier = Modifier.size(Space.l + Space.xs),
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = stringResource(R.string.models_delete),
+                    tint = AppTheme.palette.textDim,
+                    modifier = Modifier.size(Space.l),
                 )
-            } else {
-                SmallPill(text = stringResource(R.string.models_use), onClick = { onUse(model.id) })
             }
-            if (model.source != ModelSource.ASSET) {
-                TopAction(onClick = { onRequestDelete(model) }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = stringResource(R.string.models_delete),
-                        tint = AppTheme.palette.textDim,
-                        modifier = Modifier.size(Space.l),
-                    )
-                }
-            }
-        },
-    )
+        }
+    }
 }
 
 /** The models the project offers. */
@@ -222,26 +229,74 @@ private fun LazyStaggeredGridScope.storeTab(state: ModelsState, onGet: (StoreMod
     }
 }
 
+/** One model in the store: its tile, its name, what it is for and how big it is, and a way to get it. */
 @Composable
 private fun StoreRow(model: StoreModelDefinition, installed: Boolean, busy: Boolean, onGet: (StoreModelDefinition) -> Unit) {
     val size = if (model.totalSizeBytes > 0) formatBytes(model.totalSizeBytes) else null
-    val subtitle = listOfNotNull(model.description.takeIf { it.isNotBlank() }, size).joinToString(" · ")
-    ListRow(
+    ModelRow(
+        id = model.id,
         title = model.title,
-        subtitle = subtitle.ifBlank { null },
-        trailing = {
-            when {
-                busy -> CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 3.dp, modifier = Modifier.size(Space.l + Space.xs))
-                installed -> Icon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = stringResource(R.string.models_installed_label),
-                    tint = AppTheme.palette.textDim,
-                    modifier = Modifier.size(Space.l + Space.xs),
+        lines = listOfNotNull(model.description.takeIf { it.isNotBlank() }, size),
+    ) {
+        when {
+            busy -> CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 3.dp, modifier = Modifier.size(MarkSize))
+            installed -> Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = stringResource(R.string.models_installed_label),
+                tint = AppTheme.palette.textDim,
+                modifier = Modifier.size(MarkSize),
+            )
+            model.isDownloadable -> SmallPill(text = stringResource(R.string.models_get), onClick = { onGet(model) })
+        }
+    }
+}
+
+/**
+ * The row both lists use: a tile, a title with up to two short lines under it, and what the player
+ * can do with the model at the end. The row can be tapped when [onClick] is given.
+ */
+@Composable
+private fun ModelRow(
+    id: String,
+    title: String,
+    lines: List<String>,
+    onClick: (() -> Unit)? = null,
+    trailing: @Composable () -> Unit,
+) {
+    val clickable = if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(clickable)
+            .heightIn(min = Space.xxl + Space.m)
+            .padding(horizontal = Space.l, vertical = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ModelIcon(id = id, title = title)
+        Spacer(Modifier.width(Space.m))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = AppTheme.palette.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            lines.forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppTheme.palette.textDim,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                model.isDownloadable -> SmallPill(text = stringResource(R.string.models_get), onClick = { onGet(model) })
             }
-        },
-    )
+        }
+        Spacer(Modifier.width(Space.m))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+            trailing()
+        }
+    }
 }
 
 /** A short centered sentence for a list with nothing in it. */
