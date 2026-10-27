@@ -216,6 +216,9 @@ public:
     CameraMotion& camera() { return motion_; }
     AimController& controller() { return controller_; }
 
+    /// The controller's clock, in nanoseconds, at `seconds` into a run.
+    static int64_t clockAt(float seconds) { return (static_cast<int64_t>(std::llround(seconds * 1000.0f)) + kStartMs) * kMs; }
+
 private:
     static constexpr float kCrosshairX = 1200.0f;
     static constexpr float kCrosshairY = 540.0f;

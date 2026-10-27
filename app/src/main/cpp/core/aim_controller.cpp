@@ -88,6 +88,9 @@ constexpr float kGiveUpForgetS = 30.0f;
 constexpr float kSamePlaceBoxShare = 0.5f;
 constexpr float kSameBoxAreaFactor = 2.5f;
 
+/// A box given up on stays out of the picture this long after the assist is willing to try it again.
+constexpr int64_t kDecoyHiddenExtraNs = 5'000'000'000;
+
 /// A finger is given this long to show an effect before the game is judged to be ignoring it, and
 /// only the most recent stretch of this length is looked at (the records of moves and slides are short).
 constexpr float kAnswerWithinS = 1.4f;
@@ -310,10 +313,10 @@ bool AimController::isGivenUp(const TrackView& view, int64_t nowNs) const {
 
 bool AimController::isDecoy(const TrackView& view, int64_t nowNs) const {
     // Past the wait the assist may try the box again, but the box has not become a person: it stays hidden
-    // until the entry is forgotten, and a new giving up renews it.
+    // a few seconds longer, and a new giving up renews it. A real enemy who stands where the box was shows again soon.
     std::lock_guard<std::mutex> lock(givenUpMutex_);
     for (const GivenUp& entry : givenUp_) {
-        if (entry.trackId >= 0 && nowNs < entry.forgottenNs && matchesGivenUp(entry, view)) {
+        if (entry.trackId >= 0 && nowNs < entry.untilNs + kDecoyHiddenExtraNs && matchesGivenUp(entry, view)) {
             return true;
         }
     }

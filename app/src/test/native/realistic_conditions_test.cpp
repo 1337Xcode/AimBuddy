@@ -214,3 +214,23 @@ TEST(a_box_stuck_to_the_screen_is_not_drawn_once_the_assist_has_found_it_out) {
     CHECK(game.controller().telemetry().giveUps >= 1);
     CHECK(drawn.ghostShare < 0.1);   // from the fifth second on, nothing but the weapon is there to be drawn, and it is not
 }
+
+TEST(a_box_given_up_on_is_hidden_for_a_while_and_not_for_as_long_as_it_is_remembered) {
+    // The assist remembers a box it gave up on for far longer than it leaves the box alone, so that it is not
+    // led by it again. A person who then stands where the weapon was must not stay out of the picture that long.
+    SimulatedGame::Truth truth = phoneInAMatch();
+    truth.falseBoxes.push_back(weaponStuckToTheScreen());
+    SimulatedGame game(truth, baseSettings(), stationary(2500.0f, 0.0f));
+    game.run(10.0f, [](float, float, float) {});
+    CHECK(game.controller().telemetry().giveUps >= 1);
+
+    const FalseBox weaponBox = weaponStuckToTheScreen();
+    TrackView weapon;   // a box in the weapon's place, about its size
+    weapon.id = 999;
+    weapon.centerX = weaponBox.x;
+    weapon.centerY = weaponBox.y;
+    weapon.width = weaponBox.width;
+    weapon.height = weaponBox.height;
+    CHECK(game.controller().isDecoy(weapon, SimulatedGame::clockAt(11.0f)));
+    CHECK(!game.controller().isDecoy(weapon, SimulatedGame::clockAt(30.0f)));
+}
