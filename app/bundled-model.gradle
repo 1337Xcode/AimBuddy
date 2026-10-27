@@ -21,9 +21,11 @@ abstract class CopyBundledModel extends DefaultTask {
         def names = ['model.param': 'yolo26n-opt.param', 'model.bin': 'yolo26n-opt.bin', 'model.json': 'model.json']
         names.each { source, name ->
             File file = new File(modelDir.get().asFile, source)
-            if (file.isFile()) {
-                java.nio.file.Files.copy(file.toPath(), new File(target, name).toPath())
+            if (!file.isFile()) {
+                // An app without its model cannot start, so a build without it must not succeed.
+                throw new GradleException("The model to bundle is missing: ${file}")
             }
+            java.nio.file.Files.copy(file.toPath(), new File(target, name).toPath())
         }
     }
 }
