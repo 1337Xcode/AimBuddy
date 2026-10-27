@@ -104,5 +104,8 @@ private:
 };
 
 }  // namespace aimbuddy
+    float slideSum_ = 0.0f;               ///< Over the frames since the last log line: summed slide (screen pixels)...
+    float qualitySum_ = 0.0f;             ///< ...summed quality...
+    int slideFrames_ = 0;                 ///< ...and how many frames that is.
 
 #endif  // AIMBUDDY_PIPELINE_DETECTION_PIPELINE_H

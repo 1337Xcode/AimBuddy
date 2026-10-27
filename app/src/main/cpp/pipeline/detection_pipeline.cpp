@@ -1,5 +1,6 @@
 #include "detection_pipeline.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
@@ -92,6 +93,9 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
 
 void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishedNs) {
     inferenceMs_.store(smooth(inferenceMs_.load(std::memory_order_relaxed), batch.inferenceMs),
+        slideSum_ += std::hypot(shift.dx, shift.dy) * scale;
+        qualitySum_ += shift.quality;
+        ++slideFrames_;
                        std::memory_order_relaxed);
     const float ageMs = static_cast<float>(finishedNs - batch.captureNs) * 1e-6f;
     frameAgeMs_.store(smooth(frameAgeMs_.load(std::memory_order_relaxed), ageMs), std::memory_order_relaxed);
@@ -153,3 +157,17 @@ DetectionPipeline::Stats DetectionPipeline::stats() const {
 }
 
 }  // namespace aimbuddy
+        float bestScore = 0.0f;
+        for (int i = 0; i < batch.count; ++i) {
+            bestScore = std::max(bestScore, batch.detections[i].score);
+        }
+        LOGI("Last frame: %d detections, best score %.2f", batch.count, bestScore);
+        if (cameraMotion_ != nullptr && slideFrames_ > 0) {
+            const CameraResponse response = cameraMotion_->response();
+            LOGI("Camera: scene slid %.1f px a frame on average (measurement quality %.2f); response gain %.2f/%.2f, delay %.0f ms, confidence %.2f",
+                 slideSum_ / static_cast<float>(slideFrames_), qualitySum_ / static_cast<float>(slideFrames_), response.gainX,
+                 response.gainY, response.delayS * 1000.0f, cameraMotion_->confidence());
+            slideSum_ = 0.0f;
+            qualitySum_ = 0.0f;
+            slideFrames_ = 0;
+        }
