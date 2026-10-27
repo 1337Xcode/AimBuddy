@@ -1,169 +1,100 @@
-# Shizuku Setup Guide
+# Shizuku setup
 
-This guide walks you through getting [Shizuku](https://shizuku.rikka.app/) running on your phone so AimBuddy can perform touch injection without root. If you already have a rooted device you can skip this entirely and use the `uinput` backend.
+Shizuku gives AimBuddy touch access without root. This guide gets Shizuku running and connected to AimBuddy. If your phone is rooted you can skip it: AimBuddy asks your root manager instead.
 
-The whole process takes about 5 minutes the first time. You only have to do it once per device boot (Shizuku keeps running until you reboot the phone).
+The first time takes about five minutes. After that, one step each time the phone restarts.
 
-## Why Shizuku?
+## Why AimBuddy needs it
 
-Android does not let normal apps simulate touches in other apps. There are two ways around that:
+Android does not let a normal app touch the screen on behalf of another app. For the aim assist, AimBuddy starts a small helper program. The helper takes the touchscreen over, passes every touch of yours on unchanged to a virtual copy of the screen, and adds one more finger to that copy: the assist. Starting such a helper needs more privilege than a normal app has, and Shizuku or root can provide it.
 
-1. **Root.** A rooted device can open `/dev/uinput` and create a virtual touchscreen. AimBuddy already supports this.
-2. **Shizuku.** An app that briefly receives elevated permissions through ADB (or a one-time root grant). Once Shizuku is running, *other* apps can use those permissions through Shizuku's binder. AimBuddy uses it to call the hidden `IInputManager.injectInputEvent` API.
-
-Both paths produce the same result: a synthetic touch contact that runs in parallel with your finger. The only difference is that Shizuku does not require permanently rooting the phone.
+Shizuku is an app that you start once after each reboot, using Android's own wireless debugging or a computer. It then lends that privilege to the apps you allow. Without Shizuku or root, AimBuddy still outlines enemies. Only the aim assist is unavailable.
 
 ## What you need
 
 - An Android phone, version 11 or newer.
-- A USB cable, OR a PC on the same Wi-Fi network as the phone (for wireless ADB).
-- About 50 MB free for the Shizuku app.
+- For wireless debugging, a Wi-Fi connection. For the computer route, a USB cable and a computer.
 
-## Step 1: install the Shizuku app
-
-Pick one of these. The Play Store version updates automatically, which is the easiest path.
+## Step 1: install Shizuku
 
 | Source | How |
 |---|---|
-| Google Play | Search "Shizuku" by Rikka, install. |
-| GitHub release | Download the latest APK from https://github.com/RikkaApps/Shizuku/releases and sideload. |
+| Google Play | Search for "Shizuku" by Rikka and install it. |
+| GitHub | Download the latest APK from [the Shizuku releases](https://github.com/RikkaApps/Shizuku/releases) and install it. |
 
-Open the app once after installing so it can finish first-run setup. You will see a screen that says "Shizuku is not running". That is normal. Pick a way to start it below.
+Open Shizuku once. It says it is not running. That is normal; start it with one of the routes below.
 
-## Step 2A: start Shizuku via wireless debugging (Android 11+, no PC)
+## Step 2: start Shizuku
 
-This is the easiest method. You do not need a computer.
+Pick one.
 
-1. On the phone, open **Settings -> About phone**. Tap **Build number** seven times until the toast says "You are now a developer".
-2. Go back to **Settings -> System -> Developer options**.
-3. Scroll down and enable **Wireless debugging**. Tap it to open its detail screen, leave it open.
-4. Open the Shizuku app. Tap **Pair device with QR code** (under "Start via Wireless debugging").
-5. Back in Wireless debugging on the system settings page, tap **Pair device with QR code**.
-6. Point the camera at the QR shown by Shizuku. Once paired, Shizuku will start the service automatically.
-7. Pull down the notification shade. You should see a persistent "Shizuku is running" notification.
+### Wireless debugging, no computer
 
-The Shizuku app now shows a green check and the running version number. Skip ahead to Step 3.
+1. Open Settings, About phone, and tap Build number seven times. A message says you are a developer.
+2. Open Settings, System, Developer options, and turn on Wireless debugging. The phone has to be on Wi-Fi.
+3. Open Shizuku, choose to start it with wireless debugging, and begin the pairing.
+4. In the system's Wireless debugging screen, tap Pair device with pairing code. Pull down the notification shade and type the code into the notification that Shizuku shows.
+5. In Shizuku, tap Start. When it says Shizuku is running, you are done.
 
-```mermaid
-flowchart LR
-    A[Open Shizuku app] --> B[Tap 'Pair device with QR code']
-    B --> C[Settings -> Developer options]
-    C --> D[Enable Wireless debugging]
-    D --> E[Tap 'Pair device with QR code' in settings]
-    E --> F[Scan Shizuku's QR with your phone camera]
-    F --> G[Shizuku service starts automatically]
-```
+Pairing is needed once. If Shizuku does not start, turn Wireless debugging off and on again and tap Start again.
 
-## Step 2B: start Shizuku via ADB from a PC
+### A computer and a USB cable
 
-Use this if Step 2A does not work or your phone is below Android 11.
+1. Install [platform-tools](https://developer.android.com/tools/releases/platform-tools) on the computer.
+2. Turn on USB debugging in Developer options, plug the phone in, and accept the "Allow USB debugging?" prompt.
+3. Check that the phone is listed and is not "unauthorized":
 
-1. Install platform-tools on your PC: https://developer.android.com/tools/releases/platform-tools
-2. Enable **USB debugging** in Developer options on the phone.
-3. Plug the phone into the PC. Approve the "Allow USB debugging?" prompt that appears the first time.
-4. From the PC terminal, verify the phone is visible:
-   ```bash
+   ```sh
    adb devices
    ```
-   You should see one entry that is not "unauthorized". If it is unauthorized, accept the prompt on the phone.
-5. Run the Shizuku start script:
-   ```bash
+
+4. Start Shizuku:
+
+   ```sh
    adb shell sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh
    ```
-   If that path is not found, the Shizuku app's home screen also shows the exact command to run for your install. Copy-paste it.
-6. The terminal prints something like `info: shizuku_starter started.` and exits.
-7. On the phone, the Shizuku app turns green and the persistent notification appears.
 
-## Step 2C: start Shizuku from a rooted phone (alternative)
+   If that path is not found, the Shizuku app shows the exact command for your install.
 
-If your phone is already rooted, the Shizuku app exposes a one-tap **Start (root)** button. The service then runs under elevated privileges without any ADB dance.
+### A rooted phone
 
-## Step 3: grant AimBuddy permission
+Open Shizuku and use its Start button for root.
 
-1. Open AimBuddy.
-2. Tap **Start**.
-3. On the first launch, AimBuddy asks for the overlay permission. Approve it.
-4. AimBuddy then asks Shizuku for permission. Shizuku pops a dialog that says "Allow AimBuddy to use Shizuku?". Tap **Allow**.
-5. AimBuddy asks for the MediaProjection (screen-capture) permission. Approve.
-6. The overlay appears. The Aim tab will show **Backend status: ready** under Shizuku.
+## Step 3: let AimBuddy use it
 
-You only have to grant the Shizuku permission once. AimBuddy will reuse it on every launch.
+1. Open AimBuddy and press Start.
+2. Answer what it asks, in this order: display over other apps, notifications (on Android 13 and newer), Shizuku's own request to allow AimBuddy, and screen capture.
+3. When AimBuddy is running, the Touch access row on the Home screen says Shizuku.
 
-```mermaid
-flowchart TB
-    A[Start AimBuddy] --> B{Overlay permission?}
-    B -->|No| C[Approve in Settings]
-    B -->|Yes| D[Tap Start]
-    C --> D
-    D --> E{Shizuku permission?}
-    E -->|No| F[Shizuku dialog: Allow]
-    E -->|Yes| G[MediaProjection prompt]
-    F --> G
-    G --> H[Approve screen capture]
-    H --> I[Overlay live, backend = Shizuku]
-```
+Shizuku remembers the permission, so you only answer its request once.
 
-## What happens after a reboot
+## After a restart
 
-Shizuku **stops** when you reboot the phone. You need to start it again using whichever method from Step 2 worked the first time.
+Shizuku stops when the phone restarts. Start it again with the route you used before: for wireless debugging, turn Wireless debugging on, open Shizuku and tap Start. On some phones wireless debugging turns itself off or forgets the pairing after a restart. If so, pair again.
 
-The Shizuku app remembers the wireless-debugging pairing, so on Android 11+ you usually only need to:
+## If something does not work
 
-1. Enable wireless debugging in Developer options.
-2. Open Shizuku - it auto-reconnects within a few seconds.
-
-Some custom ROMs (HyperOS, ColorOS, MIUI) revoke wireless-debugging pairings on reboot. On those, repeat the QR pairing once after every restart. There are workarounds (paid Tasker scripts, etc.) but AimBuddy itself can do nothing about that - it is a Shizuku and OS limitation.
-
-## Troubleshooting
-
-### "Backend status: Shizuku unavailable" in the Aim tab
-
-The Shizuku service is not running. Open the Shizuku app and check the status. If it shows "not running", repeat Step 2.
-
-### Shizuku permission dialog never appears
-
-This usually means the binder did not establish. Try:
-
-1. Force-stop both Shizuku and AimBuddy.
-2. Re-open Shizuku, confirm it still shows running.
-3. Re-open AimBuddy and tap Start again.
-
-### "binder dead" toast inside AimBuddy
-
-The Shizuku service crashed or was killed by the OS (low memory / aggressive battery saver). Re-start it via Step 2 and press Start in AimBuddy again.
-
-### Touch is laggy or drops contacts on a specific game
-
-Some games actively block synthetic input. There is no clean workaround; switch to the root/uinput backend if your phone supports it, or test a different game.
-
-### Phone is below Android 11
-
-You cannot use wireless debugging. Use Step 2B (USB cable) or Step 2C (root).
-
-### Aggressive battery management kills Shizuku
-
-Add Shizuku to your phone's "do not optimize" / "auto start" / "background activity" list. The exact menu name varies by OEM:
-
-| OEM | Menu path |
+| What you see | What to do |
 |---|---|
-| Samsung | Settings -> Apps -> Shizuku -> Battery -> Unrestricted |
-| Xiaomi (HyperOS / MIUI) | Settings -> Apps -> Manage apps -> Shizuku -> Battery saver -> No restrictions; Autostart -> on |
-| OnePlus / Oppo | Settings -> Battery -> Battery optimization -> Shizuku -> Don't optimize |
-| Stock Android | Settings -> Apps -> Shizuku -> Battery -> Unrestricted |
+| Touch access says Not set up, or "Aim assist needs Shizuku or root" | Shizuku is not running or has not been allowed. Open Shizuku. If it says it is not running, repeat Step 2. |
+| "Shizuku was not allowed. Targets are still highlighted." | Open Shizuku, go to the list of authorized apps, and allow AimBuddy. Then press Start again. |
+| No Shizuku request appears | Force-stop Shizuku and AimBuddy, open Shizuku, check that it is running, and press Start in AimBuddy again. |
+| Shizuku stops by itself during play | The phone's battery manager is killing it. Exclude Shizuku and AimBuddy from battery optimization, see below. |
+| The touchscreen misbehaves | Hold both volume keys: the helper gives the touchscreen back and stops. Or use Stop in the notification. |
 
-Do the same for AimBuddy itself - otherwise the OS may kill the foreground capture service mid-session.
+### Battery optimization
 
-## Verifying everything works
+| Maker | Menu |
+|---|---|
+| Samsung | Settings, Apps, Shizuku, Battery, Unrestricted |
+| Xiaomi (HyperOS, MIUI) | Settings, Apps, Manage apps, Shizuku, Battery saver, No restrictions; and turn Autostart on |
+| OnePlus, Oppo | Settings, Battery, Battery optimization, Shizuku, Don't optimize |
+| Stock Android | Settings, Apps, Shizuku, Battery, Unrestricted |
 
-Open AimBuddy, tap Start, and check the Aim tab:
+Do the same for AimBuddy, or the system may stop it in the middle of a session.
 
-- **Backend** dropdown: Shizuku (Non-root)
-- **Backend status**: ready
+## What the helper does to your touchscreen
 
-If both are true, you are done. Enable Aim Assist and try a game. You should see the aimbot touch overlap your own finger without either being dropped.
+The helper takes the touchscreen over only when no finger is on it, and gives it back when AimBuddy stops, when you hold both volume keys, and if the helper itself is killed. [Architecture](Architecture.md) describes how, and [Troubleshooting](Troubleshooting.md) covers problems that are not specific to Shizuku.
 
-## Going further
-
-- [Shizuku official docs](https://shizuku.rikka.app/) explain other use cases.
-- [Architecture - Input Injection section](Architecture.md) explains how AimBuddy talks to Shizuku internally and why we use a virtual device id.
-- [Troubleshooting](Troubleshooting.md) covers issues that are not specific to Shizuku.
+For everything else about Shizuku, see [its documentation](https://shizuku.rikka.app/).
