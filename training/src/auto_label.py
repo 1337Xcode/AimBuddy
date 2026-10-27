@@ -58,6 +58,12 @@ DEFAULT_TILE = 640
 # What the padding of a frame smaller than one tile is filled with (the grey Ultralytics pads with).
 PAD_VALUE = 114
 
+# A box this close to a tile's border, where another tile carries on, is cut by the border and is not a whole person.
+CUT_MARGIN_PX = 3
+
+# A cut box is dropped when this share of it lies inside another box.
+CUT_CONTAINED_SHARE = 0.7
+
 
 class Teacher(Protocol):
     """Finds the enemies in one frame."""
@@ -153,8 +159,9 @@ class OnnxTileTeacher:
     def _decode(self, output: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Boxes as x1, y1, x2, y2 in tile pixels and their scores, for the anchors above the confidence."""
         data = output[0]
-        if data.shape[0] > data.shape[1]:   # anchors first: turn it round
-            data = data.T
+        if data.shape[0] >= data.shape[1]:
+            print(f"ERROR: the model's output is {tuple(data.shape)}; only [1, 4 + classes, anchors] exports are supported")
+            raise SystemExit(2)
         classes = data[4:]
         if classes.shape[0] < 1 or max(self._keep) >= classes.shape[0]:
             print(f"ERROR: the model has {classes.shape[0]} classes and class {max(self._keep)} was asked for")
@@ -168,6 +175,7 @@ class OnnxTileTeacher:
     def detect(self, image_path: Path) -> tuple[np.ndarray, int, int]:
         image = cv2.imread(str(image_path))
         if image is None:
+            print(f"WARNING: could not read {image_path}; skipped")
             return np.zeros((0, 4), np.float32), 0, 0
         original_height, original_width = image.shape[:2]
         if self._scale != 1.0:
@@ -180,6 +188,7 @@ class OnnxTileTeacher:
 
         all_boxes: list[np.ndarray] = []
         all_scores: list[np.ndarray] = []
+        all_cut: list[np.ndarray] = []
         for top in self._origins(padded_height, self._tile):
             for left in self._origins(padded_width, self._tile):
                 tile = rgb[top:top + self._tile, left:left + self._tile]
@@ -187,6 +196,13 @@ class OnnxTileTeacher:
                 output = self._session.run(None, {self._input: tensor})[0]
                 boxes, scores = self._decode(output)
                 if len(boxes):
+                    edge = self._tile - CUT_MARGIN_PX
+                    all_cut.append(
+                        ((boxes[:, 0] <= CUT_MARGIN_PX) & (left > 0))
+                        | ((boxes[:, 1] <= CUT_MARGIN_PX) & (top > 0))
+                        | ((boxes[:, 2] >= edge) & (left + self._tile < padded_width))
+                        | ((boxes[:, 3] >= edge) & (top + self._tile < padded_height))
+                    )
                     boxes[:, [0, 2]] += left
                     boxes[:, [1, 3]] += top
                     all_boxes.append(boxes)
@@ -195,10 +211,22 @@ class OnnxTileTeacher:
             return np.zeros((0, 4), np.float32), original_width, original_height
         boxes = np.concatenate(all_boxes)
         scores = np.concatenate(all_scores)
+        cut = np.concatenate(all_cut)
         as_xywh = [[float(b[0]), float(b[1]), float(b[2] - b[0]), float(b[3] - b[1])] for b in boxes]
-        kept = cv2.dnn.NMSBoxes(as_xywh, scores.tolist(), self._conf, self._iou)
-        kept = np.array(kept, dtype=int).reshape(-1)
-        boxes = boxes[kept] / self._scale
+        kept = np.array(cv2.dnn.NMSBoxes(as_xywh, scores.tolist(), self._conf, self._iou), dtype=int).reshape(-1)
+        boxes, cut = boxes[kept], cut[kept]
+        # A person on the border between two tiles is whole in one of them and cut in the other. The cut
+        # part overlaps the whole box too little for NMS to join them, so it is dropped when it lies inside another box.
+        areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+        keep_box = np.ones(len(boxes), dtype=bool)
+        for i in np.nonzero(cut)[0]:
+            inside = np.minimum(boxes[:, 2], boxes[i, 2]) - np.maximum(boxes[:, 0], boxes[i, 0])
+            across = np.minimum(boxes[:, 3], boxes[i, 3]) - np.maximum(boxes[:, 1], boxes[i, 1])
+            shared = np.clip(inside, 0, None) * np.clip(across, 0, None)
+            shared[i] = 0.0
+            if areas[i] > 0 and shared.max() / areas[i] >= CUT_CONTAINED_SHARE:
+                keep_box[i] = False
+        boxes = boxes[keep_box] / self._scale
         boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, original_width)
         boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, original_height)
         return boxes.astype(np.float32), original_width, original_height
@@ -228,7 +256,7 @@ def _normalize_box(xyxy, img_w: int, img_h: int) -> tuple[float, float, float, f
     return cx, cy, w, h
 
 
-def auto_label(
+def label_frames(
     frames_dir: Path,
     out_dir: Path,
     teacher: Teacher,
@@ -236,10 +264,7 @@ def auto_label(
     min_box_area_frac: float,
     max_box_area_frac: float,
 ) -> int:
-    if not frames_dir.exists():
-        print(f"ERROR: input frames directory missing: {frames_dir}")
-        return 2
-
+    """Labels every frame in `frames_dir` with `teacher` and writes the dataset split to `out_dir`."""
     images_out = out_dir / "images"
     labels_out = out_dir / "labels"
     images_out.mkdir(parents=True, exist_ok=True)
@@ -302,6 +327,27 @@ def auto_label(
     return 0
 
 
+def auto_label(
+    frames_dir: Path,
+    out_dir: Path,
+    teacher_weights: Path,
+    imgsz: int,
+    conf_threshold: float,
+    iou_threshold: float,
+    keep_class_ids: list[int],
+    device: str,
+    write_negatives: bool,
+    min_box_area_frac: float,
+    max_box_area_frac: float,
+) -> int:
+    """Labels the frames with Ultralytics weights as the teacher."""
+    if not frames_dir.exists():
+        print(f"ERROR: input frames directory missing: {frames_dir}")
+        return 2
+    teacher = UltralyticsTeacher(teacher_weights, imgsz, conf_threshold, iou_threshold, keep_class_ids, device)
+    return label_frames(frames_dir, out_dir, teacher, write_negatives, min_box_area_frac, max_box_area_frac)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Auto-label gameplay frames with a teacher detector")
     parser.add_argument("--in", dest="frames_dir", type=Path, required=True, help="Input directory of frames")
@@ -329,20 +375,25 @@ def main() -> int:
         except Exception:
             device = "cpu"
 
-    teacher: Teacher
-    if args.teacher_onnx is not None:
-        teacher = OnnxTileTeacher(args.teacher_onnx, args.conf, args.iou, args.classes, args.onnx_scale, args.onnx_tile, str(device))
-    else:
-        teacher = UltralyticsTeacher(args.teacher or Path("yolov8x.pt"), args.imgsz, args.conf, args.iou, args.classes, device)
-
-    return auto_label(
-        frames_dir=args.frames_dir,
-        out_dir=args.out_dir,
-        teacher=teacher,
-        write_negatives=args.write_negatives,
-        min_box_area_frac=args.min_box_area_frac,
-        max_box_area_frac=args.max_box_area_frac,
-    )
+    if args.teacher_onnx is None:
+        return auto_label(
+            frames_dir=args.frames_dir,
+            out_dir=args.out_dir,
+            teacher_weights=args.teacher or Path("yolov8x.pt"),
+            imgsz=args.imgsz,
+            conf_threshold=args.conf,
+            iou_threshold=args.iou,
+            keep_class_ids=args.classes,
+            device=device,
+            write_negatives=args.write_negatives,
+            min_box_area_frac=args.min_box_area_frac,
+            max_box_area_frac=args.max_box_area_frac,
+        )
+    if not args.frames_dir.exists():
+        print(f"ERROR: input frames directory missing: {args.frames_dir}")
+        return 2
+    teacher = OnnxTileTeacher(args.teacher_onnx, args.conf, args.iou, args.classes, args.onnx_scale, args.onnx_tile, str(device))
+    return label_frames(args.frames_dir, args.out_dir, teacher, args.write_negatives, args.min_box_area_frac, args.max_box_area_frac)
 
 
 if __name__ == "__main__":
