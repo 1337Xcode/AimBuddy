@@ -4,6 +4,7 @@
 #include <android/hardware_buffer.h>
 #include <android/hardware_buffer_jni.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -273,6 +274,40 @@ JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_start(JNIEnv* /* env *
     g_aimLoop.start();
     return JNI_TRUE;
 }
+
+#ifdef AIMBUDDY_DEBUG_HOOKS
+// Testing only: these are compiled into debug builds, so a test scene can stand in for the model
+// and the assist can be switched on without tapping the overlay menu.
+
+/** @brief Takes targets from the test scene (feedDetections) instead of the model. */
+JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_useSyntheticDetections(JNIEnv* /* env */, jclass /* clazz */, jboolean on) {
+    g_pipeline.setSyntheticMode(on == JNI_TRUE);
+}
+
+/** @brief The test scene's true targets: x, y, width, height and score for each, in screen pixels, as of sceneNs. */
+JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_feedDetections(JNIEnv* env, jclass /* clazz */, jfloatArray boxes, jlong sceneNs) {
+    const jsize length = env->GetArrayLength(boxes);
+    const int count = std::min<int>(length / 5, aimbuddy::kMaxDetections);
+    aimbuddy::Detection detections[aimbuddy::kMaxDetections];
+    jfloat* values = env->GetFloatArrayElements(boxes, nullptr);
+    for (int i = 0; i < count; ++i) {
+        detections[i].x = values[i * 5];
+        detections[i].y = values[i * 5 + 1];
+        detections[i].width = values[i * 5 + 2];
+        detections[i].height = values[i * 5 + 3];
+        detections[i].score = values[i * 5 + 4];
+    }
+    env->ReleaseFloatArrayElements(boxes, values, JNI_ABORT);
+    g_pipeline.feedSynthetic(detections, count, static_cast<int64_t>(sceneNs));
+}
+
+/** @brief Switches the aim assist on or off, as the overlay menu does. */
+JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_enableAssist(JNIEnv* /* env */, jclass /* clazz */, jboolean on) {
+    Settings settings = g_settingsStore.get();
+    settings.assistEnabled = on == JNI_TRUE;
+    g_settingsStore.set(settings);
+}
+#endif  // AIMBUDDY_DEBUG_HOOKS
 
 /** @brief Stops the aim loop (the finger comes off and the touchscreen goes back), then detection. */
 JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_stop(JNIEnv* /* env */, jclass /* clazz */) {

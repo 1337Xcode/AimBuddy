@@ -19,6 +19,12 @@ constexpr float kStatsSmoothing = 0.05f;
 /// How often debug builds print the statistics to the log.
 constexpr int64_t kStatsLogIntervalNs = 5'000'000'000;
 
+#ifdef AIMBUDDY_DEBUG_HOOKS
+/// A test scene is shown on screen about this long after it is drawn, and no more than this many are kept.
+constexpr int64_t kSyntheticScreenLatencyNs = 8'000'000;
+constexpr size_t kSyntheticBacklog = 16;
+#endif
+
 int64_t steadyNowNs() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
         .count();
@@ -87,15 +93,62 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
         // The measurement is in capture pixels; everything else works in screen pixels.
         const float scale = frame.geometry.screenPerCapture();
         cameraMotion_->addMeasurement(lastFrameNs_, frame.captureTimeNs, shift.dx * scale, shift.dy * scale, shift.quality);
+        slideSum_ += std::hypot(shift.dx, shift.dy) * scale;
+        qualitySum_ += shift.quality;
+        ++slideFrames_;
     }
     lastFrameNs_ = frame.captureTimeNs;
 }
 
+#ifdef AIMBUDDY_DEBUG_HOOKS
+void DetectionPipeline::feedSynthetic(const Detection* detections, int count, int64_t sceneNs) {
+    std::lock_guard<std::mutex> lock(syntheticMutex_);
+    synthetic_.emplace_back();
+    SyntheticScene& scene = synthetic_.back();
+    scene.sceneNs = sceneNs;
+    scene.count = std::min(count, kMaxDetections);
+    std::copy(detections, detections + scene.count, scene.detections);
+    while (synthetic_.size() > kSyntheticBacklog) {
+        synthetic_.pop_front();
+    }
+}
+
+bool DetectionPipeline::detectSynthetic(const RoiFrame& frame, DetectionBatch& batch) {
+    // The frame shows the scene as it was drawn a moment before it was composed: take the newest
+    // scene at least that old, like a detector that looked at this very frame.
+    SyntheticScene scene;
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(syntheticMutex_);
+        while (!synthetic_.empty() && synthetic_.front().sceneNs <= frame.captureTimeNs - kSyntheticScreenLatencyNs) {
+            scene = synthetic_.front();
+            synthetic_.pop_front();
+            found = true;
+        }
+    }
+    if (!found) {
+        return false;
+    }
+    const float scale = frame.geometry.screenPerCapture();
+    batch.scanned.left = static_cast<float>(frame.roi.x) * scale;
+    batch.scanned.top = static_cast<float>(frame.roi.y) * scale;
+    batch.scanned.right = static_cast<float>(frame.roi.x + frame.roi.side) * scale;
+    batch.scanned.bottom = static_cast<float>(frame.roi.y + frame.roi.side) * scale;
+    batch.count = 0;
+    for (int i = 0; i < scene.count; ++i) {
+        const Detection& d = scene.detections[i];
+        if (batch.scanned.contains(d.x + d.width * 0.5f, d.y + d.height * 0.5f)) {
+            batch.detections[batch.count++] = d;
+        }
+    }
+    batch.captureNs = frame.captureTimeNs;
+    batch.inferenceMs = 0.0f;
+    return true;
+}
+#endif
+
 void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishedNs) {
     inferenceMs_.store(smooth(inferenceMs_.load(std::memory_order_relaxed), batch.inferenceMs),
-        slideSum_ += std::hypot(shift.dx, shift.dy) * scale;
-        qualitySum_ += shift.quality;
-        ++slideFrames_;
                        std::memory_order_relaxed);
     const float ageMs = static_cast<float>(finishedNs - batch.captureNs) * 1e-6f;
     frameAgeMs_.store(smooth(frameAgeMs_.load(std::memory_order_relaxed), ageMs), std::memory_order_relaxed);
@@ -111,6 +164,20 @@ void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishe
         LOGI("Pipeline: %.1f detections/s, inference %.1f ms, frame age %.1f ms, %llu frames replaced, %s",
              snapshot.detectionsPerSecond, snapshot.inferenceMs, snapshot.frameAgeMs,
              static_cast<unsigned long long>(snapshot.replacedFrames), snapshot.backend);
+        float bestScore = 0.0f;
+        for (int i = 0; i < batch.count; ++i) {
+            bestScore = std::max(bestScore, batch.detections[i].score);
+        }
+        LOGI("Last frame: %d detections, best score %.2f", batch.count, bestScore);
+        if (cameraMotion_ != nullptr && slideFrames_ > 0) {
+            const CameraResponse response = cameraMotion_->response();
+            LOGI("Camera: scene slid %.1f px a frame on average (measurement quality %.2f); response gain %.2f/%.2f, delay %.0f ms, confidence %.2f",
+                 slideSum_ / static_cast<float>(slideFrames_), qualitySum_ / static_cast<float>(slideFrames_), response.gainX,
+                 response.gainY, response.delayS * 1000.0f, cameraMotion_->confidence());
+            slideSum_ = 0.0f;
+            qualitySum_ = 0.0f;
+            slideFrames_ = 0;
+        }
         lastLogNs_ = finishedNs;
     }
 }
@@ -131,7 +198,12 @@ void DetectionPipeline::run() {
         }
         applyConfidenceIfChanged(appliedConfidence);
         measureCameraMotion(*frame);
+#ifdef AIMBUDDY_DEBUG_HOOKS
+        const bool detected = syntheticMode_.load(std::memory_order_acquire) ? detectSynthetic(*frame, batch)
+                                                                              : detector_.detect(*frame, batch);
+#else
         const bool detected = detector_.detect(*frame, batch);
+#endif
         capture_.mailbox().endRead();  // the pixels are consumed; let the capture thread reuse the slot
         if (!detected) {
             continue;
@@ -157,17 +229,3 @@ DetectionPipeline::Stats DetectionPipeline::stats() const {
 }
 
 }  // namespace aimbuddy
-        float bestScore = 0.0f;
-        for (int i = 0; i < batch.count; ++i) {
-            bestScore = std::max(bestScore, batch.detections[i].score);
-        }
-        LOGI("Last frame: %d detections, best score %.2f", batch.count, bestScore);
-        if (cameraMotion_ != nullptr && slideFrames_ > 0) {
-            const CameraResponse response = cameraMotion_->response();
-            LOGI("Camera: scene slid %.1f px a frame on average (measurement quality %.2f); response gain %.2f/%.2f, delay %.0f ms, confidence %.2f",
-                 slideSum_ / static_cast<float>(slideFrames_), qualitySum_ / static_cast<float>(slideFrames_), response.gainX,
-                 response.gainY, response.delayS * 1000.0f, cameraMotion_->confidence());
-            slideSum_ = 0.0f;
-            qualitySum_ = 0.0f;
-            slideFrames_ = 0;
-        }

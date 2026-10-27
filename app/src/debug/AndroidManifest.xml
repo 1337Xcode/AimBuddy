@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- A stand-in game for testing the aim assist. Debug builds only; see PlaygroundActivity. -->
+        <activity
+            android:name="com.aimbuddy.playground.PlaygroundActivity"
+            android:exported="true"
+            android:label="Playground"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+    </application>
+</manifest>

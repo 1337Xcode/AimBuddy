@@ -150,6 +150,11 @@ android {
             ndk {
                 debugSymbolLevel = 'none'
             }
+            externalNativeBuild {
+                cmake {
+                    arguments "-DAIMBUDDY_DEBUG_HOOKS=ON"
+                }
+            }
         }
     }
 

@@ -4,7 +4,9 @@
 #include <android/asset_manager.h>
 
 #include <atomic>
+#include <deque>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -74,6 +76,14 @@ public:
     /// What each class of the loaded model means.
     const ModelProfile& profile() const { return detector_.profile(); }
 
+#ifdef AIMBUDDY_DEBUG_HOOKS
+    /// Testing only: with this on, targets come from a test scene (see feedSynthetic) instead of the model.
+    void setSyntheticMode(bool on) { syntheticMode_.store(on, std::memory_order_release); }
+
+    /// Testing only: the scene's true targets, in screen pixels, as they are at `sceneNs` (steady clock).
+    void feedSynthetic(const Detection* detections, int count, int64_t sceneNs);
+#endif
+
     RoiCapture& capture() { return capture_; }
     Tracker& tracker() { return tracker_; }
     Stats stats() const;
@@ -82,6 +92,9 @@ private:
     void run();
     void applyConfidenceIfChanged(float& applied);
     void measureCameraMotion(const RoiFrame& frame);
+#ifdef AIMBUDDY_DEBUG_HOOKS
+    bool detectSynthetic(const RoiFrame& frame, DetectionBatch& batch);
+#endif
     void recordStats(const DetectionBatch& batch, int64_t finishedNs);
 
     RoiCapture capture_;
@@ -91,9 +104,22 @@ private:
     CameraMotion* cameraMotion_ = nullptr;
     GlobalMotionEstimator sceneMotion_;   ///< Reads how the picture slid between frames. Pipeline thread only.
     int64_t lastFrameNs_ = 0;
+    float slideSum_ = 0.0f;               ///< Over the frames since the last log line: summed slide (screen pixels)...
+    float qualitySum_ = 0.0f;             ///< ...summed quality...
+    int slideFrames_ = 0;                 ///< ...and how many frames that is.
     std::thread worker_;
     std::atomic<bool> running_{false};
     std::atomic<float> confidence_{0.5f};
+#ifdef AIMBUDDY_DEBUG_HOOKS
+    struct SyntheticScene {
+        int64_t sceneNs = 0;
+        int count = 0;
+        Detection detections[kMaxDetections];
+    };
+    std::mutex syntheticMutex_;
+    std::deque<SyntheticScene> synthetic_;
+    std::atomic<bool> syntheticMode_{false};
+#endif
 
     std::atomic<float> inferenceMs_{0.0f};
     std::atomic<float> frameAgeMs_{0.0f};
@@ -104,8 +130,5 @@ private:
 };
 
 }  // namespace aimbuddy
-    float slideSum_ = 0.0f;               ///< Over the frames since the last log line: summed slide (screen pixels)...
-    float qualitySum_ = 0.0f;             ///< ...summed quality...
-    int slideFrames_ = 0;                 ///< ...and how many frames that is.
 
 #endif  // AIMBUDDY_PIPELINE_DETECTION_PIPELINE_H

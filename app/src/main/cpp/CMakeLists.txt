@@ -175,6 +175,12 @@ target_include_directories(esp_native PRIVATE
     ${IMGUI_DIR}
 )
 
+# Hooks that let a test scene stand in for the model. Only debug builds switch them on.
+option(AIMBUDDY_DEBUG_HOOKS "Compile the testing hooks" OFF)
+if(AIMBUDDY_DEBUG_HOOKS)
+    target_compile_definitions(esp_native PRIVATE AIMBUDDY_DEBUG_HOOKS=1)
+endif()
+
 # The demo and debug windows of ImGui are not used; leaving them out keeps their code out of the app.
 target_compile_definitions(esp_native PRIVATE IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS)
 
