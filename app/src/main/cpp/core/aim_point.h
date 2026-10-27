@@ -3,6 +3,7 @@
 
 #include <algorithm>
 
+#include "model_profile.h"
 #include "tracker.h"
 
 namespace aimbuddy {
@@ -52,6 +53,31 @@ inline float aimFractionFromTop(float heightToWidth, AimZone zone) {
         return 0.5f + (partial - 0.5f) * t;
     }
     return 0.5f;
+}
+
+/**
+ * The most certain head target that sits inside the upper part of `body`, or nullptr.
+ * A head belongs to a body when its centre is within the body's width and no lower than the middle of it.
+ */
+inline const TrackView* findHeadFor(const TrackView& body, const TrackView* views, int count,
+                                    const ModelProfile& profile) {
+    const TrackView* best = nullptr;
+    const float left = body.centerX - body.width * 0.5f;
+    const float right = body.centerX + body.width * 0.5f;
+    const float top = body.centerY - body.height * 0.5f;
+    for (int i = 0; i < count; ++i) {
+        const TrackView& candidate = views[i];
+        if (profile.roleOf(candidate.classId) != ClassRole::kHead) {
+            continue;
+        }
+        const bool inside = candidate.centerX >= left && candidate.centerX <= right &&
+                            candidate.centerY >= top - candidate.height &&
+                            candidate.centerY <= top + body.height * 0.5f;
+        if (inside && (best == nullptr || candidate.score > best->score)) {
+            best = &candidate;
+        }
+    }
+    return best;
 }
 
 /**

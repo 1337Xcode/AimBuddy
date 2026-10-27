@@ -55,27 +55,6 @@ void haloBrackets(ImDrawList* list, ImVec2 min, ImVec2 max, ImU32 color, float t
     haloLine(list, max, ImVec2(max.x, max.y - arm), color, thickness, opacity);
 }
 
-/// The strongest head target that sits inside the upper part of `body`, or nullptr.
-const TrackView* findHeadFor(const TrackView& body, const TrackView* views, int count, const ModelProfile& profile) {
-    const TrackView* best = nullptr;
-    const float left = body.centerX - body.width * 0.5f;
-    const float right = body.centerX + body.width * 0.5f;
-    const float top = body.centerY - body.height * 0.5f;
-    for (int i = 0; i < count; ++i) {
-        const TrackView& candidate = views[i];
-        if (profile.roleOf(candidate.classId) != ClassRole::kHead) {
-            continue;
-        }
-        const bool inside = candidate.centerX >= left && candidate.centerX <= right &&
-                            candidate.centerY >= top - candidate.height &&
-                            candidate.centerY <= top + body.height * 0.5f;
-        if (inside && (best == nullptr || candidate.score > best->score)) {
-            best = &candidate;
-        }
-    }
-    return best;
-}
-
 /// A small diamond marking the aim point, dark underneath so it reads on any background.
 void aimMarker(ImDrawList* list, float x, float y, ImU32 color, float radius, float opacity) {
     const ImVec2 outer[4] = {{x, y - radius}, {x + radius, y}, {x, y + radius}, {x - radius, y}};

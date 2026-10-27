@@ -155,6 +155,7 @@ set(ESP_SOURCES
     overlay/target_overlay.cpp
     core/tracker.cpp
     core/detection_decoder.cpp
+    core/aim_controller.cpp
     detector/yolo_detector.cpp
     aimbot/aimbot_controller.cpp
     aimbot/target_tracker.cpp
