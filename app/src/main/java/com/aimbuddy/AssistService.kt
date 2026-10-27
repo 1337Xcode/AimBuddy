@@ -42,6 +42,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     private var capture: CaptureSession? = null
     private var overlay: OverlayController? = null
     private var touchHelper: TouchHelper? = null
+    private var thermalGovernor: ThermalGovernor? = null
     private var displayManager: DisplayManager? = null
     private var shown = DisplayShape(0, 0, 0)
 
@@ -176,6 +177,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         if (!NativeBridge.start()) {
             throw IllegalStateException("The detector would not start")
         }
+        thermalGovernor = ThermalGovernor(this).also { it.start() }
 
         val controller = OverlayController(this) { mainHandler.post { shutdown() } }
         overlay = controller
@@ -272,6 +274,8 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         AssistState.set(AssistState.Phase.STOPPING)
 
         guarded("native stop") { NativeBridge.stop() }
+        guarded("thermal governor") { thermalGovernor?.stop() }
+        thermalGovernor = null
         guarded("touch helper") { touchHelper?.stop() }
         touchHelper = null
         guarded("overlay") { overlay?.hide() }
