@@ -225,12 +225,15 @@ TEST(camera_motion_adopts_the_measured_response_and_keeps_it) {
     CHECK_NEAR(motion.response().gainX, 1.5, 1e-6);
 }
 
-TEST(camera_motion_can_start_from_an_earlier_run) {
+TEST(camera_motion_starts_from_an_earlier_run_without_trusting_it) {
     CameraMotion motion;
     motion.setPrior({1.5f, 1.5f, 0.05f, false}, true);
     motion.seed({5.0f, 4.0f, 0.07f, false}, 0.8f);
     CHECK(motion.hasLearned());
     CHECK_NEAR(motion.response().gainX, 5.0, 1e-6);
     CHECK_NEAR(motion.response().delayS, 0.07, 1e-6);
-    CHECK_NEAR(motion.confidence(), 0.8, 1e-6);
+    // The figures are only a starting point: however sure the earlier run was, this one has not
+    // seen the camera yet, so they are trusted no more than a guess.
+    CHECK(motion.confidence() <= 0.36f);
+    CHECK(motion.confidence() > 0.3f);
 }

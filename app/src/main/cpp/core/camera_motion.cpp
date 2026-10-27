@@ -75,7 +75,9 @@ void CameraMotion::seed(const CameraResponse& earlier, float confidence) {
     current_.gainY = std::clamp(earlier.gainY, kMinGain, kMaxGain);
     current_.delayS = std::clamp(earlier.delayS, 0.0f, kMaxDelayS);
     current_.invertY = prior_.invertY;
-    confidence_ = std::clamp(confidence, 0.0f, 1.0f);
+    // However well an earlier run knew the camera, this run has not seen it yet (the game, its
+    // sensitivity or the scene may differ), so the figures start out only as trusted as a guess.
+    confidence_ = std::clamp(confidence, 0.0f, kPriorConfidence);
     hasLearned_ = true;
 }
 
