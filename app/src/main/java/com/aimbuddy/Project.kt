@@ -9,6 +9,9 @@ object Project {
     const val URL = "https://github.com/$OWNER/$REPOSITORY"
     const val LICENSE_URL = "$URL/blob/$BRANCH/LICENSE"
 
+    /** The project's published releases, which the app reads to see whether there is a newer version. */
+    const val RELEASES_URL = "https://api.github.com/repos/$OWNER/$REPOSITORY/releases?per_page=10"
+
     /** Where the model store's files are served from: the project's `model` folder. */
     const val STORE_URL = "https://raw.githubusercontent.com/$OWNER/$REPOSITORY/$BRANCH/model"
 }

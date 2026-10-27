@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <application>
+    <!-- Lets a debug build fetch an update from a server on the developer's computer (see UPDATE_API_OVERRIDE). -->
+    <application android:usesCleartextTraffic="true">
         <!-- A stand-in game for testing the aim assist. Debug builds only; see PlaygroundActivity. -->
         <activity
             android:name="com.aimbuddy.playground.PlaygroundActivity"

@@ -14,6 +14,9 @@
     <!-- Network access for GitHub-backed model store -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Lets the app hand a downloaded update of itself to the system's installer -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+
     <!-- Optional non-root input backend (Shizuku) -->
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
 
@@ -56,6 +59,11 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <!-- Hears back from the system's installer about an update of the app. -->
+        <receiver
+            android:name=".update.InstallResultReceiver"
+            android:exported="false" />
 
         <!-- Remembers the language the player picked in the app on Android 12 and older. -->
         <service
