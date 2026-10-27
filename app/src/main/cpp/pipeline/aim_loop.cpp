@@ -204,8 +204,23 @@ void AimLoop::stepWhileActive(int64_t nowNs) {
         }
         keepHeartbeat(nowNs, state == touch::protocol::State::kWaitingForFingers ? kHeartbeatNs : kIdleHeartbeatNs);
     }
+    logChanges(state);
     fingerDown_.store(controller_.isTouching(), std::memory_order_relaxed);
     lockedTrack_.store(controller_.lockedTrackId(), std::memory_order_relaxed);
+}
+
+/** Writes a log line when the helper changes state or the assist finger goes down or up. */
+void AimLoop::logChanges(touch::protocol::State state) {
+    if (state != loggedState_) {
+        LOGI("Touch helper state %d -> %d (reason %d)", static_cast<int>(loggedState_), static_cast<int>(state),
+             static_cast<int>(link_->reason()));
+        loggedState_ = state;
+    }
+    const bool touching = controller_.isTouching();
+    if (touching != loggedTouching_) {
+        LOGI("Assist finger %s (target %d)", touching ? "down" : "up", controller_.lockedTrackId());
+        loggedTouching_ = touching;
+    }
 }
 
 void AimLoop::forgetFinger(int64_t nowNs) {

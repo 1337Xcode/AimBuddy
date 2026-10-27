@@ -89,6 +89,7 @@ private:
     void reportLearned(int64_t nowNs);
     void syncDisplayWithHelper();
     void stepWhileActive(int64_t nowNs);
+    void logChanges(touch::protocol::State state);
     void standDown(int64_t nowNs);
     void forgetFinger(int64_t nowNs);
     void sendOutput(const AimOutput& output);
@@ -118,6 +119,8 @@ private:
     uint32_t configuredDisplayVersion_ = 0;
     bool wasActive_ = false;    ///< The assist was working on the previous step, so there is something to undo.
     bool wasMerging_ = false;
+    touch::protocol::State loggedState_ = touch::protocol::State::kStarting;   ///< What the log last said about the helper...
+    bool loggedTouching_ = false;                                              ///< ...and about the assist finger.
 
     std::atomic<bool> fingerDown_{false};
     std::atomic<int> lockedTrack_{-1};
