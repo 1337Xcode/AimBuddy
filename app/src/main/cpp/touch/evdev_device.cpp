@@ -8,7 +8,9 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
+#include <utility>
 
 namespace aimbuddy::touch {
 
@@ -94,20 +96,25 @@ bool describeTouchscreen(const std::string& path, TouchscreenInfo* out) {
     return true;
 }
 
-/// Paths of every /dev/input/event* node.
+/// Paths of every /dev/input/event* node, in the order of their numbers (event2 before event10).
 std::vector<std::string> listEventNodes() {
-    std::vector<std::string> paths;
+    std::vector<std::pair<int, std::string>> nodes;
     DIR* directory = opendir("/dev/input");
     if (directory == nullptr) {
-        return paths;
+        return {};
     }
     while (const dirent* entry = readdir(directory)) {
         if (std::strncmp(entry->d_name, "event", 5) == 0) {
-            paths.push_back(std::string("/dev/input/") + entry->d_name);
+            nodes.emplace_back(std::atoi(entry->d_name + 5), std::string("/dev/input/") + entry->d_name);
         }
     }
     closedir(directory);
-    std::sort(paths.begin(), paths.end());
+    std::sort(nodes.begin(), nodes.end());
+    std::vector<std::string> paths;
+    paths.reserve(nodes.size());
+    for (const auto& node : nodes) {
+        paths.push_back(node.second);
+    }
     return paths;
 }
 
