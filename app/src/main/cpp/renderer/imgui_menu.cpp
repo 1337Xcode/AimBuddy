@@ -19,6 +19,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <deque>
 #include <thread>
 
@@ -232,6 +233,30 @@ void applyTheme() {
 // The game overlay: crosshair, targets, zones
 // ---------------------------------------------------------------------------------------------
 
+/// Where the performance label sits, in font heights: its distance from the right edge and from the
+/// top (far enough down to clear the status bar), and how far its text is from the label's own edge.
+constexpr float kReadoutMarginEm = 0.8f;
+constexpr float kReadoutTopEm = 4.4f;
+constexpr float kReadoutPaddingEm = 0.3f;
+
+/// Draws how many detections finish each second, how old the picture is when its targets are ready,
+/// and which processor runs the network, in a small label at the top right.
+void drawPerformanceReadout(ImDrawList* list, const ImVec2& windowSize) {
+    const aimbuddy::DetectionPipeline::Stats stats = aimbuddy::pipeline().stats();
+    char text[64];
+    const bool gpu = std::strncmp(stats.backend, "GPU", 3) == 0;
+    std::snprintf(text, sizeof(text), "%.0f/s  %.0f ms  %s", stats.detectionsPerSecond, stats.frameAgeMs,
+                  stats.backend[0] == '\0' ? "" : (gpu ? "GPU" : "CPU"));
+    ImFont* font = ImGui::GetFont();
+    const float size = ImGui::GetFontSize();
+    const float padding = kReadoutPaddingEm * size;
+    const ImVec2 textSize = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+    const ImVec2 corner(windowSize.x - kReadoutMarginEm * size - textSize.x - 2.0f * padding, kReadoutTopEm * size);
+    list->AddRectFilled(corner, ImVec2(corner.x + textSize.x + 2.0f * padding, corner.y + textSize.y + 2.0f * padding),
+                        IM_COL32(0, 0, 0, 150), 0.3f * size);
+    list->AddText(font, size, ImVec2(corner.x + padding, corner.y + padding), IM_COL32(255, 255, 255, 230), text);
+}
+
 /// Draws a line, a box or a marker for every target, and the zones the detector and the assist work in.
 void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCountOut) {
     ImDrawList* list = ImGui::GetBackgroundDrawList();
@@ -321,6 +346,10 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
         const float size = ImGui::GetFontSize() * 2.0f;
         const ImVec2 textSize = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
         list->AddText(font, size, ImVec2((windowSize.x - textSize.x) * 0.5f, 40.0f), IM_COL32(255, 50, 50, 255), text);
+    }
+
+    if (settings.showPerformance) {
+        drawPerformanceReadout(list, windowSize);
     }
 }
 
