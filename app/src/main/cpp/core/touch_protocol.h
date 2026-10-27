@@ -62,6 +62,7 @@ enum class Reason : uint16_t {
     kEscapeKeys = 7,          ///< The volume keys were held to take the screen back.
     kBadClient = 8,           ///< A connection without the right token or protocol.
     kRequested = 9,           ///< The app asked.
+    kUnreachable = 10,        ///< Seen from the app: nothing answered at the helper's address.
 };
 
 /// A request from the app to the helper.
