@@ -151,6 +151,7 @@ set(IMGUI_SOURCES
 set(ESP_SOURCES
     esp_jni.cpp
     capture/roi_capture.cpp
+    core/tracker.cpp
     detector/yolo_detector.cpp
     aimbot/aimbot_controller.cpp
     aimbot/target_tracker.cpp
