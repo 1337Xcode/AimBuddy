@@ -183,7 +183,10 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
 /** One color the player can pick. */
 data class Swatch(val name: String, val color: Color)
 
-/** A row with a title and round color choices, wrapping onto more lines when they do not fit. The selected one has a ring and a check. */
+/** How many color choices stand in one line, so ten of them make two even lines. */
+private const val SwatchesPerLine = 5
+
+/** A row with a title and round color choices in even lines. The selected one has a ring and a check. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SwatchRow(title: String, swatches: List<Swatch>, selected: Int, onSelect: (Int) -> Unit) {
@@ -196,7 +199,8 @@ fun SwatchRow(title: String, swatches: List<Swatch>, selected: Int, onSelect: (I
     ) {
         Text(text = title, style = MaterialTheme.typography.titleMedium, color = palette.text)
         FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(Space.m),
+            maxItemsInEachRow = SwatchesPerLine,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalArrangement = Arrangement.spacedBy(Space.m),
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -204,11 +208,13 @@ fun SwatchRow(title: String, swatches: List<Swatch>, selected: Int, onSelect: (I
                 val isSelected = index == selected
                 Box(
                     modifier = Modifier
-                        .size(Space.xl + Space.xs)
+                        .size(Space.xl + Space.s)
                         .clip(CircleShape)
                         .background(swatch.color)
-                        .then(
-                            if (isSelected) Modifier.border(BorderStroke(3.dp, palette.text), CircleShape) else Modifier
+                        // A thin outline keeps a color close to the card's own (white on white) in view.
+                        .border(
+                            if (isSelected) BorderStroke(3.dp, palette.text) else BorderStroke(Space.hairline, palette.separator),
+                            CircleShape,
                         )
                         .clickable(role = Role.RadioButton) { onSelect(index) }
                         .semantics {
