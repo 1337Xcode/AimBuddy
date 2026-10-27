@@ -82,6 +82,8 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} \
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} \
     -flto=thin \
     -Wl,--strip-all")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections -Wl,--as-needed")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -flto=thin -Wl,--strip-all")
 set(CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO} \
     -flto=thin")
 
@@ -208,5 +210,26 @@ find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(esp_native OpenMP::OpenMP_CXX)
 endif()
+
+# =============================================================================
+# Touch helper
+#
+# A program, not a library: it runs as root or as the shell user (through Shizuku), which is the
+# only way to read the touchscreen and create a virtual one. It is named like a library so that
+# the package manager unpacks it next to the others, where those users can run it from.
+# =============================================================================
+add_executable(aimtouch
+    touch/aimtouch_main.cpp
+    touch/touch_server.cpp
+    touch/evdev_device.cpp
+    core/touch_mux.cpp
+)
+target_include_directories(aimtouch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(aimtouch PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "libaimtouch"
+    SUFFIX ".so"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+)
 
 message(STATUS "ESP native library configured successfully")
