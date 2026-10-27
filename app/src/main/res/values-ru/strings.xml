@@ -162,6 +162,7 @@
     <string name="notification_text">Нажмите, чтобы открыть. «Стоп» завершает работу в любой момент.</string>
     <string name="notification_menu">Меню</string>
     <string name="notification_stop">Стоп</string>
+    <string name="overlay_button_description">Меню AimBuddy. Удерживайте, чтобы остановить.</string>
 
     <!-- Первый запуск -->
     <string name="notice_title">Бесплатно и с открытым кодом</string>

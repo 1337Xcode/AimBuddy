@@ -162,6 +162,7 @@
     <string name="notification_text">点按打开。随时可用“停止”结束。</string>
     <string name="notification_menu">菜单</string>
     <string name="notification_stop">停止</string>
+    <string name="overlay_button_description">AimBuddy 菜单。长按可停止。</string>
 
     <!-- 首次运行 -->
     <string name="notice_title">免费开源</string>

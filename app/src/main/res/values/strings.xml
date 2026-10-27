@@ -164,6 +164,7 @@
     <string name="notification_text">Tap to open. Use Stop to end it at any time.</string>
     <string name="notification_menu">Menu</string>
     <string name="notification_stop">Stop</string>
+    <string name="overlay_button_description">AimBuddy menu. Hold to stop.</string>
 
     <!-- First run -->
     <string name="notice_title">Free and open source</string>

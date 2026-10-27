@@ -2,8 +2,6 @@ package com.aimbuddy
 
 import android.content.Context
 import android.graphics.PixelFormat
-import android.graphics.drawable.Drawable
-import android.graphics.drawable.PictureDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -14,8 +12,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.ImageView
-import com.caverock.androidsvg.SVG
 import kotlin.math.abs
 
 /**
@@ -49,7 +45,7 @@ class OverlayController(
 
     private var surface: OverlayView? = null
     private var surfaceParams: WindowManager.LayoutParams? = null
-    private var icon: ImageView? = null
+    private var icon: StaticBubbleView? = null
     private var iconParams: WindowManager.LayoutParams? = null
 
     private var streamerMode = false
@@ -241,11 +237,8 @@ class OverlayController(
 
     private fun addIcon() {
         val sizePx = (ICON_SIZE_DP * context.resources.displayMetrics.density).toInt()
-        val view = ImageView(context).apply {
-            setImageDrawable(loadIcon())
-            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            contentDescription = "AimBuddy menu. Hold to stop."
+        val view = StaticBubbleView(context).apply {
+            contentDescription = context.getString(R.string.overlay_button_description)
         }
         val params = WindowManager.LayoutParams(
             sizePx, sizePx, overlayType(),
@@ -309,14 +302,6 @@ class OverlayController(
             MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(holdToStop)
         }
         return true
-    }
-
-    private fun loadIcon(): Drawable? = try {
-        val svg = context.assets.open("icons/settings.svg").use { SVG.getFromInputStream(it) }
-        PictureDrawable(svg.renderToPicture())
-    } catch (e: Exception) {
-        Log.w(TAG, "Failed to load the icon: ${e.message}")
-        context.getDrawable(android.R.drawable.ic_menu_manage)
     }
 
     private fun update(view: View?, params: WindowManager.LayoutParams) {
