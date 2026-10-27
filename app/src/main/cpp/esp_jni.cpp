@@ -393,6 +393,11 @@ JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_runFingerScript(JNIEnv* env,
     std::thread([file] { RunFingerScript(file); }).detach();
 }
 
+/** @brief Has the next frame the detector's region is copied from written to a file as a PPM picture. */
+JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_dumpFrame(JNIEnv* env, jclass /* clazz */, jstring path) {
+    g_pipeline.requestFrameDump(toStdString(env, path));
+}
+
 /** @brief Starts keeping a row for every aim step and for every measured slide of the picture. */
 JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_startTrace(JNIEnv* /* env */, jclass /* clazz */) {
     g_aimLoop.startTrace();

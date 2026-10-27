@@ -38,6 +38,8 @@ internal data class PlaygroundConfig(
     val fingerTest: Boolean = false,
     /** The scene takes no notice of this many looking touches, from the first, as a game may while the screen turns. */
     val ignoreTouches: Int = 0,
+    /** Writes the picture the detector sees to `frame.ppm` this many milliseconds into the run; 0 writes none. */
+    val dumpMs: Int = 0,
 ) {
     companion object {
         fun from(intent: Intent) = PlaygroundConfig(
@@ -55,6 +57,7 @@ internal data class PlaygroundConfig(
             trace = intent.getBooleanExtra("trace", false),
             fingerTest = intent.getBooleanExtra("fingerTest", false),
             ignoreTouches = intent.getIntExtra("ignoreTouches", 0),
+            dumpMs = intent.getIntExtra("dumpMs", 0),
         )
     }
 }

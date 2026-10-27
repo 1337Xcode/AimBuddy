@@ -78,6 +78,9 @@ class PlaygroundActivity : Activity() {
         if (config.fingerTest) {
             DebugHooks.runFingerScript(File(getExternalFilesDir(null), "fingerscript.csv").path)
         }
+        if (config.dumpMs > 0) {
+            scene.postDelayed({ DebugHooks.dumpFrame(File(getExternalFilesDir(null), "frame.ppm").path) }, config.dumpMs.toLong())
+        }
     }
 
     override fun onStop() {

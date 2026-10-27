@@ -96,6 +96,10 @@ public:
     /// Testing only: writes the measurements kept since startMotionTrace to `path` as CSV and stops keeping them.
     /// The reduced pictures the measurements were made from go to `path` + ".grey" as raw floats, for replaying them.
     bool writeMotionTrace(const std::string& path);
+
+    /// Testing only: the next frame the detector's region is copied from is written to `path` as a PPM picture,
+    /// exactly as the detector will see it (the app's own overlay included).
+    void requestFrameDump(const std::string& path);
 #endif
 
     RoiCapture& capture() { return capture_; }
@@ -108,6 +112,7 @@ private:
     void measureCameraMotion(const RoiFrame& frame);
 #ifdef AIMBUDDY_DEBUG_HOOKS
     bool detectSynthetic(const RoiFrame& frame, DetectionBatch& batch);
+    void dumpFrameIfAsked(const RoiFrame& frame);
 #endif
     void recordStats(const DetectionBatch& batch, int64_t finishedNs);
 
@@ -136,6 +141,8 @@ private:
     std::mutex syntheticMutex_;
     std::deque<SyntheticScene> synthetic_;
     std::atomic<bool> syntheticMode_{false};
+    std::mutex dumpMutex_;
+    std::string dumpPath_;   ///< Where the next frame is to be written; empty when none is wanted.
 
     /// Boxes kept with each recorded measurement.
     static constexpr int kTracedMovers = 8;

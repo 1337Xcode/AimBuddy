@@ -17,6 +17,10 @@ object DebugHooks {
     @JvmStatic
     external fun feedDetections(boxes: FloatArray, sceneNs: Long)
 
+    /** Writes the next frame the detector's region is copied from to `path` as a PPM picture, exactly as the detector sees it. */
+    @JvmStatic
+    external fun dumpFrame(path: String)
+
     /** Starts keeping a row for every aim step (what the controller saw, decided and believed) and for every measured slide of the picture. */
     @JvmStatic
     external fun startTrace()

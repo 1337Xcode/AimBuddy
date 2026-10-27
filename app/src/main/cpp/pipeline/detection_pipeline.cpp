@@ -108,6 +108,9 @@ void DetectionPipeline::applyConfidenceIfChanged(float& applied) {
  * be taken for the camera turning.
  */
 void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
+#ifdef AIMBUDDY_DEBUG_HOOKS
+    dumpFrameIfAsked(frame);
+#endif
     if (cameraMotion_ == nullptr) {
         return;
     }
@@ -161,6 +164,42 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
 }
 
 #ifdef AIMBUDDY_DEBUG_HOOKS
+void DetectionPipeline::requestFrameDump(const std::string& path) {
+    std::lock_guard<std::mutex> lock(dumpMutex_);
+    dumpPath_ = path;
+}
+
+/// Writes the frame as a binary PPM (RGB, no alpha) if a dump was asked for, once.
+void DetectionPipeline::dumpFrameIfAsked(const RoiFrame& frame) {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lock(dumpMutex_);
+        path.swap(dumpPath_);
+    }
+    if (path.empty()) {
+        return;
+    }
+    FILE* file = std::fopen(path.c_str(), "wb");
+    if (file == nullptr) {
+        LOGE("Could not write the frame to %s", path.c_str());
+        return;
+    }
+    const int side = frame.roi.side;
+    std::fprintf(file, "P6\n%d %d\n255\n", side, side);
+    std::vector<uint8_t> row(static_cast<size_t>(side) * 3);
+    for (int y = 0; y < side; ++y) {
+        const uint8_t* source = frame.rgba.data() + static_cast<size_t>(y) * side * 4;
+        for (int x = 0; x < side; ++x) {
+            row[x * 3] = source[x * 4];
+            row[x * 3 + 1] = source[x * 4 + 1];
+            row[x * 3 + 2] = source[x * 4 + 2];
+        }
+        std::fwrite(row.data(), 1, row.size(), file);
+    }
+    std::fclose(file);
+    LOGI("Wrote the %dx%d frame to %s", side, side, path.c_str());
+}
+
 void DetectionPipeline::feedSynthetic(const Detection* detections, int count, int64_t sceneNs) {
     std::lock_guard<std::mutex> lock(syntheticMutex_);
     synthetic_.emplace_back();
