@@ -9,7 +9,7 @@ Aim assist and enemy highlights for mobile shooters, for players who find fast a
 - **Highlights enemies.** A detection model finds people on screen and a thin outline follows each one. Color, thickness and labels are yours to set, and the outline stays visible for any kind of color vision.
 - **Helps you aim.** The assist puts one extra finger on the touchscreen, away from your own, and moves your view towards the target nearest the crosshair, at the part of the body you pick. It measures how your game's camera answers a finger while you play, so it needs no setup per game.
 - **Stays out of the way.** Your own fingers keep working as they always do. Holding both volume keys, or the stop button in the notification, gives the touchscreen back at once.
-- **Fits the phone.** Detection runs on a small crop around the crosshair, on the CPU or the GPU, whichever is faster on your phone.
+- **Fits the phone.** Detection runs on a small crop around the crosshair, on the CPU or the GPU, whichever is faster on your phone. It eases off when the phone reports that it is getting hot.
 - **Streamer mode.** Draws nothing over the game and keeps its menu out of screenshots and recordings.
 - **Updates itself.** The app checks GitHub for a new release and for new models, so nobody has to reinstall by hand.
 - **Three languages.** English, Chinese and Russian.
