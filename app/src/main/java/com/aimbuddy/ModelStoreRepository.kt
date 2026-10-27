@@ -92,10 +92,7 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
                 }
                 doneBytes += file.sizeBytes
             }
-            targetDir.deleteRecursively()
-            if (!work.renameTo(targetDir)) {
-                throw IOException("Could not move the model into place")
-            }
+            swapIn(work, targetDir)
             finished = true
             return InstalledFiles(File(targetDir, PARAM_FILE), File(targetDir, BIN_FILE))
         } finally {
@@ -103,6 +100,20 @@ class ModelStoreRepository(private val baseUrl: String, private val cacheDir: Fi
                 work.deleteRecursively()
             }
         }
+    }
+
+    /** Puts the downloaded folder in place of [targetDir], keeping the old one until the new one is there so a failure loses nothing. */
+    private fun swapIn(downloaded: File, targetDir: File) {
+        val previous = File(targetDir.parentFile, "${targetDir.name}.previous")
+        previous.deleteRecursively()
+        if (targetDir.exists() && !targetDir.renameTo(previous)) {
+            throw IOException("Could not move the old model out of the way")
+        }
+        if (!downloaded.renameTo(targetDir)) {
+            previous.renameTo(targetDir)
+            throw IOException("Could not move the model into place")
+        }
+        previous.deleteRecursively()
     }
 
     /**
