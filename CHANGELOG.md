@@ -14,6 +14,7 @@ Pre-release work staged for the next tag. A rebuild of the touch, aim and detect
 - A touch helper, `libaimtouch.so`, started through Shizuku or root. It takes the real touchscreen over, passes the player's touches to a virtual copy and adds the assist's finger as one more contact. It only takes the screen when no finger is on it, needs a heartbeat from the app, and gives the screen back when both volume keys are held or when it dies.
 - Measuring the game's camera while the player plays: how far the picture slid between frames, and from that the camera's gain and delay. The aim controller predicts through that delay, starts with small moves until the camera is known, and lifts and puts the finger down again when the game ignores it.
 - Ten box colors and ten accent colors, a performance readout, a Menu button in the notification, and a notice on the first run that the app is free and open source.
+- Detection eases off when the phone reports that it is getting hot: at most 30 detections a second when it is warm and 15 when it is hot, and full speed again once it has cooled down.
 - A launcher icon of TV static, drawn anew for each build (`-Paimbuddy.iconSeed` repeats one), and a floating button that is a round bubble of static.
 - Tests for the tracker, the aim controller against a simulated game, camera motion, the touch merger, the detector's decoding, the settings, the update logic and the model store.
 

@@ -22,6 +22,10 @@ When the assist starts, the model is timed on the CPU and on the GPU (Vulkan), t
 
 On the CPU the model runs on at most three of the fast cores, and the little cores stay free for the game and the system. Idle worker threads sleep after one millisecond instead of spinning, which keeps the phone cooler between frames.
 
+## When the phone gets hot
+
+Android reports how hot the phone is. While AimBuddy runs it listens: when the phone is warm (the system's "moderate" level) AimBuddy runs at most 30 detections a second, and when it is hot ("severe" or worse) at most 15. It goes back to full speed once the phone has cooled down. Frames over the limit are skipped, not held back, so the targets AimBuddy reports are as fresh as ever, only fewer. The performance readout shows the lower rate while this lasts. A phone that stays cool is never slowed down.
+
 ## Reading the performance readout
 
 Switch it on under Settings, Overlay, Performance readout. It sits at the top right of the screen and reads like `42/s  21 ms  GPU`.
