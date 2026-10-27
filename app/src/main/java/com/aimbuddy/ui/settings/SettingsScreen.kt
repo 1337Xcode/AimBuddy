@@ -26,6 +26,7 @@ import com.aimbuddy.Project
 import com.aimbuddy.R
 import com.aimbuddy.ui.Appearance
 import com.aimbuddy.ui.SettingsView
+import com.aimbuddy.ui.home.updateProblemText
 import com.aimbuddy.ui.components.Chevron
 import com.aimbuddy.ui.components.Group
 import com.aimbuddy.ui.components.GroupScope
@@ -41,6 +42,7 @@ import com.aimbuddy.ui.theme.Accent
 import com.aimbuddy.ui.theme.AppTheme
 import com.aimbuddy.ui.theme.Space
 import com.aimbuddy.ui.theme.ThemeMode
+import com.aimbuddy.update.UpdateStatus
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -83,6 +85,8 @@ class SettingsActions(
     val setAccent: (Accent) -> Unit,
     val reset: () -> Unit,
     val openUrl: (String) -> Unit,
+    val updateAction: () -> Unit,
+    val setAutoUpdateCheck: (Boolean) -> Unit,
 )
 
 /**
@@ -90,7 +94,14 @@ class SettingsActions(
  * the overlay and the assist use. Nothing needs saving: a change takes effect at once.
  */
 @Composable
-fun SettingsScreen(settings: SettingsView, appearance: Appearance, actions: SettingsActions, onBack: () -> Unit) {
+fun SettingsScreen(
+    settings: SettingsView,
+    appearance: Appearance,
+    updateStatus: UpdateStatus,
+    autoUpdateCheck: Boolean,
+    actions: SettingsActions,
+    onBack: () -> Unit,
+) {
     var confirmReset by remember { mutableStateOf(false) }
     var showNotices by remember { mutableStateOf(false) }
 
@@ -101,7 +112,7 @@ fun SettingsScreen(settings: SettingsView, appearance: Appearance, actions: Sett
         item { CameraGroup(settings, actions) }
         item { TouchGroup(settings, actions) }
         item { AppGroup(settings, appearance, actions) }
-        item { AboutGroup(actions, onShowNotices = { showNotices = true }) }
+        item { AboutGroup(updateStatus, autoUpdateCheck, actions, onShowNotices = { showNotices = true }) }
         item {
             Group {
                 row {
@@ -341,14 +352,28 @@ private fun AppGroup(settings: SettingsView, appearance: Appearance, actions: Se
     }
 }
 
-/** Which version this is, where the source is, and under what terms it is shared. */
+/** Which version this is, whether there is a newer one, where the source is, and under what terms it is shared. */
 @Composable
-private fun AboutGroup(actions: SettingsActions, onShowNotices: () -> Unit) {
+private fun AboutGroup(updateStatus: UpdateStatus, autoUpdateCheck: Boolean, actions: SettingsActions, onShowNotices: () -> Unit) {
     Group(title = stringResource(R.string.settings_about)) {
         row {
             ListRow(
                 title = stringResource(R.string.about_version),
                 trailing = { RowValue(BuildConfig.AIMBUDDY_VERSION) },
+            )
+        }
+        row {
+            ListRow(
+                title = stringResource(R.string.about_updates),
+                trailing = { RowValue(updateText(updateStatus)) },
+                onClick = actions.updateAction,
+            )
+        }
+        row {
+            SwitchRow(
+                title = stringResource(R.string.s_auto_update),
+                checked = autoUpdateCheck,
+                onCheckedChange = actions.setAutoUpdateCheck,
             )
         }
         row {
@@ -381,6 +406,19 @@ private fun AboutGroup(actions: SettingsActions, onShowNotices: () -> Unit) {
             )
         }
     }
+}
+
+/** What the updates row says about where the update stands. */
+@Composable
+private fun updateText(status: UpdateStatus): String = when (status) {
+    UpdateStatus.Unknown -> stringResource(R.string.about_updates_check)
+    UpdateStatus.Checking -> stringResource(R.string.about_updates_checking)
+    UpdateStatus.UpToDate -> stringResource(R.string.about_updates_up_to_date)
+    is UpdateStatus.Available -> stringResource(R.string.about_updates_available, status.info.version)
+    is UpdateStatus.Downloading -> stringResource(R.string.update_downloading)
+    is UpdateStatus.ReadyToInstall -> stringResource(R.string.update_ready)
+    is UpdateStatus.Installing -> stringResource(R.string.update_installing)
+    is UpdateStatus.Failed -> stringResource(updateProblemText(status.problem))
 }
 
 /** The third-party parts the app is built from, with their licenses. */

@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aimbuddy.BuildConfig
 import com.aimbuddy.BundledModel
 import com.aimbuddy.InstalledModel
 import com.aimbuddy.ModelCatalog
@@ -19,6 +20,11 @@ import com.aimbuddy.R
 import com.aimbuddy.StoreModelDefinition
 import com.aimbuddy.ui.theme.Accent
 import com.aimbuddy.ui.theme.ThemeMode
+import com.aimbuddy.update.AppUpdater
+import com.aimbuddy.update.UpdateInfo
+import com.aimbuddy.update.UpdateProblem
+import com.aimbuddy.update.UpdateState
+import com.aimbuddy.update.UpdateStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -106,6 +112,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UiMessage> = _messages.asSharedFlow()
 
+    private val updater = AppUpdater(
+        context = application,
+        // Only a debug build may look for updates anywhere but GitHub (see UPDATE_API_OVERRIDE in app/build.gradle).
+        releasesUrl = if (BuildConfig.DEBUG) BuildConfig.UPDATE_API_OVERRIDE.ifEmpty { Project.RELEASES_URL } else Project.RELEASES_URL,
+        allowInsecure = BuildConfig.DEBUG,
+    )
+    val updateStatus: StateFlow<UpdateStatus> = UpdateState.status
+
+    private val _autoUpdateCheck = MutableStateFlow(preferences.getBoolean(KEY_AUTO_UPDATE_CHECK, true))
+    val autoUpdateCheck: StateFlow<Boolean> = _autoUpdateCheck.asStateFlow()
+
+    // Said once when a download has been checked, so the screen can open the installer without another tap.
+    private val _installRequests = MutableSharedFlow<UpdateStatus.ReadyToInstall>(extraBufferCapacity = 1)
+    val installRequests: SharedFlow<UpdateStatus.ReadyToInstall> = _installRequests.asSharedFlow()
+
     private var pendingParam: Uri? = null
     private var pendingName = "model"
 
@@ -144,6 +165,76 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mode = runCatching { ThemeMode.valueOf(preferences.getString(KEY_THEME_MODE, null) ?: "") }.getOrDefault(ThemeMode.SYSTEM),
         accent = runCatching { Accent.valueOf(preferences.getString(KEY_ACCENT, null) ?: "") }.getOrDefault(Accent.BLUE),
     )
+
+    // ---------------------------------------------------------------------------------------
+    // Updates
+    // ---------------------------------------------------------------------------------------
+
+    /** Whether the app looks for a newer version by itself when it starts. */
+    fun setAutoUpdateCheck(enabled: Boolean) {
+        _autoUpdateCheck.value = enabled
+        preferences.edit().putBoolean(KEY_AUTO_UPDATE_CHECK, enabled).apply()
+    }
+
+    /**
+     * Looks on GitHub for a newer version. The check that runs by itself happens once each time the
+     * app starts, and only when the player allows it; the player can ask for one at any time.
+     */
+    fun checkForUpdate(manual: Boolean) {
+        val current = UpdateState.status.value
+        val busy = current is UpdateStatus.Checking || current is UpdateStatus.Downloading ||
+            current is UpdateStatus.ReadyToInstall || current is UpdateStatus.Installing
+        if (busy || (!manual && (!_autoUpdateCheck.value || current !is UpdateStatus.Unknown))) {
+            return
+        }
+        UpdateState.set(UpdateStatus.Checking)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { updater.findUpdate() } }
+            result.exceptionOrNull()?.let { Log.w(TAG, "The update check failed: ${it.message}", it) }
+            UpdateState.set(
+                result.fold(
+                    { info -> if (info != null) UpdateStatus.Available(info) else UpdateStatus.UpToDate },
+                    { UpdateStatus.Failed(UpdateProblem.UNREACHABLE, null) },
+                )
+            )
+        }
+    }
+
+    /** Downloads the update that is on offer (or that failed) and checks it; the screen then installs it. */
+    fun startUpdate() {
+        val info: UpdateInfo = when (val status = UpdateState.status.value) {
+            is UpdateStatus.Available -> status.info
+            is UpdateStatus.Failed -> status.info ?: return
+            else -> return
+        }
+        UpdateState.set(UpdateStatus.Downloading(info, 0f))
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { updater.download(info) { progress -> UpdateState.set(UpdateStatus.Downloading(info, progress)) } }
+            }
+            result.onSuccess { file ->
+                val ready = UpdateStatus.ReadyToInstall(info, file)
+                UpdateState.set(ready)
+                _installRequests.tryEmit(ready)
+            }.onFailure { error ->
+                Log.w(TAG, "The update could not be downloaded: ${error.message}", error)
+                val problem = if (error is SecurityException) UpdateProblem.NOT_VERIFIED else UpdateProblem.UNREACHABLE
+                UpdateState.set(UpdateStatus.Failed(problem, info))
+            }
+        }
+    }
+
+    /** Hands a downloaded update to the system's installer. */
+    fun installUpdate(ready: UpdateStatus.ReadyToInstall) {
+        UpdateState.set(UpdateStatus.Installing(ready.info))
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { updater.install(ready.file) } }
+            result.exceptionOrNull()?.let {
+                Log.w(TAG, "The update could not be handed to the installer: ${it.message}", it)
+                UpdateState.set(UpdateStatus.Failed(UpdateProblem.NOT_INSTALLED, ready.info))
+            }
+        }
+    }
 
     // ---------------------------------------------------------------------------------------
     // Settings
@@ -370,6 +461,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         const val PREFS_NAME = "aimbuddy_prefs"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_ACCENT = "accent"
+        const val KEY_AUTO_UPDATE_CHECK = "auto_update_check"
         const val KEY_LEGACY_PARAM = "model_param_path"
         const val KEY_LEGACY_BIN = "model_bin_path"
         const val SETTINGS_FILE = "settings.cfg"

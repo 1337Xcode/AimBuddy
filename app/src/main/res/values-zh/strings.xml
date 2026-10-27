@@ -27,6 +27,19 @@
     <string name="touch_dialog_open_shizuku">打开 Shizuku</string>
     <string name="open_source">免费开源</string>
 
+    <!-- 更新 -->
+    <string name="update_available_title">有可用更新</string>
+    <string name="update_downloading">正在下载更新</string>
+    <string name="update_ready">可以安装</string>
+    <string name="update_installing">正在安装更新</string>
+    <string name="update_action_update">更新</string>
+    <string name="update_action_install">安装</string>
+    <string name="update_action_retry">重试</string>
+    <string name="update_failed_unreachable">无法连接 GitHub。</string>
+    <string name="update_failed_not_verified">无法验证下载的文件。</string>
+    <string name="update_failed_not_installed">无法安装更新。</string>
+    <string name="update_allow_installs">请允许 AimBuddy 安装应用，然后返回。</string>
+
     <!-- 启动流程 -->
     <string name="overlay_title">允许显示在其他应用上层</string>
     <string name="overlay_message">AimBuddy 需要绘制在游戏之上。请在列表中找到 AimBuddy 并开启,然后返回并点按“开始”。</string>
@@ -134,6 +147,12 @@
     <string name="about_source">GitHub 上的源代码</string>
     <string name="about_license">许可证</string>
     <string name="about_notices">开源声明</string>
+    <string name="about_updates">更新</string>
+    <string name="about_updates_check">立即检查</string>
+    <string name="about_updates_checking">正在检查</string>
+    <string name="about_updates_up_to_date">已是最新</string>
+    <string name="about_updates_available">%1$s 可用</string>
+    <string name="s_auto_update">自动检查更新</string>
     <string name="back">返回</string>
     <string name="more">更多</string>
 

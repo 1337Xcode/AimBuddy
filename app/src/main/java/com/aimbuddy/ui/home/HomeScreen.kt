@@ -56,6 +56,7 @@ import com.aimbuddy.ui.components.ContentMaxWidth
 import com.aimbuddy.ui.components.screenPadding
 import com.aimbuddy.ui.theme.AppTheme
 import com.aimbuddy.ui.theme.Space
+import com.aimbuddy.update.UpdateStatus
 
 /** What the status area says for one reading of the assist: a word and a sentence. */
 private class Status(val title: String, val hint: String, val isError: Boolean = false)
@@ -100,18 +101,20 @@ fun HomeScreen(
     snapshot: AssistState.Snapshot,
     modelName: String?,
     touchAccess: TouchAccess,
+    updateStatus: UpdateStatus,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onOpenModels: () -> Unit,
     onOpenSettings: () -> Unit,
     onTouchAccess: () -> Unit,
     onOpenProject: () -> Unit,
+    onUpdate: () -> Unit,
 ) {
     val status = statusFor(snapshot)
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(AppTheme.palette.background)) {
         val sideBySide = maxWidth > maxHeight && maxWidth >= 600.dp
         val list: @Composable () -> Unit = {
-            HomeList(snapshot, modelName, touchAccess, onOpenModels, onOpenSettings, onTouchAccess, onOpenProject)
+            HomeList(snapshot, modelName, touchAccess, updateStatus, onOpenModels, onOpenSettings, onTouchAccess, onOpenProject, onUpdate)
         }
         val padding = screenPadding()
         if (sideBySide) {
@@ -221,16 +224,18 @@ private fun PowerButton(phase: AssistState.Phase, onStart: () -> Unit, onStop: (
     }
 }
 
-/** The list under the hero: the model, the touch access, the settings, and a line about the project. */
+/** The list under the hero: an update when there is one, the model, the touch access, the settings, and a line about the project. */
 @Composable
 private fun HomeList(
     snapshot: AssistState.Snapshot,
     modelName: String?,
     touchAccess: TouchAccess,
+    updateStatus: UpdateStatus,
     onOpenModels: () -> Unit,
     onOpenSettings: () -> Unit,
     onTouchAccess: () -> Unit,
     onOpenProject: () -> Unit,
+    onUpdate: () -> Unit,
 ) {
     val palette = AppTheme.palette
     val route = (snapshot.touch as? AssistState.Touch.Connected)?.route
@@ -243,6 +248,7 @@ private fun HomeList(
         else -> stringResource(R.string.touch_not_set_up)
     }
     Column(verticalArrangement = Arrangement.spacedBy(Space.l)) {
+        UpdateBanner(updateStatus, onUpdate)
         Group {
             row {
                 ListRow(

@@ -27,6 +27,19 @@
     <string name="touch_dialog_open_shizuku">Открыть Shizuku</string>
     <string name="open_source">Бесплатно и с открытым кодом</string>
 
+    <!-- Обновления -->
+    <string name="update_available_title">Доступно обновление</string>
+    <string name="update_downloading">Загрузка обновления</string>
+    <string name="update_ready">Готово к установке</string>
+    <string name="update_installing">Установка обновления</string>
+    <string name="update_action_update">Обновить</string>
+    <string name="update_action_install">Установить</string>
+    <string name="update_action_retry">Повторить</string>
+    <string name="update_failed_unreachable">Не удаётся связаться с GitHub.</string>
+    <string name="update_failed_not_verified">Не удалось проверить загруженный файл.</string>
+    <string name="update_failed_not_installed">Не удалось установить обновление.</string>
+    <string name="update_allow_installs">Разрешите AimBuddy устанавливать приложения и вернитесь.</string>
+
     <!-- Запуск -->
     <string name="overlay_title">Разрешите показ поверх других приложений</string>
     <string name="overlay_message">AimBuddy рисует поверх игры. Найдите AimBuddy в списке, включите, затем вернитесь и нажмите «Старт».</string>
@@ -134,6 +147,12 @@
     <string name="about_source">Исходный код на GitHub</string>
     <string name="about_license">Лицензия</string>
     <string name="about_notices">Уведомления об открытом коде</string>
+    <string name="about_updates">Обновления</string>
+    <string name="about_updates_check">Проверить</string>
+    <string name="about_updates_checking">Проверка</string>
+    <string name="about_updates_up_to_date">Установлена последняя версия</string>
+    <string name="about_updates_available">Доступно %1$s</string>
+    <string name="s_auto_update">Проверять обновления автоматически</string>
     <string name="back">Назад</string>
     <string name="more">Ещё</string>
 

@@ -59,6 +59,8 @@ import com.aimbuddy.ui.settings.SettingsActions
 import com.aimbuddy.ui.settings.SettingsScreen
 import com.aimbuddy.ui.theme.AimBuddyTheme
 import com.aimbuddy.ui.theme.AppTheme
+import com.aimbuddy.update.UpdateState
+import com.aimbuddy.update.UpdateStatus
 import rikka.shizuku.Shizuku
 
 /** The screens the app moves between. */
@@ -120,6 +122,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    // Back from the page where installing apps from AimBuddy is allowed: carry on with the update if it was.
+    private val installPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            val ready = UpdateState.status.value as? UpdateStatus.ReadyToInstall
+            if (ready != null && packageManager.canRequestPackageInstalls()) {
+                viewModel.installUpdate(ready)
+            }
+        }
+
     // Importing a model: first the .param file, then the matching .bin file.
     private val importParamLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -149,6 +160,7 @@ class MainActivity : AppCompatActivity() {
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
         Shizuku.addBinderReceivedListenerSticky(shizukuBinderReceivedListener)
         Shizuku.addBinderDeadListener(shizukuBinderDeadListener)
+        viewModel.checkForUpdate(manual = false)
         showNotice = !getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getBoolean(PREF_NOTICE_SHOWN, false)
     }
 
@@ -191,6 +203,8 @@ class MainActivity : AppCompatActivity() {
         val settings by viewModel.settings.collectAsStateWithLifecycle()
         val appearance by viewModel.appearance.collectAsStateWithLifecycle()
         val touchAccess by viewModel.touchAccess.collectAsStateWithLifecycle()
+        val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
+        val autoUpdateCheck by viewModel.autoUpdateCheck.collectAsStateWithLifecycle()
         val snackbar = remember { SnackbarHostState() }
         val context = LocalContext.current
 
@@ -198,6 +212,9 @@ class MainActivity : AppCompatActivity() {
             viewModel.messages.collect { message ->
                 snackbar.showSnackbar(context.getString(message.resId, *message.args.toTypedArray()))
             }
+        }
+        LaunchedEffect(Unit) {
+            viewModel.installRequests.collect { beginInstall(it) }
         }
         BackHandler(enabled = screen != Screen.HOME) { screen = Screen.HOME }
 
@@ -217,12 +234,14 @@ class MainActivity : AppCompatActivity() {
                         snapshot = snapshot,
                         modelName = models.installed.firstOrNull { it.id == models.activeId }?.title,
                         touchAccess = touchAccess,
+                        updateStatus = updateStatus,
                         onStart = { startFlow() },
                         onStop = { AssistService.stop(this@MainActivity) },
                         onOpenModels = { screen = Screen.MODELS },
                         onOpenSettings = { screen = Screen.SETTINGS },
                         onTouchAccess = { showTouchDialog = true },
                         onOpenProject = { openUrl(Project.URL) },
+                        onUpdate = { updateAction() },
                     )
                     Screen.MODELS -> ModelsScreen(
                         state = models,
@@ -237,6 +256,8 @@ class MainActivity : AppCompatActivity() {
                     Screen.SETTINGS -> SettingsScreen(
                         settings = settings,
                         appearance = appearance,
+                        updateStatus = updateStatus,
+                        autoUpdateCheck = autoUpdateCheck,
                         actions = SettingsActions(
                             set = viewModel::setSetting,
                             setAll = viewModel::setSettings,
@@ -245,6 +266,8 @@ class MainActivity : AppCompatActivity() {
                             setAccent = viewModel::setAccent,
                             reset = viewModel::resetSettings,
                             openUrl = { url -> openUrl(url) },
+                            updateAction = { updateAction() },
+                            setAutoUpdateCheck = viewModel::setAutoUpdateCheck,
                         ),
                         onBack = { screen = Screen.HOME },
                     )
@@ -417,6 +440,27 @@ class MainActivity : AppCompatActivity() {
             else -> "en"
         }
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
+    }
+
+    /** What a tap on the update row does: fetch the update, install it, or look again, as the state calls for. */
+    private fun updateAction() {
+        when (val status = UpdateState.status.value) {
+            is UpdateStatus.Available -> viewModel.startUpdate()
+            is UpdateStatus.Failed -> if (status.info != null) viewModel.startUpdate() else viewModel.checkForUpdate(manual = true)
+            is UpdateStatus.ReadyToInstall -> beginInstall(status)
+            UpdateStatus.Unknown, UpdateStatus.UpToDate -> viewModel.checkForUpdate(manual = true)
+            else -> Unit   // checking, downloading or installing: already on its way
+        }
+    }
+
+    /** Hands a checked update to the installer, once the player has allowed AimBuddy to install apps. */
+    private fun beginInstall(ready: UpdateStatus.ReadyToInstall) {
+        if (packageManager.canRequestPackageInstalls()) {
+            viewModel.installUpdate(ready)
+            return
+        }
+        viewModel.post(UiMessage(R.string.update_allow_installs))
+        installPermissionLauncher.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
     }
 
     private fun openUrl(url: String) {

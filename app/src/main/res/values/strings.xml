@@ -27,6 +27,20 @@
     <string name="touch_dialog_open_shizuku">Open Shizuku</string>
     <string name="open_source">Free and open source</string>
 
+    <!-- Updates -->
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_detail" translatable="false">%1$s · %2$s</string>
+    <string name="update_downloading">Downloading the update</string>
+    <string name="update_ready">Ready to install</string>
+    <string name="update_installing">Installing the update</string>
+    <string name="update_action_update">Update</string>
+    <string name="update_action_install">Install</string>
+    <string name="update_action_retry">Try again</string>
+    <string name="update_failed_unreachable">Can\'t reach GitHub.</string>
+    <string name="update_failed_not_verified">The download could not be verified.</string>
+    <string name="update_failed_not_installed">The update could not be installed.</string>
+    <string name="update_allow_installs">Allow AimBuddy to install apps, then come back.</string>
+
     <!-- Start flow -->
     <string name="overlay_title">Allow display over other apps</string>
     <string name="overlay_message">AimBuddy draws over your game. Find AimBuddy in the list, turn it on, then come back and press Start.</string>
@@ -135,6 +149,12 @@
     <string name="about_source">Source code on GitHub</string>
     <string name="about_license">License</string>
     <string name="about_notices">Open source notices</string>
+    <string name="about_updates">Updates</string>
+    <string name="about_updates_check">Check now</string>
+    <string name="about_updates_checking">Checking</string>
+    <string name="about_updates_up_to_date">Up to date</string>
+    <string name="about_updates_available">%1$s available</string>
+    <string name="s_auto_update">Check for updates automatically</string>
     <string name="back">Back</string>
     <string name="more">More</string>
 
