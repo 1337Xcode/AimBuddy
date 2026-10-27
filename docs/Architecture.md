@@ -72,7 +72,7 @@ From Android 12 the system drops every touch that goes through another app's ove
 
 ### Streamer mode
 
-A window marked `FLAG_SECURE` is drawn as solid black in any capture that is not secure, however transparent its pixels are. AimBuddy's own picture of the screen is such a capture. A secure full screen window would therefore black out the game for the recorder and for the detector alike, so streamer mode does something else: the native code draws nothing over the game and the floating button turns invisible. The button stays where it is and keeps working (a tap opens the menu, holding it stops AimBuddy), so the player is never locked out, and the notification has a Menu button as well. The notification's status bar icon is empty, because the system does not let a foreground service's notification out of the status bar. The full screen window is secure only while the menu or the touch area editor is open, which is a few moments in which a recording shows black. `OverlayController.toggleMenu` makes the window secure before the menu is drawn into it and stops drawing the menu before the window stops being secure, so no frame of the menu is ever captured.
+A window marked `FLAG_SECURE` is drawn as solid black in any capture that is not secure, however transparent its pixels are. AimBuddy's own picture of the screen is such a capture. A secure full screen window would therefore black out the game for the recorder and for the detector alike, so streamer mode does something else: the native code draws nothing over the game and the floating button turns invisible. The button stays where it is and keeps working (a tap opens the menu, holding it stops AimBuddy), so the player is never locked out, and the notification has a Menu button as well. The notification's status bar icon is empty, because the system does not let a foreground service's notification out of the status bar. The full screen window is secure only while the menu or the touch area editor is open, which is a few moments in which a recording shows black. `OverlayController` makes the window secure before the menu is drawn into it, and after the menu is cleared it keeps the window secure for a few more frames before giving the touches back, so the menu stays out of the recording.
 
 ## Models
 
@@ -108,7 +108,7 @@ The tracker is shared by the pipeline thread, the aim loop and the overlay, and 
 ## Testing
 
 - `app/src/test/native` holds the C++ tests of the parts that do no input or output: the tracker, the aim controller against a simulated game with a known camera response, camera motion, the touch merger, the detector's decoding, and the settings. Run them with `sh app/src/test/native/run.sh`.
-- `app/src/test/java` holds the Kotlin tests of the update logic: `./gradlew testDebugUnitTest`.
+- `app/src/test/java` holds the Kotlin tests of the update logic, the model store and model files, the touch hints on the Home screen and the thermal limits: `./gradlew testDebugUnitTest`.
 - Debug builds contain a playground (`app/src/debug`), a stand-in first-person game with a known camera gain and delay, and a few hooks into the native code that record traces. They are compiled in only for debug builds (`AIMBUDDY_DEBUG_HOOKS`).
 
 ## Where to change things

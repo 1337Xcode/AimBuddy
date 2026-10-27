@@ -52,7 +52,7 @@ training/
   yolo26n.pt
 ```
 
-Python entrypoints auto-create missing required folders, including output and deployment targets.
+Python entrypoints auto-create missing required folders, including the output folders.
 
 ## Script Order
 

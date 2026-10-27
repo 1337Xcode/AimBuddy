@@ -1,6 +1,6 @@
 # Settings guide
 
-Every setting AimBuddy has, what it does, and what to try when something is off. Most settings are on the Settings screen of the app. The in-game menu, opened from the round button over the game (or from the notification's Menu button), has the same settings and a few more, and a change in either shows in both. A change takes effect at once.
+Every setting AimBuddy has, what it does, and what to try when something is off. Most settings are on the Settings screen of the app and in the in-game menu, which opens from the round button over the game (or from the notification's Menu button), and a change in either shows in both. A few are in one place only: the touch area's visibility and opacity are in the in-game menu, and Calibrate automatically, Appearance, Accent color and the update settings are in the app. A change takes effect at once.
 
 Where the settings are kept, and the limits each value is held to, are in `app/src/main/cpp/settings/settings.h` and `settings_store.cpp`.
 
@@ -54,6 +54,8 @@ If the aim overshoots or crawls with calibration on, give it a minute of aiming,
 | Setting | Default | What it does |
 |---------|---------|--------------|
 | Touch access | Automatic | How AimBuddy reaches the touchscreen: Shizuku, root, or automatic, which prefers Shizuku. See [Shizuku setup](ShizukuSetup.md). |
+| Show touch area | On | Draws the touch area on the screen while the assist is on. In-game menu only. |
+| Touch area opacity | 30% | How strongly the touch area is drawn, 10% to 100%. In-game menu only. |
 
 The touch area is where the assist's finger rests. Move and resize it from the Aim tab of the in-game menu while AimBuddy is running, so that it is away from your own thumbs. The assist's finger never travels farther than the area's radius from its centre. The menu also resets the area to where it started.
 
