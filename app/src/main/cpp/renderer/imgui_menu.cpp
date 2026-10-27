@@ -244,10 +244,16 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
     const float displayHeight = geometry.isValid() ? static_cast<float>(geometry.screenHeight) : windowSize.y;
     const ImVec2 crosshair(displayWidth * 0.5f - origin.x, displayHeight * 0.5f - origin.y);
 
-    const float arm = 11.5f;
-    const ImU32 crossColor = IM_COL32(58, 156, 255, 240);
-    list->AddLine(ImVec2(crosshair.x - arm, crosshair.y), ImVec2(crosshair.x + arm, crosshair.y), crossColor, 3.0f);
-    list->AddLine(ImVec2(crosshair.x, crosshair.y - arm), ImVec2(crosshair.x, crosshair.y + arm), crossColor, 3.0f);
+    // The guides (crosshair, detection square, reach circle) are for setting up. While playing they
+    // would sit on top of the game and inside the picture the detector reads, so they only show while
+    // the menu or the touch area editor is open.
+    const bool showGuides = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed);
+    if (showGuides) {
+        const float arm = 11.5f;
+        const ImU32 crossColor = IM_COL32(58, 156, 255, 240);
+        list->AddLine(ImVec2(crosshair.x - arm, crosshair.y), ImVec2(crosshair.x + arm, crosshair.y), crossColor, 3.0f);
+        list->AddLine(ImVec2(crosshair.x, crosshair.y - arm), ImVec2(crosshair.x, crosshair.y + arm), crossColor, 3.0f);
+    }
 
     // Targets come from the tracker, projected to the moment this frame will be on screen.
     const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -291,7 +297,7 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
 
     // The detection zone (blue box) and, while the assist is on, the radius it picks targets from (red circle).
     float left, top, right, bottom;
-    if (GetDetectionZoneScreenRect(&left, &top, &right, &bottom)) {
+    if (showGuides && GetDetectionZoneScreenRect(&left, &top, &right, &bottom)) {
         list->AddRect(ImVec2(left - origin.x, top - origin.y), ImVec2(right - origin.x, bottom - origin.y),
                       IM_COL32(40, 140, 255, 220), 0.0f, 0, 2.2f);
         if (settings.assistEnabled) {
@@ -710,9 +716,7 @@ bool drawResetAllButton(Settings& s) {
         return false;
     }
     armedUntil = 0.0;
-    const int language = s.language;
-    s = Settings();
-    s.language = language;
+    s = s.resetKeepingLanguage();
     return true;
 }
 
