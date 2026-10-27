@@ -275,6 +275,11 @@ JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_saveSettings(JNIEnv* /* en
     }
 }
 
+/// Limits how many detections a second to run, for when the phone is getting hot. Zero or less lifts the limit.
+JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_setDetectionRateLimit(JNIEnv* /* env */, jclass /* clazz */, jfloat perSecond) {
+    g_pipeline.setMaxRate(perSecond);
+}
+
 /// Puts every setting back to how a fresh install starts, keeping the language.
 JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_resetSettings(JNIEnv* /* env */, jclass /* clazz */) {
     g_settingsStore.set(g_settingsStore.get().resetKeepingLanguage());

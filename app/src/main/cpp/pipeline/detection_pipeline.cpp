@@ -273,6 +273,10 @@ void DetectionPipeline::run() {
         if (frame == nullptr) {
             continue;
         }
+        if (!thinner_.accept(frame->captureTimeNs)) {
+            capture_.mailbox().endRead();   // the phone asked for fewer detections: this frame is left out
+            continue;
+        }
         applyConfidenceIfChanged(appliedConfidence);
 #ifdef AIMBUDDY_DEBUG_HOOKS
         const bool detected = syntheticMode_.load(std::memory_order_acquire) ? detectSynthetic(*frame, batch)

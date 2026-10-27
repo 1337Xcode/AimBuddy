@@ -70,6 +70,10 @@ object NativeBridge {
     @JvmStatic
     external fun saveSettings()
 
+    /** The most detections a second to run, for when the phone is getting hot. Zero or less lifts the limit. */
+    @JvmStatic
+    external fun setDetectionRateLimit(perSecond: Float)
+
     /**
      * Loads the detection model. Paths are null for the model bundled in the app. `roles` is a
      * comma separated list such as "body,head" saying what each class of the model means.

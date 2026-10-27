@@ -15,6 +15,7 @@
 #include "../capture/roi_capture.h"
 #include "../core/camera_motion.h"
 #include "../core/detection_batch.h"
+#include "../core/frame_thinner.h"
 #include "../core/global_motion.h"
 #include "../core/model_profile.h"
 #include "../core/tracker.h"
@@ -75,6 +76,9 @@ public:
     /// The player's "minimum confidence" setting; retunes the detector and the tracker. Thread safe.
     void setConfidenceThreshold(float threshold) { confidence_.store(threshold, std::memory_order_relaxed); }
 
+    /// The most detections a second to run, for when the phone is getting hot. Zero or less lifts the limit. Thread safe.
+    void setMaxRate(float perSecond) { thinner_.setMaxRate(perSecond); }
+
     /// What each class of the loaded model means.
     const ModelProfile& profile() const { return detector_.profile(); }
 
@@ -107,6 +111,7 @@ private:
     void recordStats(const DetectionBatch& batch, int64_t finishedNs);
 
     RoiCapture capture_;
+    FrameThinner thinner_;
     YoloDetector detector_;
     Tracker tracker_;
     BatchObserver observer_;
