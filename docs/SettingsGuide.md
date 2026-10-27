@@ -1,236 +1,82 @@
-# Settings Guide
+# Settings guide
 
-How runtime settings control detection, tracking, aim assist, and overlay behavior in AimBuddy. All runtime settings live in the `UnifiedSettings` struct.
+Every setting AimBuddy has, what it does, and what to try when something is off. Most settings are on the Settings screen of the app. The in-game menu, opened from the round button over the game (or from the notification's Menu button), has the same settings and a few more, and a change in either shows in both. A change takes effect at once.
 
-## Where Settings Are Defined
+Where the settings are kept, and the limits each value is held to, are in `app/src/main/cpp/settings/settings.h` and `settings_store.cpp`.
 
-| Location | Purpose |
-|----------|---------|
-| `app/src/main/cpp/settings.h` | Compile-time constants (capture size, model config, NCNN flags) |
-| `app/src/main/cpp/utils/aimbot_types.h` | Runtime settings struct (`UnifiedSettings`) with defaults and validation |
-| `app/src/main/cpp/renderer/imgui_menu.cpp` | ImGui menu that writes settings live, includes preset buttons |
+## Overlay
 
-Settings are read by snapshot copy in hot-path threads to avoid contention.
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| Box color | Red | The color of the outline around each target. Ten colors. |
+| Line thickness | 2 px | 1 to 6 px. |
+| Confidence labels | On | The detector's confidence next to each box. |
+| Aim point | On | A marker where the assist aims. |
+| Line to nearest target | Off | A line from the crosshair to the nearest target. |
+| Target count | Off | How many targets are in view, at the top of the screen. |
+| Performance readout | Off | Top right: how many detections finish each second, how old the picture is when its targets are ready, and whether the CPU or the GPU runs the model. Use it to judge whether a setting is too heavy for the phone. |
 
-## Validation
+The guides for setting up (the crosshair, the detection square and the reach circle) are drawn only while the menu or the touch area editor is open, so they never sit on top of the game and inside the picture the detector reads.
 
-`UnifiedSettings::validate()` is called before every hot-path usage. It clamps all values to safe ranges:
+## Detection
 
-| Parameter | Range | Default |
-|-----------|-------|---------|
-| aimbotFps | 30 to 120 | 60 |
-| aimMode | 0 to 2 | 0 (Smooth) |
-| filterType | 0 to 2 | 1 (EMA) |
-| aimSpeed | 0.1 to 1.0 | 0.45 |
-| smoothness | 0.0 to 1.0 | 0.78 |
-| fovRadius | 50 to 600 | 200 |
-| aimFovRadius | 50 to min(600, fovRadius) | 175 |
-| confidenceThreshold | 0.1 to 0.95 | 0.5 |
-| maxAimDistance | 100 to 1000 | 400 |
-| touchRadius | 50 to 500 | 250 |
-| aimDelay | 0 to 50 | 3.5 |
-| emaAlpha | 0.08 to 0.90 | 0.25 |
-| velocityLeadFactor | 0.0 to 1.5 | 0.85 |
-| velocityLeadClamp | 1 to 120 | 60 |
-| pdDerivativeGain | 0.0 to 0.35 | 0.035 |
-| maxLostFrames | 1 to 30+ | 8 |
-| maxLockMissFrames | 1 to 30 | 2 |
-| targetSwitchDelayFrames | 0 to 30 | 6 |
-| velocitySmoothing | 0.05 to 0.95 | 0.55 |
-| boxThickness | 1 to 10 | 2 |
-| smoothingFactor | 0.1 to 1.0 | 0.30 |
-| touchZoneAlpha | 0.1 to 1.0 | 0.3 |
-| convergenceRadius | 10 to 100 (recommended) | 30 |
-| recoilCompensationStrength | 0.0 to 1.5 | 0.18 |
-| recoilCompensationMax | 2 to 60 | 12 |
-| recoilCompensationDecay | 0.50 to 0.98 | 0.84 |
-| kalmanProcessNoise | 0.01 to 20.0 | 1.0 |
-| kalmanMeasurementNoise | 0.5 to 40.0 | 4.0 |
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| Detection confidence | 50% | The lowest score that starts a target, 10% to 95%. Lower finds more targets and more false ones. |
+| Detection area | 200 px | The radius around the crosshair that the detector looks at, 100 to 650 px. A smaller area is faster; targets outside it are not seen. |
 
-Boolean defaults that are often tuned together:
+## Aim assist
 
-- `enableConvergenceDamping`: true
-- `recoilCompensationEnabled`: false
-- `showTouchZone`: true
-- `streamerMode`: false (when true, overlay windows are marked `FLAG_SECURE` and stripped from screen recordings, screenshots, and screen mirroring)
+The assist starts off every time AimBuddy runs, because it moves the aim by itself. Switch it on from the Aim tab of the in-game menu once you are in the game.
 
-Deprecated setting note:
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| Aim at | Head | Which part of a target to steer towards: head, chest or centre. When the model detects heads, a head is aimed at exactly. Otherwise the point is worked out from the shape of the visible box: near the top for a figure seen head to foot, nearer the middle for one that is partly hidden. |
+| Strength | 60% | How quickly the aim closes on a target. Higher closes faster and can overshoot; lower is calmer. |
+| Reach | 220 px | Targets farther than this from the crosshair are left alone. |
+| Target pick | Crosshair | Which target to take when there are several: the one nearest the crosshair, the biggest, or the one the detector is surest of. The assist keeps the target it has until a better one is clearly better, so it does not hop between two that are almost equally good. |
 
-- `enableKalmanFilter` is deprecated and retained for compatibility. Use `filterType` (`0=None`, `1=EMA`, `2=Kalman`) as the active filter selector.
+## Game camera
 
-## Presets
+How far the view turns for each pixel the assist's finger moves, and how long the game takes to react, differ a lot between games and sensitivity settings. AimBuddy measures both while you play.
 
-Four built-in presets configure multiple settings at once. Select a preset as a starting point, then fine-tune individual values.
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| Calibrate automatically | On | Measure the game's answer to the assist's finger instead of trusting the two numbers below. What it found is saved and used as a first guess next time, never as a fact. |
+| Camera sensitivity | 1.5 | The first guess for how far the scene slides per finger pixel. Used until the measurement is trustworthy, and always when calibration is off. |
+| Response delay | 50 ms | The first guess for how long the game takes to react. |
+| Invert vertical | Off | For a game that looks up when the finger moves down. |
 
-### Default
+If the aim overshoots or crawls with calibration on, give it a minute of aiming, because the first moves are small on purpose. If it still does, turn calibration off and set the two numbers by hand.
 
-General-purpose balanced profile.
+## Touch
 
-| Setting | Value |
-|---------|-------|
-| Aim mode | Smooth |
-| Speed / Smoothness | 0.48 / 0.78 |
-| Filter | EMA (alpha 0.30) |
-| Velocity lead | 0.85 (clamp 60) |
-| Aim FOV | 240 px |
-| Head offset | 0.18 |
-| Miss grace / Switch delay | 2 / 8 |
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| Touch access | Automatic | How AimBuddy reaches the touchscreen: Shizuku, root, or automatic, which prefers Shizuku. See [Shizuku setup](ShizukuSetup.md). |
 
-### Competitive
+The touch area is where the assist's finger rests. Move and resize it from the Aim tab of the in-game menu while AimBuddy is running, so that it is away from your own thumbs. The assist's finger never travels farther than the area's radius from its centre. The menu also resets the area to where it started.
 
-Fast acquisition with snap aim for quick reactions.
+## App
 
-| Setting | Value |
-|---------|-------|
-| Aim mode | Snap |
-| Speed / Smoothness | 0.72 / 0.45 |
-| Filter | None |
-| Velocity lead | 1.10 (clamp 80) |
-| Aim FOV | 220 px |
-| Head offset | 0.15 |
-| Miss grace / Switch delay | 2 / 5 |
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| Language | English | English, Chinese or Russian, for the app and the in-game menu together. |
+| Appearance | System | Follow the phone, or always dark or light. |
+| Accent color | Blue | The color of buttons and highlights in the app. Ten colors. |
+| Streamer mode | Off | Draws nothing over the game, makes the floating button invisible, and keeps the menu out of screenshots and recordings. Aim assist keeps working. The button stays where it is: tap there to open the menu and hold to stop. The notification has a Menu button too. While the menu is open a recording shows black. |
 
-### Balanced
+## About
 
-Smoother and more cautious than Default, better for close-range stability.
+The version, whether a newer one is available, and a switch for checking by itself when the app opens. There are also links to the source code and the license, and the list of open source notices. Reset all settings puts everything back to how it started and keeps the language.
 
-| Setting | Value |
-|---------|-------|
-| Aim mode | Smooth |
-| Speed / Smoothness | 0.52 / 0.80 |
-| Filter | EMA (alpha 0.28) |
-| Velocity lead | 0.90 (clamp 65) |
-| Aim FOV | 260 px |
-| Head offset | 0.18 |
-| Miss grace / Switch delay | 2 / 9 |
+## Where the settings live
 
-### Precision
+One file, `settings.cfg`, in the app's private storage, with a `name=value` line per setting. Names the app does not know are ignored and missing ones keep their default, so a file from another version still loads. The assist's on/off switch is not saved.
 
-Kalman-filtered magnetic aim for maximum lock stability.
+## Tuning
 
-| Setting | Value |
-|---------|-------|
-| Aim mode | Magnetic |
-| Speed / Smoothness | 0.58 / 0.88 |
-| Filter | Kalman (process 0.8, measure 5.0) |
-| Velocity lead | 0.70 (clamp 50) |
-| Aim FOV | 300 px |
-| Head offset | 0.17 |
-| Miss grace / Switch delay | 2 / 12 |
-
-## Setting Groups
-
-### Enable/Disable Controls
-
-- `aimbotEnabled`: Enables the assisted input pipeline. ESP overlays remain active regardless.
-- `espEnabled`: Enables visual overlays.
-- `showDetectionCount`: Shows enemy count at top of screen.
-- `showLabels`: Shows "Enemy" label and confidence percentage on each box.
-
-### Detection Zone
-
-- `fovRadius`: Size of the center crop region used for detection. Larger scans more area but is slower.
-- `confidenceThreshold`: Minimum confidence to display a detection and consider it for targeting.
-
-### Target Selection
-
-- `aimFovRadius`: Only targets inside this radius (from screen center) are candidates for aim assist. Must be less than or equal to `fovRadius`.
-- `maxAimDistance`: Maximum pixel distance for aim engagement.
-- `targetPriority`: How to rank candidates. 0 = nearest to crosshair, 1 = largest box, 2 = highest confidence.
-- `headPriority`: When enabled, aim point targets the head region instead of box center.
-- `headOffset`: Position within the box (0.0 = top edge, 0.5 = center, 1.0 = bottom edge). Default 0.2 targets the head/neck area.
-
-### Aim Modes
-
-- `aimMode 0 (Smooth)`: PD controller with convergence damping. Natural and stable. Best general-purpose mode.
-- `aimMode 1 (Snap)`: Gain-capped proportional movement. Fast acquisition, never overshoots in a single frame.
-- `aimMode 2 (Magnetic)`: Distance-proportional pull. Very gentle near-lock, smooth approach.
-
-### Speed and Smoothness
-
-- `aimSpeed`: Movement rate multiplier. Higher = faster corrections but potentially more overshoot.
-- `smoothness`: Dampening factor. Higher = smoother and more natural, but slower to acquire targets.
-- `aimbotFps`: Update rate for the aim control loop (separate from inference rate). Higher is more responsive.
-
-### Aim Stabilization Filters
-
-Three filter types smooth the aim point to absorb detector jitter:
-
-| Filter | Setting | Behavior |
-|--------|---------|----------|
-| None (0) | No filtering | Raw detection positions, most responsive but jittery |
-| EMA (1) | `emaAlpha` | Exponential moving average. Lower alpha = smoother but more lag |
-| Kalman (2) | `kalmanProcessNoise`, `kalmanMeasurementNoise` | Statistically optimal filter. Higher process noise = more responsive |
-
-### Velocity Lead
-
-Velocity lead predicts where a moving target will be:
-
-- `velocityLeadFactor`: How much to lead the target based on its tracked velocity. 0 = no lead.
-- `velocityLeadClamp`: Maximum lead offset in pixels per axis. Prevents over-prediction.
-
-Lead is scaled proportionally by target speed (faster targets get more lead) and gated by confidence and distance from crosshair.
-
-### Convergence Damping
-
-- `enableConvergenceDamping`: Reduces aim speed when close to the target to prevent overshoot.
-- `convergenceRadius`: Distance (in pixels) at which damping begins. Smaller = tighter but more oscillation risk.
-
-### Derivative Damping
-
-- `pdDerivativeGain`: Scales the derivative (velocity) brake in smooth mode. Higher = more oscillation dampening but slower reactions.
-
-### Recoil Compensation
-
-- `recoilCompensationEnabled`: Adds upward Y correction when the target drifts downward (simulating recoil pull).
-- `recoilCompensationStrength`: Correction scaling factor.
-- `recoilCompensationMax`: Maximum Y correction per frame in pixels.
-- `recoilCompensationDecay`: How quickly the integrator decays (lower = faster response).
-
-### Tracking Parameters
-
-- `maxLostFrames`: How many inference frames a track survives without a matching detection (default 8).
-- `maxLockMissFrames`: How many frames the locked target can be lost before releasing aim (default 2).
-- `targetSwitchThreshold`: New target must be this factor better than the locked target to trigger a switch (default 1.3).
-- `targetSwitchDelayFrames`: Cooldown frames after switching targets (default 6).
-
-### Touch Injection
-
-- `touchX`, `touchY`: Center of the touch injection zone on screen.
-- `touchRadius`: Maximum distance touch events can travel from the center.
-- `aimDelay`: Additional delay in ms between touch movements (0 for fastest).
-
-### ESP Rendering
-
-- `boxColorR/G/B`: RGB color of detection boxes (0.0 to 1.0).
-- `boxThickness`: Box border thickness in pixels (1 to 10).
-- `drawLine`: Enable snap line from crosshair to nearest target.
-- `drawDot`: Show head position dot on each detection.
-- `enableSmoothing`: Enable temporal box smoothing for the ESP overlay (separate from aimbot filtering).
-- `smoothingFactor`: ESP box smoothing strength (lower = smoother).
-- `showTouchZone`: Show the touch injection zone circle on the overlay.
-- `touchZoneAlpha`: Opacity of the touch zone overlay.
-
-## Persistence
-
-- Settings are serialized as a binary blob to `/data/local/tmp/settings.bin`.
-- A magic number (`0xE5BA1005`) validates file integrity on load.
-- `reset()` restores all defaults while preserving screen dimensions.
-- Auto-save triggers shortly after any menu edit (when no slider is active).
-- The "Save now" button forces an immediate write.
-
-## Safe Tuning Workflow
-
-1. Start with a preset that matches your play style.
-2. Adjust one parameter group at a time.
-3. Test stability: does the aim hold steady on a still target?
-4. Test tracking: does the aim follow a moving target smoothly?
-5. Test release: does touch stop promptly when looking away from enemies?
-6. If unstable, select a preset to reset to known-good values.
-
-## Related Documentation
-
-- [Architecture](Architecture.md)
-- [Performance](Performance.md)
-- [Training](Training.md)
-- [Troubleshooting](Troubleshooting.md)
+1. Start with the defaults and use the performance readout. If detections per second are low, make the detection area smaller before anything else.
+2. Raise the confidence if boxes appear on things that are not enemies; lower it if enemies are missed.
+3. Pick the target pick and aim point that suit the game, then set the strength to taste.
+4. Leave calibration on. Turn it off only if the aim keeps missing after a minute of aiming.
