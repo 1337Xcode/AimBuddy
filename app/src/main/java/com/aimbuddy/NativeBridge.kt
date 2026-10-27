@@ -66,6 +66,10 @@ object NativeBridge {
     @JvmStatic
     external fun resetSettings()
 
+    /** Writes the settings to their file now, if anything changed. */
+    @JvmStatic
+    external fun saveSettings()
+
     /**
      * Loads the detection model. Paths are null for the model bundled in the app. `roles` is a
      * comma separated list such as "body,head" saying what each class of the model means.

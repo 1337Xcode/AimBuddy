@@ -268,6 +268,13 @@ JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_setSetting(JNIEnv* env, jc
         aimbuddy::SettingsStore::withValue(g_settingsStore.get(), toStdString(env, name), toStdString(env, value)));
 }
 
+/// Writes the settings to their file now, if anything changed. The overlay saves them while it runs; this is for edits made in the app while it does not.
+JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_saveSettings(JNIEnv* /* env */, jclass /* clazz */) {
+    if (!g_settingsPath.empty() && !g_settingsStore.saveIfChanged(g_settingsPath)) {
+        LOGE("Failed to save the settings");
+    }
+}
+
 /// Puts every setting back to how a fresh install starts, keeping the language.
 JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_resetSettings(JNIEnv* /* env */, jclass /* clazz */) {
     g_settingsStore.set(g_settingsStore.get().resetKeepingLanguage());

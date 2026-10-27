@@ -172,6 +172,11 @@ class MainActivity : AppCompatActivity() {
         viewModel.refreshModels()
     }
 
+    override fun onStop() {
+        viewModel.saveSettingsNow()
+        super.onStop()
+    }
+
     override fun onDestroy() {
         Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
         Shizuku.removeBinderReceivedListener(shizukuBinderReceivedListener)

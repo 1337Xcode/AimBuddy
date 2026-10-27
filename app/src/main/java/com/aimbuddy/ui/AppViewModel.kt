@@ -27,7 +27,9 @@ import com.aimbuddy.update.UpdateState
 import com.aimbuddy.update.UpdateStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -129,6 +131,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _installRequests = MutableSharedFlow<UpdateStatus.ReadyToInstall>(extraBufferCapacity = 1)
     val installRequests: SharedFlow<UpdateStatus.ReadyToInstall> = _installRequests.asSharedFlow()
 
+    private var saveJob: Job? = null
     private var pendingParam: Uri? = null
     private var pendingName = "model"
 
@@ -252,12 +255,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setSetting(name: String, value: String) {
         NativeBridge.setSetting(name, value)
         _settings.value = SettingsView.parse(NativeBridge.settingsSnapshot())
+        saveSoon()
     }
 
     /** Changes several settings at once, so the screens redraw once. */
     fun setSettings(values: List<Pair<String, String>>) {
         values.forEach { (name, value) -> NativeBridge.setSetting(name, value) }
         _settings.value = SettingsView.parse(NativeBridge.settingsSnapshot())
+        saveSoon()
     }
 
     fun setSetting(name: String, value: Boolean) = setSetting(name, if (value) "1" else "0")
@@ -269,6 +274,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun resetSettings() {
         NativeBridge.resetSettings()
         _settings.value = SettingsView.parse(NativeBridge.settingsSnapshot())
+        saveSoon()
+    }
+
+    /** Saves the settings once they have stopped changing, so an edit made while the assist is off is not lost if the app is closed. */
+    private fun saveSoon() {
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(SAVE_DELAY_MS)
+            NativeBridge.saveSettings()
+        }
+    }
+
+    /** Saves any change that has not been written yet, for when the screen goes out of sight. */
+    fun saveSettingsNow() {
+        saveJob?.cancel()
+        NativeBridge.saveSettings()
     }
 
     // ---------------------------------------------------------------------------------------
@@ -474,5 +495,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         const val KEY_LEGACY_PARAM = "model_param_path"
         const val KEY_LEGACY_BIN = "model_bin_path"
         const val SETTINGS_FILE = "settings.cfg"
+        const val SAVE_DELAY_MS = 400L
     }
 }
