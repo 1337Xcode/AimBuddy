@@ -1,8 +1,13 @@
 package com.aimbuddy.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -11,14 +16,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.aimbuddy.BuildConfig
+import com.aimbuddy.Project
 import com.aimbuddy.R
 import com.aimbuddy.ui.Appearance
 import com.aimbuddy.ui.SettingsView
+import com.aimbuddy.ui.components.Chevron
 import com.aimbuddy.ui.components.Group
+import com.aimbuddy.ui.components.GroupScope
 import com.aimbuddy.ui.components.ListRow
+import com.aimbuddy.ui.components.RowValue
 import com.aimbuddy.ui.components.ScreenScaffold
 import com.aimbuddy.ui.components.SegmentedRow
 import com.aimbuddy.ui.components.SliderRow
@@ -32,17 +44,34 @@ import com.aimbuddy.ui.theme.ThemeMode
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** The colors offered for the boxes around targets. */
+/** One color the player can pick for the boxes around targets. */
+private class BoxColor(@StringRes val name: Int, val color: Color)
+
+/** The colors offered for the boxes: bright ones that stand out against game scenery. */
 private val BoxColors = listOf(
-    Triple(R.string.color_red, Color(0xFFFF3B30), floatArrayOf(1.0f, 0.23f, 0.19f)),
-    Triple(R.string.color_orange, Color(0xFFFF9500), floatArrayOf(1.0f, 0.58f, 0.0f)),
-    Triple(R.string.color_yellow, Color(0xFFFFD60A), floatArrayOf(1.0f, 0.84f, 0.04f)),
-    Triple(R.string.color_green, Color(0xFF30D158), floatArrayOf(0.19f, 0.82f, 0.35f)),
-    Triple(R.string.color_cyan, Color(0xFF64D2FF), floatArrayOf(0.39f, 0.82f, 1.0f)),
-    Triple(R.string.color_blue, Color(0xFF0A84FF), floatArrayOf(0.04f, 0.52f, 1.0f)),
-    Triple(R.string.color_purple, Color(0xFFBF5AF2), floatArrayOf(0.75f, 0.35f, 0.95f)),
-    Triple(R.string.color_pink, Color(0xFFFF375F), floatArrayOf(1.0f, 0.22f, 0.37f)),
-    Triple(R.string.color_white, Color(0xFFFFFFFF), floatArrayOf(1.0f, 1.0f, 1.0f)),
+    BoxColor(R.string.color_red, Color(0xFFFF3B30)),
+    BoxColor(R.string.color_orange, Color(0xFFFF9500)),
+    BoxColor(R.string.color_yellow, Color(0xFFFFD60A)),
+    BoxColor(R.string.color_lime, Color(0xFFA3E635)),
+    BoxColor(R.string.color_green, Color(0xFF30D158)),
+    BoxColor(R.string.color_cyan, Color(0xFF64D2FF)),
+    BoxColor(R.string.color_blue, Color(0xFF0A84FF)),
+    BoxColor(R.string.color_purple, Color(0xFFBF5AF2)),
+    BoxColor(R.string.color_pink, Color(0xFFFF375F)),
+    BoxColor(R.string.color_white, Color(0xFFFFFFFF)),
+)
+
+/** The third-party parts the app is built from, with the license each one comes under. */
+private val Notices = listOf(
+    "NCNN" to "BSD 3-Clause, Tencent",
+    "Dear ImGui" to "MIT, Omar Cornut",
+    "Shizuku API" to "Apache 2.0, RikkaApps",
+    "AndroidX, Jetpack Compose, Material icons" to "Apache 2.0, Google",
+    "Kotlin coroutines" to "Apache 2.0, JetBrains",
+    "Geist" to "SIL Open Font License 1.1, Vercel",
+    "Noto Sans SC" to "SIL Open Font License 1.1, Google",
+    "Octicons" to "MIT, GitHub",
+    "YOLO26" to "AGPL-3.0, Ultralytics",
 )
 
 /** What the settings screen can change. Each call sends changes to the running app's settings. */
@@ -53,6 +82,7 @@ class SettingsActions(
     val setThemeMode: (ThemeMode) -> Unit,
     val setAccent: (Accent) -> Unit,
     val reset: () -> Unit,
+    val openUrl: (String) -> Unit,
 )
 
 /**
@@ -62,13 +92,16 @@ class SettingsActions(
 @Composable
 fun SettingsScreen(settings: SettingsView, appearance: Appearance, actions: SettingsActions, onBack: () -> Unit) {
     var confirmReset by remember { mutableStateOf(false) }
+    var showNotices by remember { mutableStateOf(false) }
 
     ScreenScaffold(title = stringResource(R.string.settings_title), onBack = onBack, columnWidth = 360.dp, maxWidth = 1100.dp) {
         item { OverlayGroup(settings, actions) }
+        item { DetectionGroup(settings, actions) }
         item { AimGroup(settings, actions) }
-        item { CalibrationGroup(settings, actions) }
+        item { CameraGroup(settings, actions) }
         item { TouchGroup(settings, actions) }
         item { AppGroup(settings, appearance, actions) }
+        item { AboutGroup(actions, onShowNotices = { showNotices = true }) }
         item {
             Group {
                 row {
@@ -102,73 +135,87 @@ fun SettingsScreen(settings: SettingsView, appearance: Appearance, actions: Sett
             shape = MaterialTheme.shapes.medium,
         )
     }
+    if (showNotices) {
+        NoticesDialog(onDismiss = { showNotices = false })
+    }
 }
 
+/** How the boxes around targets look, and what is drawn besides them. */
 @Composable
 private fun OverlayGroup(settings: SettingsView, actions: SettingsActions) {
     val red = settings.float("boxColorR", 1f)
     val green = settings.float("boxColorG", 0.2f)
     val blue = settings.float("boxColorB", 0.2f)
     val selectedColor = BoxColors.indices.minByOrNull { index ->
-        val c = BoxColors[index].third
-        abs(c[0] - red) + abs(c[1] - green) + abs(c[2] - blue)
+        val color = BoxColors[index].color
+        abs(color.red - red) + abs(color.green - green) + abs(color.blue - blue)
     } ?: 0
 
-    Column(verticalArrangement = Arrangement.spacedBy(Space.l)) {
-        Group(title = stringResource(R.string.settings_overlay)) {
-            row {
-                SwatchRow(
-                    title = stringResource(R.string.s_box_color),
-                    swatches = BoxColors.map { Swatch(stringResource(it.first), it.second) },
-                    selected = selectedColor,
-                    onSelect = { index ->
-                        val c = BoxColors[index].third
-                        actions.setAll(listOf("boxColorR" to c[0].toString(), "boxColorG" to c[1].toString(), "boxColorB" to c[2].toString()))
-                    },
-                )
-            }
-            row {
-                val thickness = settings.int("boxThickness", 2)
-                SliderRow(
-                    title = stringResource(R.string.s_box_thickness),
-                    value = thickness.toFloat(),
-                    range = 1f..6f,
-                    steps = 4,
-                    valueText = "$thickness px",
-                    onValueChange = { actions.set("boxThickness", it.roundToInt().toString()) },
-                )
-            }
-            toggleRow("showLabels", R.string.s_labels, true, settings, actions)
-            toggleRow("showAimPoint", R.string.s_aim_point, true, settings, actions)
-            toggleRow("showSnapLine", R.string.s_snap_line, false, settings, actions)
-            toggleRow("showCount", R.string.s_count, false, settings, actions)
-            toggleRow("showPerformance", R.string.s_performance, false, settings, actions)
+    Group(title = stringResource(R.string.settings_overlay)) {
+        row {
+            SwatchRow(
+                title = stringResource(R.string.s_box_color),
+                swatches = BoxColors.map { Swatch(stringResource(it.name), it.color) },
+                selected = selectedColor,
+                onSelect = { index ->
+                    val color = BoxColors[index].color
+                    actions.setAll(
+                        listOf(
+                            "boxColorR" to color.red.toString(),
+                            "boxColorG" to color.green.toString(),
+                            "boxColorB" to color.blue.toString(),
+                        )
+                    )
+                },
+            )
         }
-        Group {
-            row {
-                val confidence = settings.float("confidence", 0.5f)
-                SliderRow(
-                    title = stringResource(R.string.s_confidence),
-                    value = confidence,
-                    range = 0.1f..0.95f,
-                    valueText = "${(confidence * 100).roundToInt()}%",
-                    onValueChange = { actions.set("confidence", it.toString()) },
-                )
-            }
-            row {
-                val zone = settings.float("detectionZoneRadius", 200f)
-                SliderRow(
-                    title = stringResource(R.string.s_zone),
-                    value = zone,
-                    range = 100f..650f,
-                    valueText = "${zone.roundToInt()} px",
-                    onValueChange = { actions.set("detectionZoneRadius", it.roundToInt().toString()) },
-                )
-            }
+        row {
+            val thickness = settings.int("boxThickness", 2)
+            SliderRow(
+                title = stringResource(R.string.s_box_thickness),
+                value = thickness.toFloat(),
+                range = 1f..6f,
+                steps = 4,
+                valueText = "$thickness px",
+                onValueChange = { actions.set("boxThickness", it.roundToInt().toString()) },
+            )
+        }
+        toggleRow("showLabels", R.string.s_labels, true, settings, actions)
+        toggleRow("showAimPoint", R.string.s_aim_point, true, settings, actions)
+        toggleRow("showSnapLine", R.string.s_snap_line, false, settings, actions)
+        toggleRow("showCount", R.string.s_count, false, settings, actions)
+        toggleRow("showPerformance", R.string.s_performance, false, settings, actions)
+    }
+}
+
+/** How sure the detector has to be, and how much of the screen it looks at. */
+@Composable
+private fun DetectionGroup(settings: SettingsView, actions: SettingsActions) {
+    Group(title = stringResource(R.string.settings_detection)) {
+        row {
+            val confidence = settings.float("confidence", 0.5f)
+            SliderRow(
+                title = stringResource(R.string.s_confidence),
+                value = confidence,
+                range = 0.1f..0.95f,
+                valueText = "${(confidence * 100).roundToInt()}%",
+                onValueChange = { actions.set("confidence", it.toString()) },
+            )
+        }
+        row {
+            val zone = settings.float("detectionZoneRadius", 200f)
+            SliderRow(
+                title = stringResource(R.string.s_zone),
+                value = zone,
+                range = 100f..650f,
+                valueText = "${zone.roundToInt()} px",
+                onValueChange = { actions.set("detectionZoneRadius", it.roundToInt().toString()) },
+            )
         }
     }
 }
 
+/** Where the assist aims, how hard it pulls, and which target it takes. */
 @Composable
 private fun AimGroup(settings: SettingsView, actions: SettingsActions) {
     Group(title = stringResource(R.string.settings_aim)) {
@@ -211,9 +258,18 @@ private fun AimGroup(settings: SettingsView, actions: SettingsActions) {
     }
 }
 
+/** How the game's camera answers a finger: measured while playing, or set by hand. */
 @Composable
-private fun CalibrationGroup(settings: SettingsView, actions: SettingsActions) {
-    Group(footer = stringResource(R.string.s_calibration_footer)) {
+private fun CameraGroup(settings: SettingsView, actions: SettingsActions) {
+    Group(title = stringResource(R.string.settings_camera), footer = stringResource(R.string.s_calibration_footer)) {
+        row {
+            SwitchRow(
+                title = stringResource(R.string.s_auto_calibrate),
+                subtitle = stringResource(R.string.s_auto_calibrate_hint),
+                checked = settings.bool("autoCalibrate", true),
+                onCheckedChange = { actions.set("autoCalibrate", if (it) "1" else "0") },
+            )
+        }
         row {
             val gain = settings.float("sceneGain", 1.5f)
             SliderRow(
@@ -238,6 +294,7 @@ private fun CalibrationGroup(settings: SettingsView, actions: SettingsActions) {
     }
 }
 
+/** Which way the assist reaches the touchscreen. */
 @Composable
 private fun TouchGroup(settings: SettingsView, actions: SettingsActions) {
     Group(title = stringResource(R.string.settings_touch), footer = stringResource(R.string.s_touch_area_footer)) {
@@ -252,6 +309,7 @@ private fun TouchGroup(settings: SettingsView, actions: SettingsActions) {
     }
 }
 
+/** The app's own language and look, and keeping the overlay out of recordings. */
 @Composable
 private fun AppGroup(settings: SettingsView, appearance: Appearance, actions: SettingsActions) {
     Group(title = stringResource(R.string.settings_app), footer = stringResource(R.string.s_streamer_footer)) {
@@ -283,8 +341,74 @@ private fun AppGroup(settings: SettingsView, appearance: Appearance, actions: Se
     }
 }
 
+/** Which version this is, where the source is, and under what terms it is shared. */
+@Composable
+private fun AboutGroup(actions: SettingsActions, onShowNotices: () -> Unit) {
+    Group(title = stringResource(R.string.settings_about)) {
+        row {
+            ListRow(
+                title = stringResource(R.string.about_version),
+                trailing = { RowValue(BuildConfig.AIMBUDDY_VERSION) },
+            )
+        }
+        row {
+            ListRow(
+                title = stringResource(R.string.about_source),
+                leading = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_github),
+                        contentDescription = null,
+                        tint = AppTheme.palette.textDim,
+                        modifier = Modifier.size(Space.l),
+                    )
+                },
+                trailing = { Chevron() },
+                onClick = { actions.openUrl(Project.URL) },
+            )
+        }
+        row {
+            ListRow(
+                title = stringResource(R.string.about_license),
+                trailing = { Chevron() },
+                onClick = { actions.openUrl(Project.LICENSE_URL) },
+            )
+        }
+        row {
+            ListRow(
+                title = stringResource(R.string.about_notices),
+                trailing = { Chevron() },
+                onClick = onShowNotices,
+            )
+        }
+    }
+}
+
+/** The third-party parts the app is built from, with their licenses. */
+@Composable
+private fun NoticesDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.about_notices)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.s)) {
+                Notices.forEach { (name, license) ->
+                    Column {
+                        Text(text = name, style = MaterialTheme.typography.titleSmall, color = AppTheme.palette.text)
+                        Text(text = license, style = MaterialTheme.typography.bodySmall, color = AppTheme.palette.textDim)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_close)) }
+        },
+        containerColor = AppTheme.palette.surface,
+        shape = MaterialTheme.shapes.medium,
+    )
+}
+
 /** Adds a switch row for a true or false setting. */
-private fun com.aimbuddy.ui.components.GroupScope.toggleRow(
+private fun GroupScope.toggleRow(
     name: String,
     title: Int,
     default: Boolean,

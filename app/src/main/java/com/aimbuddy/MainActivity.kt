@@ -244,6 +244,7 @@ class MainActivity : AppCompatActivity() {
                             setThemeMode = viewModel::setThemeMode,
                             setAccent = viewModel::setAccent,
                             reset = viewModel::resetSettings,
+                            openUrl = { url -> openUrl(url) },
                         ),
                         onBack = { screen = Screen.HOME },
                     )

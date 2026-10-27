@@ -70,8 +70,11 @@
     <string name="settings_title">设置</string>
     <string name="settings_overlay">悬浮层</string>
     <string name="settings_aim">瞄准辅助</string>
+    <string name="settings_detection">检测</string>
+    <string name="settings_camera">游戏视角</string>
     <string name="settings_touch">触控</string>
     <string name="settings_app">应用</string>
+    <string name="settings_about">关于</string>
     <string name="s_box_color">方框颜色</string>
     <string name="s_box_thickness">线条粗细</string>
     <string name="s_labels">置信度标签</string>
@@ -94,7 +97,9 @@
     <string name="s_sensitivity">视角灵敏度</string>
     <string name="s_delay">响应延迟</string>
     <string name="s_invert">反转垂直方向</string>
-    <string name="s_calibration_footer">这两项对应游戏对手指的反应。数值不对会让准星冲过头或爬行。</string>
+    <string name="s_auto_calibrate">自动校准</string>
+    <string name="s_auto_calibrate_hint">在游玩时测量游戏对手指的反应。</string>
+    <string name="s_calibration_footer">这些数值对应游戏对手指的反应。自动校准会在游玩时测量它们;关闭后则使用你自己设定的值。</string>
     <string name="s_access">触控方式</string>
     <string name="s_automatic">自动</string>
     <string name="s_touch_area">触控区域</string>
@@ -120,8 +125,13 @@
     <string name="color_purple">紫色</string>
     <string name="color_pink">粉色</string>
     <string name="color_white">白色</string>
+    <string name="color_lime">黄绿色</string>
     <string name="color_indigo">靛蓝</string>
     <string name="color_graphite">石墨</string>
+    <string name="about_version">版本</string>
+    <string name="about_source">GitHub 上的源代码</string>
+    <string name="about_license">许可证</string>
+    <string name="about_notices">开源声明</string>
     <string name="back">返回</string>
     <string name="more">更多</string>
 

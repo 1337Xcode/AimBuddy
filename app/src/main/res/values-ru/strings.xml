@@ -70,8 +70,11 @@
     <string name="settings_title">Настройки</string>
     <string name="settings_overlay">Оверлей</string>
     <string name="settings_aim">Помощь в прицеливании</string>
+    <string name="settings_detection">Обнаружение</string>
+    <string name="settings_camera">Камера игры</string>
     <string name="settings_touch">Касания</string>
     <string name="settings_app">Приложение</string>
+    <string name="settings_about">О приложении</string>
     <string name="s_box_color">Цвет рамки</string>
     <string name="s_box_thickness">Толщина линии</string>
     <string name="s_labels">Подписи уверенности</string>
@@ -94,7 +97,9 @@
     <string name="s_sensitivity">Чувствительность камеры</string>
     <string name="s_delay">Задержка отклика</string>
     <string name="s_invert">Инвертировать вертикаль</string>
-    <string name="s_calibration_footer">Эти два значения описывают, как игра реагирует на палец. Неверные значения заставляют прицел перелетать цель или ползти.</string>
+    <string name="s_auto_calibrate">Калибровать автоматически</string>
+    <string name="s_auto_calibrate_hint">Измеряет, как игра реагирует, пока вы играете.</string>
+    <string name="s_calibration_footer">Эти значения описывают, как игра реагирует на палец. Автокалибровка измеряет их во время игры; отключите её, чтобы оставить свои значения.</string>
     <string name="s_access">Доступ к касаниям</string>
     <string name="s_automatic">Автоматически</string>
     <string name="s_touch_area">Зона касания</string>
@@ -120,8 +125,13 @@
     <string name="color_purple">Фиолетовый</string>
     <string name="color_pink">Розовый</string>
     <string name="color_white">Белый</string>
+    <string name="color_lime">Лаймовый</string>
     <string name="color_indigo">Индиго</string>
     <string name="color_graphite">Графитовый</string>
+    <string name="about_version">Версия</string>
+    <string name="about_source">Исходный код на GitHub</string>
+    <string name="about_license">Лицензия</string>
+    <string name="about_notices">Уведомления об открытом коде</string>
     <string name="back">Назад</string>
     <string name="more">Ещё</string>
 

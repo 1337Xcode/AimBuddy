@@ -70,8 +70,11 @@
     <string name="settings_title">Settings</string>
     <string name="settings_overlay">Overlay</string>
     <string name="settings_aim">Aim assist</string>
+    <string name="settings_detection">Detection</string>
+    <string name="settings_camera">Game camera</string>
     <string name="settings_touch">Touch</string>
     <string name="settings_app">App</string>
+    <string name="settings_about">About</string>
     <string name="s_box_color">Box color</string>
     <string name="s_box_thickness">Line thickness</string>
     <string name="s_labels">Confidence labels</string>
@@ -94,7 +97,9 @@
     <string name="s_sensitivity">Camera sensitivity</string>
     <string name="s_delay">Response delay</string>
     <string name="s_invert">Invert vertical</string>
-    <string name="s_calibration_footer">These two match how your game reacts to a finger. Wrong values make the aim overshoot or crawl.</string>
+    <string name="s_auto_calibrate">Calibrate automatically</string>
+    <string name="s_auto_calibrate_hint">Measures how the game reacts while you play.</string>
+    <string name="s_calibration_footer">These match how your game reacts to a finger. Automatic calibration measures them while you play; turn it off to keep your own values.</string>
     <string name="s_access">Touch access</string>
     <string name="s_automatic">Automatic</string>
     <string name="s_touch_area">Touch area</string>
@@ -120,8 +125,13 @@
     <string name="color_purple">Purple</string>
     <string name="color_pink">Pink</string>
     <string name="color_white">White</string>
+    <string name="color_lime">Lime</string>
     <string name="color_indigo">Indigo</string>
     <string name="color_graphite">Graphite</string>
+    <string name="about_version">Version</string>
+    <string name="about_source">Source code on GitHub</string>
+    <string name="about_license">License</string>
+    <string name="about_notices">Open source notices</string>
     <string name="back">Back</string>
     <string name="more">More</string>
 
