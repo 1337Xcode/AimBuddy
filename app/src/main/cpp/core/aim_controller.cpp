@@ -558,6 +558,9 @@ AimController::FingerStep AimController::planFingerStep(int64_t nowNs, const Cam
     // is kept moving at v / gain even when the error is zero. Without it the aim would trail a
     // moving target by speed / (closing rate), several body widths at a run.
     // It leans on the camera's response being known, so it fades out while the camera cannot be watched.
+    // It does not know whether the player's thumb is already turning the camera along with the target.
+    // If it is, the two overshoot a little and the feedback below takes the excess back, which leaves the
+    // assist helping a runner only a little, where it helps a strafing target a good deal.
     const float followShare = pursuit.movingShare * std::clamp(0.5f + settings_.strength, 0.0f, 1.0f) * (1.0f - blindness);
     step.x += body.velocityX / gainX * dt * followShare;
     step.y += body.velocityY / gainY * dt * followShare * yDirection;

@@ -35,8 +35,8 @@ struct SceneShift {
  * turning, it ties slide and finger together by more than the camera's response and misses both the
  * gain and the delay. The second fit relates how the slide changes from one measurement to the next
  * to how the finger travel changes, which drops a smooth turn out and keeps the camera's response.
- * It is the less exact of the two when nobody else turns the camera, so it is used only while the
- * straight fit cannot pin its delay down.
+ * It is the less exact of the two when nobody else turns the camera, so the estimate comes from
+ * whichever of the two pins the gain down better.
  *
  * Not thread safe: callers lock.
  */

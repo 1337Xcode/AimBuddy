@@ -115,13 +115,17 @@ void ResponseEstimator::addSample(const FingerLog& fingers, const SceneShift& sh
 }
 
 ResponseEstimator::Estimate ResponseEstimator::estimate() const {
-    // The straight fit is the more exact one while the assist's finger is what turns the camera. Once
-    // the player turns it too its delay is no longer pinned down, and the fit on changes is used.
+    // The straight fit is the more exact one while the assist's finger is what turns the camera. Once the
+    // player turns it too, the straight fit can still find a believable delay, near the right one, with a
+    // gain that is far too low: that its delay stands out says nothing about its gain. What does give it away
+    // is how well each fit pins its gain down, because the turning fills the straight fit's misfit. The fit
+    // that is more confident is the one used; a tie goes to the straight one.
     const Estimate straight = fit(straight_);
-    if (straight.hasDelay) {
-        return straight;
+    const Estimate changes = fit(changes_);
+    if (changes.valid && (!straight.valid || changes.confidence > straight.confidence)) {
+        return changes;
     }
-    return fit(changes_);
+    return straight;
 }
 
 ResponseEstimator::Estimate ResponseEstimator::fit(const Statistics& statistics) const {
