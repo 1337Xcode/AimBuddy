@@ -12,11 +12,13 @@ Where the settings are kept, and the limits each value is held to, are in `app/s
 | Line thickness | 2 px | 1 to 6 px. |
 | Confidence labels | On | The detector's confidence next to each box. |
 | Aim point | On | A marker where the assist aims. |
+| Detection area outline | On | A blue square around the area the detector looks at, so you can see what it can see. It is drawn just outside that area, so it is never part of the picture the detector reads. |
+| Aim reach circle | On | A red circle around the crosshair, as far as the assist reaches. It is dimmer while the assist is off. |
 | Line to nearest target | Off | A line from the crosshair to the nearest target. |
 | Target count | Off | How many targets are in view, at the top of the screen. |
 | Performance readout | Off | Top right: how many detections finish each second, how old the picture is when its targets are ready, and whether the CPU or the GPU runs the model. Use it to judge whether a setting is too heavy for the phone. |
 
-The guides for setting up (the crosshair, the detection square and the reach circle) are drawn only while the menu or the touch area editor is open, so they never sit on top of the game and inside the picture the detector reads.
+The two outlines are drawn while you play when their switches are on, and always while the menu or the touch area editor is open, so that the sliders that set them have something to show. The crosshair guide for setting up is drawn only while the menu or the touch area editor is open. In streamer mode nothing is drawn over the game, so neither outline shows.
 
 ## Detection
 
