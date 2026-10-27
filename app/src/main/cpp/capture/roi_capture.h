@@ -40,6 +40,9 @@ public:
     /// Sets the detection-zone radius in screen pixels; takes effect on the next frame.
     void setZoneRadius(float screenPx) { zoneRadius_.store(screenPx, std::memory_order_relaxed); }
 
+    /// Sets the width and height of the network input, which sets the smallest useful region.
+    void setModelSize(int pixels) { modelSize_.store(pixels, std::memory_order_relaxed); }
+
     /// The region currently being copied, in capture pixels.
     RoiRect currentRoi() const;
 
@@ -55,6 +58,7 @@ private:
     mutable std::mutex geometryMutex_;
     CaptureGeometry geometry_;
     std::atomic<float> zoneRadius_{200.0f};
+    std::atomic<int> modelSize_{256};
     LatestMailbox<RoiFrame> mailbox_;
     bool loggedBadFormat_ = false;
 };

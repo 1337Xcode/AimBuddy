@@ -152,6 +152,7 @@ set(ESP_SOURCES
     esp_jni.cpp
     capture/roi_capture.cpp
     core/tracker.cpp
+    core/detection_decoder.cpp
     detector/yolo_detector.cpp
     aimbot/aimbot_controller.cpp
     aimbot/target_tracker.cpp

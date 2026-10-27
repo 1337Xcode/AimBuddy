@@ -33,29 +33,32 @@ struct RoiRect {
     int side = 0;
 };
 
-/// Smallest and largest ROI side. Below the model input size the crop would only be upscaled.
-constexpr int kMinRoiSide = 256;
-constexpr int kMaxRoiSide = 448;
+/// The ROI is never smaller than the model input (it would only be upscaled) nor larger than this many times it.
+constexpr float kMaxRoiToModelRatio = 1.75f;
 
 /**
  * Chooses the detector's square region from the detection-zone radius (in screen pixels).
- * The region is centred on the screen centre and clamped to stay inside the capture image.
+ *
+ * The side is the zone's diameter converted to capture pixels, kept between the model input size
+ * (one capture pixel per model pixel, the sharpest view the model can have) and 1.75 times that
+ * (a mild shrink that still keeps distant targets visible). The region is centred on the screen
+ * centre and clamped to stay inside the capture image.
  */
-inline RoiRect computeRoi(const CaptureGeometry& geometry, float zoneRadiusScreenPx) {
+inline RoiRect computeRoi(const CaptureGeometry& geometry, float zoneRadiusScreenPx, int modelSize) {
     RoiRect roi;
-    if (!geometry.isValid()) {
+    if (!geometry.isValid() || modelSize <= 0) {
         return roi;
     }
     const float captureSideF = 2.0f * zoneRadiusScreenPx / geometry.screenPerCapture();
     const int shortEdge = std::min(geometry.captureWidth, geometry.captureHeight);
-    const int maxSide = std::min(kMaxRoiSide, shortEdge);
-    const int minSide = std::min(kMinRoiSide, maxSide);
+    const int maxSide = std::min(static_cast<int>(static_cast<float>(modelSize) * kMaxRoiToModelRatio), shortEdge);
+    const int minSide = std::min(modelSize, maxSide);
     int side = static_cast<int>(captureSideF + 0.5f);
     side = std::max(minSide, std::min(side, maxSide));
     side &= ~1;  // even, so the centre lands on a pixel boundary
     roi.side = side;
-    roi.x = std::max(0, std::min((geometry.captureWidth - side) / 2, geometry.captureWidth - side));
-    roi.y = std::max(0, std::min((geometry.captureHeight - side) / 2, geometry.captureHeight - side));
+    roi.x = std::max(0, (geometry.captureWidth - side) / 2);
+    roi.y = std::max(0, (geometry.captureHeight - side) / 2);
     return roi;
 }
 

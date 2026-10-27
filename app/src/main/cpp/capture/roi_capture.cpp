@@ -37,7 +37,8 @@ CaptureGeometry RoiCapture::geometry() const {
 }
 
 RoiRect RoiCapture::currentRoi() const {
-    return computeRoi(geometry(), zoneRadius_.load(std::memory_order_relaxed));
+    return computeRoi(geometry(), zoneRadius_.load(std::memory_order_relaxed),
+                      modelSize_.load(std::memory_order_relaxed));
 }
 
 bool RoiCapture::ingest(AHardwareBuffer* buffer, int64_t imageTimestampNs) {
@@ -55,7 +56,8 @@ bool RoiCapture::ingest(AHardwareBuffer* buffer, int64_t imageTimestampNs) {
     CaptureGeometry geometry = this->geometry();
     geometry.captureWidth = static_cast<int>(desc.width);
     geometry.captureHeight = static_cast<int>(desc.height);
-    const RoiRect roi = computeRoi(geometry, zoneRadius_.load(std::memory_order_relaxed));
+    const RoiRect roi = computeRoi(geometry, zoneRadius_.load(std::memory_order_relaxed),
+                                   modelSize_.load(std::memory_order_relaxed));
     if (roi.side <= 0) {
         return false;
     }
