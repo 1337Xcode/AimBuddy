@@ -15,7 +15,7 @@ namespace {
 
 void printUsage(const char* program) {
     std::fprintf(stderr,
-                 "usage: %s --port <port> --token <16 hex digits> [--device /dev/input/eventN] [--verbose]\n"
+                 "usage: %s --port <port, or 0 to let the system pick> --token <16 hex digits> [--device /dev/input/eventN] [--verbose]\n"
                  "          [--client-wait-ms N] [--heartbeat-ms N] [--escape-hold-ms N]\n",
                  program);
 }
@@ -46,7 +46,7 @@ bool parseArguments(int argc, char** argv, aimbuddy::touch::ServerOptions* optio
             options->verbose = true;
         } else if (name == "--port" && hasValue) {
             options->port = std::atoi(argv[++i]);
-            hasPort = options->port > 0 && options->port < 65536;
+            hasPort = options->port >= 0 && options->port < 65536;
         } else if (name == "--token" && hasValue) {
             hasToken = parseToken(argv[++i], &options->token);
         } else if (name == "--device" && hasValue) {

@@ -113,7 +113,9 @@ int TouchServer::run() {
         closeEverything();
         return exitCode_ == kExitOk ? kExitSocket : exitCode_;
     }
-    SAY_VERBOSE("listening on 127.0.0.1:%d", options_.port);
+    // The one line the app waits for: it says where to connect. It is printed even when not verbose.
+    std::printf("listening %d\n", options_.port);
+    std::fflush(stdout);
 
     epoll_event events[kMaxEpollEvents];
     while (!stopping_) {
@@ -150,6 +152,15 @@ bool TouchServer::openListener() {
     if (bind(listenFd_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0 || listen(listenFd_, 2) < 0) {
         say("cannot listen on port %d: %s", options_.port, std::strerror(errno));
         return false;
+    }
+    if (options_.port == 0) {
+        // The system picked the port while binding, so no other program can hold it. Read it back.
+        socklen_t length = sizeof(address);
+        if (getsockname(listenFd_, reinterpret_cast<sockaddr*>(&address), &length) < 0) {
+            say("cannot read the port: %s", std::strerror(errno));
+            return false;
+        }
+        options_.port = ntohs(address.sin_port);
     }
     return true;
 }

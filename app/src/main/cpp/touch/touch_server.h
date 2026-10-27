@@ -13,7 +13,7 @@ namespace aimbuddy::touch {
 
 /// How the helper was started.
 struct ServerOptions {
-    int port = 0;                       ///< TCP port on the loopback interface the app connects to.
+    int port = 0;                       ///< TCP port on the loopback interface the app connects to; 0 lets the system pick one.
     protocol::Token token;              ///< Secret the app must present.
     std::string devicePath;             ///< Touchscreen to use; empty to pick the largest one.
     int clientWaitMs = 15000;           ///< How long to wait for the app to connect.
