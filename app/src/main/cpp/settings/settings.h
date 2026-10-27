@@ -25,6 +25,8 @@ struct Settings {
     bool showSnapLine = false;            ///< A line from the crosshair to the nearest target.
     bool showCount = false;               ///< How many targets are in view.
     bool showPerformance = false;         ///< Detection rate and delay.
+    bool showDetectionArea = true;        ///< A square around the area the detector looks at.
+    bool showAimReach = true;             ///< A circle around the crosshair, as far as the assist reaches.
 
     // --- Detection ---
     float confidence = 0.5f;              ///< Lowest detector confidence that starts a target.

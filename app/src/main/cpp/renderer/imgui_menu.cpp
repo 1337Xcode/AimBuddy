@@ -51,6 +51,14 @@ constexpr int kMenuFpsCap = 90;
 // Settings are written this long after the last change, once no control is being dragged.
 constexpr double kSaveDelaySeconds = 0.35;
 
+// The two fields of view drawn around the crosshair: a blue square for the area the detector looks
+// at, and a red circle for how far the assist reaches.
+constexpr float kFovLineWidth = 2.2f;
+constexpr float kFovGapPx = 2.0f;   // between the blue square and the area the detector reads
+constexpr ImU32 kDetectionFovColor = IM_COL32(40, 140, 255, 220);
+constexpr ImU32 kAimFovColor = IM_COL32(255, 60, 60, 230);
+constexpr ImU32 kAimFovIdleColor = IM_COL32(255, 60, 60, 150);   // while the assist is off
+
 
 bool g_contextCreated = false;      ///< The ImGui context, fonts and theme exist (made once, kept for the process's life).
 bool g_backendReady = false;        ///< The OpenGL backend is set up for the current GL context (GL thread only).
@@ -320,14 +328,20 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
                       IM_COL32(255, 100, 50, static_cast<int>(255.0f * nearest->opacity)), 2.0f);
     }
 
-    // The detection zone (blue box) and, while the assist is on, the radius it picks targets from (red circle).
+    // The two fields of view: the area the detector looks at, and how far the assist reaches. They
+    // show while playing when their switches are on, and always while the menu or the touch area
+    // editor is open, so that the sliders that set them have something to show.
     float left, top, right, bottom;
-    if (showGuides && GetDetectionZoneScreenRect(&left, &top, &right, &bottom)) {
-        list->AddRect(ImVec2(left - origin.x, top - origin.y), ImVec2(right - origin.x, bottom - origin.y),
-                      IM_COL32(40, 140, 255, 220), 0.0f, 0, 2.2f);
-        if (settings.assistEnabled) {
-            list->AddCircle(crosshair, settings.aimFovRadius, IM_COL32(255, 60, 60, 230), 64, 2.3f);
-        }
+    if ((settings.showDetectionArea || showGuides) && GetDetectionZoneScreenRect(&left, &top, &right, &bottom)) {
+        // Drawn just outside the area the detector reads, so its outline is never in the picture it looks at.
+        const float margin = kFovLineWidth + kFovGapPx;
+        list->AddRect(ImVec2(left - origin.x - margin, top - origin.y - margin),
+                      ImVec2(right - origin.x + margin, bottom - origin.y + margin), kDetectionFovColor, 0.0f, 0,
+                      kFovLineWidth);
+    }
+    if (settings.showAimReach || showGuides) {
+        list->AddCircle(crosshair, settings.aimFovRadius, settings.assistEnabled ? kAimFovColor : kAimFovIdleColor, 64,
+                        kFovLineWidth);
     }
 
     // Where the assist's finger rests, so the player can keep their own thumb away from it. The
@@ -664,6 +678,8 @@ bool drawVisualsTab(Settings& s) {
     changed |= ImGui::Checkbox(T(Key::ShowLabels), &s.showLabels);
     changed |= ImGui::Checkbox(T(Key::ShowSnapLine), &s.showSnapLine);
     changed |= ImGui::Checkbox(T(Key::ShowAimPoint), &s.showAimPoint);
+    changed |= ImGui::Checkbox(T(Key::ShowDetectionArea), &s.showDetectionArea);
+    changed |= ImGui::Checkbox(T(Key::ShowAimReach), &s.showAimReach);
     changed |= ImGui::Checkbox(T(Key::ShowCount), &s.showCount);
     changed |= ImGui::Checkbox(T(Key::ShowPerformance), &s.showPerformance);
     ImGui::Separator();

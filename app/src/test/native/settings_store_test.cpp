@@ -19,6 +19,8 @@ TEST(settings_survive_a_round_trip) {
     original.boxThickness = 4;
     original.showSnapLine = true;
     original.showAimPoint = false;
+    original.showDetectionArea = false;
+    original.showAimReach = false;
     original.assistEnabled = true;
     original.aimZone = 1;
     original.aimStrength = 0.8f;
@@ -34,6 +36,7 @@ TEST(settings_survive_a_round_trip) {
     CHECK_NEAR(loaded.boxColor[2], 0.75, 1e-6);
     CHECK(loaded.boxThickness == 4);
     CHECK(loaded.showSnapLine && !loaded.showAimPoint);
+    CHECK(!loaded.showDetectionArea && !loaded.showAimReach);
     CHECK(!loaded.assistEnabled);   // the assist is never saved: it starts off every run
     CHECK(loaded.aimZone == 1);
     CHECK_NEAR(loaded.aimStrength, 0.8, 1e-6);
@@ -53,6 +56,7 @@ TEST(settings_keep_defaults_for_missing_and_unknown_names) {
     CHECK_NEAR(loaded.confidence, defaults.confidence, 1e-6);
     CHECK(loaded.boxThickness == defaults.boxThickness);
     CHECK(loaded.language == defaults.language);
+    CHECK(loaded.showDetectionArea && loaded.showAimReach);   // a file from before the outlines existed shows them
 }
 
 TEST(settings_are_clamped_when_read) {

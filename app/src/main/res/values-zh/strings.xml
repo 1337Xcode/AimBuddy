@@ -95,6 +95,8 @@
     <string name="s_box_thickness">线条粗细</string>
     <string name="s_labels">置信度标签</string>
     <string name="s_aim_point">瞄准点</string>
+    <string name="s_detection_outline">检测区域轮廓</string>
+    <string name="s_aim_reach_circle">瞄准范围圈</string>
     <string name="s_count">目标数量</string>
     <string name="s_snap_line">指向最近目标的线</string>
     <string name="s_performance">性能读数</string>

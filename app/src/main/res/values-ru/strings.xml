@@ -95,6 +95,8 @@
     <string name="s_box_thickness">Толщина линии</string>
     <string name="s_labels">Подписи уверенности</string>
     <string name="s_aim_point">Точка прицеливания</string>
+    <string name="s_detection_outline">Контур области обнаружения</string>
+    <string name="s_aim_reach_circle">Круг дальности прицеливания</string>
     <string name="s_count">Число целей</string>
     <string name="s_snap_line">Линия к ближайшей цели</string>
     <string name="s_performance">Показатели работы</string>

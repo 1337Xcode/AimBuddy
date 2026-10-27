@@ -97,6 +97,8 @@
     <string name="s_box_thickness">Line thickness</string>
     <string name="s_labels">Confidence labels</string>
     <string name="s_aim_point">Aim point</string>
+    <string name="s_detection_outline">Detection area outline</string>
+    <string name="s_aim_reach_circle">Aim reach circle</string>
     <string name="s_count">Target count</string>
     <string name="s_snap_line">Line to nearest target</string>
     <string name="s_performance">Performance readout</string>

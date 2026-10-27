@@ -35,6 +35,8 @@ void visitFields(Settings_& s, Visitor&& visit) {
     visit("showSnapLine", s.showSnapLine);
     visit("showCount", s.showCount);
     visit("showPerformance", s.showPerformance);
+    visit("showDetectionArea", s.showDetectionArea);
+    visit("showAimReach", s.showAimReach);
     visit("confidence", s.confidence);
     visit("detectionZoneRadius", s.detectionZoneRadius);
     visit("aimZone", s.aimZone);

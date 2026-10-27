@@ -193,6 +193,8 @@ private fun OverlayGroup(settings: SettingsView, actions: SettingsActions) {
         }
         toggleRow("showLabels", R.string.s_labels, true, settings, actions)
         toggleRow("showAimPoint", R.string.s_aim_point, true, settings, actions)
+        toggleRow("showDetectionArea", R.string.s_detection_outline, true, settings, actions)
+        toggleRow("showAimReach", R.string.s_aim_reach_circle, true, settings, actions)
         toggleRow("showSnapLine", R.string.s_snap_line, false, settings, actions)
         toggleRow("showCount", R.string.s_count, false, settings, actions)
         toggleRow("showPerformance", R.string.s_performance, false, settings, actions)
