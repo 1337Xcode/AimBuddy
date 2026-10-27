@@ -266,7 +266,7 @@ private fun HomeList(
                     title = stringResource(R.string.row_model),
                     leading = { IconBadge(Icons.Rounded.Memory, Color(0xFF8E5CF7)) },
                     trailing = {
-                        RowValue(modelName ?: "-")
+                        RowValue(modelName ?: "-", Modifier.weight(1f, fill = false))
                         Chevron()
                     },
                     onClick = onOpenModels,
@@ -277,7 +277,7 @@ private fun HomeList(
                     title = stringResource(R.string.row_touch_access),
                     leading = { IconBadge(Icons.Rounded.TouchApp, if (ready) palette.success else Color(0xFFFF9F0A)) },
                     trailing = {
-                        RowValue(touchValue)
+                        RowValue(touchValue, Modifier.weight(1f, fill = false))
                         Chevron()
                     },
                     onClick = onTouchAccess,

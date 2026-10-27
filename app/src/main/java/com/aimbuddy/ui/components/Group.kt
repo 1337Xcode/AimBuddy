@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -116,7 +117,7 @@ fun ListRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     leading: (@Composable () -> Unit)? = null,
-    trailing: (@Composable () -> Unit)? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
     titleColor: Color = AppTheme.palette.text,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
@@ -167,11 +168,15 @@ fun ListRow(
     }
 }
 
-/** The small text at the end of a row, such as the current value. */
+/**
+ * The small text at the end of a row, such as the current value. When something follows it there,
+ * give it `Modifier.weight(1f, fill = false)` so that it is the one that gives way.
+ */
 @Composable
-fun RowValue(text: String) {
+fun RowValue(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
+        modifier = modifier,
         style = MaterialTheme.typography.bodyMedium,
         color = AppTheme.palette.textDim,
         textAlign = TextAlign.End,

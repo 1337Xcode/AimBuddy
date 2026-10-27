@@ -71,7 +71,7 @@ fun UpdateBanner(status: UpdateStatus, onAction: () -> Unit) {
                 title = title,
                 subtitle = subtitle,
                 leading = { IconBadge(Icons.Rounded.SystemUpdate, AppTheme.palette.accent) },
-                trailing = trailing,
+                trailing = { trailing() },
             )
         }
     }
