@@ -9,7 +9,6 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aimbuddy.BuildConfig
-import com.aimbuddy.BundledModel
 import com.aimbuddy.InstalledModel
 import com.aimbuddy.ModelCatalog
 import com.aimbuddy.ModelSource
@@ -310,7 +309,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Re-reads which models are installed and which one is in use. */
     fun refreshModels() {
-        catalog.ensureBundledModel(BundledModel.read(context))
+        catalog.tidy()
         migrateLegacyModel()
         _models.update {
             it.copy(installed = catalog.getInstalledModels(), activeId = catalog.getActiveModel()?.id)

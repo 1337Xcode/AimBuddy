@@ -2,7 +2,7 @@ package com.aimbuddy
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
@@ -10,7 +10,10 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
 
-/** A model that works must survive a download that fails, and a copy that lost its files must not hide the bundled one. */
+/**
+ * A model that works must survive a download that fails, and the model in use must always be one that
+ * can be loaded: the app ships with none, so a phone can have none.
+ */
 class ModelFilesTest {
 
     @get:Rule
@@ -19,18 +22,22 @@ class ModelFilesTest {
     private fun modelFolder(name: String, content: String): File =
         folder.newFolder(name).also { File(it, "model.param").writeText(content) }
 
-    private fun installed(version: Int, param: File? = null, bin: File? = null) = InstalledModel(
-        id = BundledModel.ID,
-        title = "AimBuddy General",
+    private fun installed(id: String, param: File, bin: File) = InstalledModel(
+        id = id,
+        title = "Model $id",
         description = "",
         source = ModelSource.STORE,
-        paramPath = param?.path,
-        binPath = bin?.path,
+        paramPath = param.path,
+        binPath = bin.path,
         totalSizeBytes = 0,
-        version = version,
+        version = 1,
     )
 
-    private val bundled = BundledModel.Info(title = "AimBuddy General", description = "", version = 2)
+    private fun modelWithFiles(id: String): InstalledModel =
+        installed(id, folder.newFile("$id.param"), folder.newFile("$id.bin"))
+
+    private fun modelWithoutFiles(id: String): InstalledModel =
+        installed(id, File(folder.root, "$id-gone.param"), File(folder.root, "$id-gone.bin"))
 
     @Test
     fun swapReplacesTheOldModelAndLeavesNothingBehind() {
@@ -63,14 +70,20 @@ class ModelFilesTest {
     }
 
     @Test
-    fun aDownloadedCopyStaysOnlyWhenItsFilesAreThereAndItIsAsNew() {
-        val param = folder.newFile("model.param")
-        val bin = folder.newFile("model.bin")
-        assertTrue(ModelCatalog.keepsDownloadedCopy(installed(2, param, bin), bundled))
-        assertTrue(ModelCatalog.keepsDownloadedCopy(installed(3, param, bin), bundled))
-        assertFalse("older", ModelCatalog.keepsDownloadedCopy(installed(1, param, bin), bundled))
-        assertFalse("no files", ModelCatalog.keepsDownloadedCopy(installed(2), bundled))
-        assertFalse("files gone", ModelCatalog.keepsDownloadedCopy(installed(2, File(folder.root, "gone.param"), bin), bundled))
-        assertFalse("no copy", ModelCatalog.keepsDownloadedCopy(null, bundled))
+    fun theChosenModelIsTheOneInUseWhenItsFilesAreThere() {
+        val models = listOf(modelWithFiles("first"), modelWithFiles("second"))
+        assertEquals("second", ModelCatalog.chooseActive(models, "second")?.id)
+    }
+
+    @Test
+    fun aChosenModelThatLostItsFilesGivesWayToOneThatCanBeUsed() {
+        val models = listOf(modelWithoutFiles("gone"), modelWithFiles("kept"))
+        assertEquals("kept", ModelCatalog.chooseActive(models, "gone")?.id)
+    }
+
+    @Test
+    fun withNoModelThatCanBeUsedThereIsNoModelInUse() {
+        assertNull(ModelCatalog.chooseActive(emptyList(), null))
+        assertNull(ModelCatalog.chooseActive(listOf(modelWithoutFiles("gone")), "gone"))
     }
 }

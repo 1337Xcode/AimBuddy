@@ -19,12 +19,6 @@ namespace Config {
     /// YOLOv26n input size (optimized for 120 FPS target)
     constexpr int MODEL_INPUT_SIZE = 256;
     
-    /// Model parameter file name
-    constexpr const char* MODEL_PARAM_FILE = "models/yolo26n-opt.param";
-    
-    /// Model binary file name
-    constexpr const char* MODEL_BIN_FILE = "models/yolo26n-opt.bin";
-    
     /// Default confidence threshold for detections
     constexpr float DEFAULT_CONFIDENCE_THRESHOLD = 0.5f;
     

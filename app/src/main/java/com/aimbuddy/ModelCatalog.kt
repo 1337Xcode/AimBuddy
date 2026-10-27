@@ -9,7 +9,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Where a model on the phone came from. */
 enum class ModelSource {
-    ASSET,
     LOCAL,
     STORE
 }
@@ -20,27 +19,18 @@ data class InstalledModel(
     val title: String,
     val description: String,
     val source: ModelSource,
-    val paramPath: String?,
-    val binPath: String?,
+    val paramPath: String,
+    val binPath: String,
     val totalSizeBytes: Long,
     val version: Int = 0,
 ) {
     /** True when the model's files are there to be loaded. */
-    fun canUse(): Boolean {
-        return when (source) {
-            ModelSource.ASSET -> true
-            ModelSource.LOCAL,
-            ModelSource.STORE -> {
-                !paramPath.isNullOrBlank() && !binPath.isNullOrBlank() &&
-                    File(paramPath).exists() && File(binPath).exists()
-            }
-        }
-    }
+    fun canUse(): Boolean = File(paramPath).exists() && File(binPath).exists()
 }
 
 /**
- * The list of models on the phone and which one is in use, kept in the app's preferences. The model
- * that ships inside the app is always on the list; the others are downloaded or imported.
+ * The list of models on the phone and which one is in use, kept in the app's preferences. The app
+ * ships with no model: every one on the list was downloaded from the store or imported.
  */
 class ModelCatalog(context: Context) {
     private val modelsDir = File(context.filesDir, "models")
@@ -50,11 +40,11 @@ class ModelCatalog(context: Context) {
         private val recovered = AtomicBoolean(false)
 
         /**
-         * Whether a downloaded copy of the bundled model stays in place of the bundled one: only if its
-         * files are there and it is at least as new. A copy that lost its files gives way to the bundled one.
+         * The model to use: the one chosen if its files are there, otherwise the first model whose
+         * files are. Null when no model can be used, which is how a phone with none looks.
          */
-        fun keepsDownloadedCopy(downloaded: InstalledModel?, bundled: BundledModel.Info): Boolean =
-            downloaded != null && downloaded.canUse() && downloaded.version >= bundled.version
+        fun chooseActive(models: List<InstalledModel>, chosenId: String?): InstalledModel? =
+            models.firstOrNull { it.id == chosenId && it.canUse() } ?: models.firstOrNull { it.canUse() }
 
         private const val PREFS_NAME = "aimbuddy_prefs"
         private const val KEY_INSTALLED_MODELS_JSON = "installed_models_json"
@@ -64,46 +54,15 @@ class ModelCatalog(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /**
-     * Puts the model that ships inside the app on the list, or takes it off when this build has none.
-     * A downloaded copy of the same model stays in its place as long as it is at least as new.
+     * Puts things right before the list is read: finishes what an install that was killed halfway
+     * left behind, and makes the model in use one that can be loaded (none, if no model can be).
      */
-    fun ensureBundledModel(bundled: BundledModel.Info?) {
+    fun tidy() {
         recoverInterruptedInstalls()
-        val models = loadInstalledModels().toMutableList()
-        val downloaded = models.firstOrNull { it.id == BundledModel.ID && it.source != ModelSource.ASSET }
-        // The entry is rebuilt from what the app says now. This also drops the one an older version
-        // of the app saved under another id.
-        models.removeAll { it.source == ModelSource.ASSET }
-
-        if (bundled != null) {
-            if (!keepsDownloadedCopy(downloaded, bundled)) {
-                if (downloaded != null) {
-                    models.remove(downloaded)
-                    deleteFiles(downloaded)
-                }
-                models.add(
-                    InstalledModel(
-                        id = BundledModel.ID,
-                        title = bundled.title,
-                        description = bundled.description,
-                        source = ModelSource.ASSET,
-                        paramPath = null,
-                        binPath = null,
-                        totalSizeBytes = 0L,
-                        version = bundled.version,
-                    )
-                )
-            }
-        }
-
-        saveInstalledModels(models)
-
-        val activeId = prefs.getString(KEY_ACTIVE_MODEL_ID, null)
-        val activeStillValid = models.any { it.id == activeId && it.canUse() }
-        if (!activeStillValid) {
-            val fallback = models.firstOrNull { it.source == ModelSource.ASSET }
-                ?: models.firstOrNull { it.canUse() }
-            prefs.edit().putString(KEY_ACTIVE_MODEL_ID, fallback?.id).apply()
+        val chosenId = prefs.getString(KEY_ACTIVE_MODEL_ID, null)
+        val activeId = chooseActive(loadInstalledModels(), chosenId)?.id
+        if (activeId != chosenId) {
+            prefs.edit().putString(KEY_ACTIVE_MODEL_ID, activeId).apply()
         }
     }
 
@@ -139,11 +98,10 @@ class ModelCatalog(context: Context) {
         }
     }
 
-    /** Removes a model and its files. The one inside the app cannot be removed. Returns false if nothing was removed. */
+    /** Removes a model and its files. Returns false if there was no such model. */
     fun deleteModel(modelId: String): Boolean {
         val models = loadInstalledModels().toMutableList()
         val model = models.firstOrNull { it.id == modelId } ?: return false
-        if (model.source == ModelSource.ASSET) return false
 
         models.remove(model)
         saveInstalledModels(models)
@@ -151,9 +109,7 @@ class ModelCatalog(context: Context) {
 
         val activeId = prefs.getString(KEY_ACTIVE_MODEL_ID, null)
         if (activeId == modelId) {
-            val fallback = models.firstOrNull { it.source == ModelSource.ASSET }
-                ?: models.firstOrNull { it.canUse() }
-            prefs.edit().putString(KEY_ACTIVE_MODEL_ID, fallback?.id).apply()
+            prefs.edit().putString(KEY_ACTIVE_MODEL_ID, chooseActive(models, null)?.id).apply()
         }
         return true
     }
@@ -168,22 +124,13 @@ class ModelCatalog(context: Context) {
         return true
     }
 
-    /** The model in use, or the one inside the app if the chosen one is gone; null when there is none at all. */
-    fun getActiveModel(): InstalledModel? {
-        val models = loadInstalledModels()
-        val activeId = prefs.getString(KEY_ACTIVE_MODEL_ID, null)
-        val active = models.firstOrNull { it.id == activeId && it.canUse() }
-        if (active != null) {
-            return active
-        }
-        return models.firstOrNull { it.source == ModelSource.ASSET } ?: models.firstOrNull { it.canUse() }
-    }
+    /** The model in use, or the first one that can be used if the chosen one is gone; null when there is none at all. */
+    fun getActiveModel(): InstalledModel? =
+        chooseActive(loadInstalledModels(), prefs.getString(KEY_ACTIVE_MODEL_ID, null))
 
-    /** The models on the phone, the one inside the app first. */
-    fun getInstalledModels(): List<InstalledModel> {
-        return loadInstalledModels().filter { it.canUse() || it.source == ModelSource.ASSET }
-            .sortedWith(compareBy<InstalledModel> { it.source != ModelSource.ASSET }.thenBy { it.title.lowercase() })
-    }
+    /** The models on the phone that can be used, by title. */
+    fun getInstalledModels(): List<InstalledModel> =
+        loadInstalledModels().filter { it.canUse() }.sortedBy { it.title.lowercase() }
 
     /** Turns a name into something safe to use as an id and a folder name. */
     fun sanitizeModelId(raw: String): String {
@@ -194,16 +141,14 @@ class ModelCatalog(context: Context) {
     /** Deletes a model's files, and its folder when the model has one of its own. */
     private fun deleteFiles(model: InstalledModel) {
         try {
-            model.paramPath?.let { path ->
-                val file = File(path)
-                val folder = file.parentFile
-                if (folder != null && folder.name == model.id && folder.parentFile?.name == "models") {
-                    folder.deleteRecursively()
-                } else {
-                    file.delete()
-                }
+            val file = File(model.paramPath)
+            val folder = file.parentFile
+            if (folder != null && folder.name == model.id && folder.parentFile?.name == "models") {
+                folder.deleteRecursively()
+            } else {
+                file.delete()
             }
-            model.binPath?.let { File(it).delete() }
+            File(model.binPath).delete()
         } catch (_: Exception) {
             // The files are only leftovers once the model is off the list.
         }
@@ -211,7 +156,7 @@ class ModelCatalog(context: Context) {
 
     private fun loadInstalledModels(): List<InstalledModel> {
         val raw = prefs.getString(KEY_INSTALLED_MODELS_JSON, "[]") ?: "[]"
-        // A damaged list means no models are known; the one inside the app is put back, and imported ones can be imported again.
+        // A damaged list means no models are known; the ones downloaded can be downloaded again, and imported ones imported again.
         val arr = try {
             JSONArray(raw)
         } catch (e: JSONException) {
@@ -220,19 +165,20 @@ class ModelCatalog(context: Context) {
         val out = mutableListOf<InstalledModel>()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
-            val source = when (obj.optString("source")) {
-                ModelSource.ASSET.name -> ModelSource.ASSET
-                ModelSource.STORE.name -> ModelSource.STORE
-                else -> ModelSource.LOCAL
+            val paramPath = obj.optString("paramPath")
+            val binPath = obj.optString("binPath")
+            // An earlier build kept the model it shipped with on this list, with no files of its own.
+            if (paramPath.isBlank() || binPath.isBlank()) {
+                continue
             }
             out.add(
                 InstalledModel(
                     id = obj.optString("id"),
                     title = obj.optString("title"),
                     description = obj.optString("description"),
-                    source = source,
-                    paramPath = obj.optString("paramPath").ifBlank { null },
-                    binPath = obj.optString("binPath").ifBlank { null },
+                    source = if (obj.optString("source") == ModelSource.STORE.name) ModelSource.STORE else ModelSource.LOCAL,
+                    paramPath = paramPath,
+                    binPath = binPath,
                     totalSizeBytes = obj.optLong("totalSizeBytes", 0L),
                     version = obj.optInt("version", 0),
                 )
@@ -249,8 +195,8 @@ class ModelCatalog(context: Context) {
             obj.put("title", model.title)
             obj.put("description", model.description)
             obj.put("source", model.source.name)
-            obj.put("paramPath", model.paramPath ?: "")
-            obj.put("binPath", model.binPath ?: "")
+            obj.put("paramPath", model.paramPath)
+            obj.put("binPath", model.binPath)
             obj.put("totalSizeBytes", model.totalSizeBytes)
             obj.put("version", model.version)
             arr.put(obj)

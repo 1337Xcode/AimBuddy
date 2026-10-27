@@ -142,21 +142,15 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     private fun loadSettingsAndModel(): Boolean {
         NativeBridge.loadSettings(File(filesDir, SETTINGS_FILE).path)
         val catalog = ModelCatalog(this)
-        catalog.ensureBundledModel(BundledModel.read(this))
+        catalog.tidy()
         val model = catalog.getActiveModel() ?: run {
             Log.e(TAG, "No model is installed")
             return false
         }
-        val spec = if (model.source == ModelSource.ASSET) {
-            ModelProfileSpec.readFromAssets(assets)
-        } else {
-            ModelProfileSpec.readFor(model.paramPath)
-        }
-        val useAsset = model.source == ModelSource.ASSET
+        val spec = ModelProfileSpec.readFor(model.paramPath)
         return NativeBridge.loadModel(
-            assets,
-            if (useAsset) null else model.paramPath,
-            if (useAsset) null else model.binPath,
+            model.paramPath,
+            model.binPath,
             spec.roles,
             spec.endToEnd,
             spec.inputSize,

@@ -247,7 +247,15 @@ class MainActivity : AppCompatActivity() {
                         modelName = models.installed.firstOrNull { it.id == models.activeId }?.title,
                         touchAccess = touchAccess,
                         updateStatus = updateStatus,
-                        onStart = { startFlow() },
+                        onStart = {
+                            if (models.activeId == null) {
+                                // Nothing to detect with yet: the store is where the first model comes from.
+                                screen = Screen.MODELS
+                                viewModel.post(UiMessage(R.string.models_needed))
+                            } else {
+                                startFlow()
+                            }
+                        },
                         onStop = { AssistService.stop(this@MainActivity) },
                         onOpenModels = { screen = Screen.MODELS },
                         onOpenSettings = { screen = Screen.SETTINGS },

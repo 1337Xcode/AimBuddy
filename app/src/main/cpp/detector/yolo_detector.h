@@ -1,7 +1,6 @@
 #ifndef AIMBUDDY_DETECTOR_YOLO_DETECTOR_H
 #define AIMBUDDY_DETECTOR_YOLO_DETECTOR_H
 
-#include <android/asset_manager.h>
 #include <ncnn/allocator.h>
 #include <ncnn/net.h>
 
@@ -39,11 +38,11 @@ public:
     YoloDetector& operator=(const YoloDetector&) = delete;
 
     /**
-     * Loads the model, from the given files if both are set and readable, otherwise from the app's
-     * bundled assets. Works out the network input size and the output layout with a trial run.
-     * Returns false, leaving the detector unloaded, if the model cannot be used.
+     * Loads the model from its two files. Works out the network input size and the output layout
+     * with a trial run. Returns false, leaving the detector unloaded, if the files are not there
+     * or the model cannot be used.
      */
-    bool load(AAssetManager* assets, const char* paramPath, const char* binPath, const ModelProfile& profile);
+    bool load(const char* paramPath, const char* binPath, const ModelProfile& profile);
 
     /// Releases the model and every buffer it holds.
     void unload();
@@ -99,7 +98,6 @@ private:
     int inputIndex_ = 0;
     int outputIndex_ = 0;
     int inputSize_ = 0;
-    AAssetManager* assets_ = nullptr;  ///< Owned by the Java activity; only used while loading.
     std::string paramPath_;
     std::string binPath_;
     ModelProfile profile_;

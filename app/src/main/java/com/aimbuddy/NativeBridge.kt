@@ -1,6 +1,5 @@
 package com.aimbuddy
 
-import android.content.res.AssetManager
 import android.hardware.HardwareBuffer
 
 /**
@@ -75,14 +74,13 @@ object NativeBridge {
     external fun setDetectionRateLimit(perSecond: Float)
 
     /**
-     * Loads the detection model. Paths are null for the model bundled in the app. `roles` is a
-     * comma separated list such as "body,head" saying what each class of the model means.
+     * Loads the detection model from its two files. `roles` is a comma separated list such as
+     * "body,head" saying what each class of the model means.
      */
     @JvmStatic
     external fun loadModel(
-        assets: AssetManager,
-        paramPath: String?,
-        binPath: String?,
+        paramPath: String,
+        binPath: String,
         roles: String?,
         endToEnd: Boolean,
         inputSize: Int,

@@ -1,8 +1,6 @@
 #ifndef AIMBUDDY_PIPELINE_DETECTION_PIPELINE_H
 #define AIMBUDDY_PIPELINE_DETECTION_PIPELINE_H
 
-#include <android/asset_manager.h>
-
 #include <array>
 #include <atomic>
 #include <deque>
@@ -55,8 +53,7 @@ public:
     DetectionPipeline& operator=(const DetectionPipeline&) = delete;
 
     /// Loads the model. Must not be called while running. Returns false if the model is unusable.
-    bool loadModel(AAssetManager* assets, const std::string& paramPath, const std::string& binPath,
-                   const ModelProfile& profile);
+    bool loadModel(const std::string& paramPath, const std::string& binPath, const ModelProfile& profile);
     bool isModelLoaded() const { return detector_.isLoaded(); }
 
     /// Starts the pipeline thread. Does nothing if it is running or no model is loaded.

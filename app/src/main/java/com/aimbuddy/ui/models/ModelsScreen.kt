@@ -71,7 +71,8 @@ fun ModelsScreen(
     onGet: (StoreModelDefinition) -> Unit,
     onLoadStore: () -> Unit,
 ) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    // With no model yet, the store is the tab with something to do.
+    var tab by rememberSaveable { mutableIntStateOf(if (state.installed.isEmpty()) 1 else 0) }
     var deleting by remember { mutableStateOf<InstalledModel?>(null) }
 
     LaunchedEffect(tab, state.store) {
@@ -154,7 +155,6 @@ private fun LazyStaggeredGridScope.installedTab(
 @Composable
 private fun InstalledRow(model: InstalledModel, active: Boolean, onUse: (String) -> Unit, onRequestDelete: (InstalledModel) -> Unit) {
     val source = when (model.source) {
-        ModelSource.ASSET -> stringResource(R.string.models_built_in)
         ModelSource.STORE -> stringResource(R.string.models_from_store)
         ModelSource.LOCAL -> stringResource(R.string.models_from_file)
     }
@@ -179,15 +179,13 @@ private fun InstalledRow(model: InstalledModel, active: Boolean, onUse: (String)
         } else {
             SmallPill(text = stringResource(R.string.models_use), onClick = { onUse(model.id) })
         }
-        if (model.source != ModelSource.ASSET) {
-            TopAction(onClick = { onRequestDelete(model) }) {
-                Icon(
-                    imageVector = Icons.Rounded.Delete,
-                    contentDescription = stringResource(R.string.models_delete),
-                    tint = AppTheme.palette.textDim,
-                    modifier = Modifier.size(Space.l),
-                )
-            }
+        TopAction(onClick = { onRequestDelete(model) }) {
+            Icon(
+                imageVector = Icons.Rounded.Delete,
+                contentDescription = stringResource(R.string.models_delete),
+                tint = AppTheme.palette.textDim,
+                modifier = Modifier.size(Space.l),
+            )
         }
     }
 }

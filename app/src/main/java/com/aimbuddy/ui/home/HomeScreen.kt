@@ -264,9 +264,9 @@ private fun HomeList(
             row {
                 ListRow(
                     title = stringResource(R.string.row_model),
-                    leading = { IconBadge(Icons.Rounded.Memory, Color(0xFF8E5CF7)) },
+                    leading = { IconBadge(Icons.Rounded.Memory, if (modelName != null) Color(0xFF8E5CF7) else Color(0xFFFF9F0A)) },
                     trailing = {
-                        RowValue(modelName ?: "-", Modifier.weight(1f, fill = false))
+                        RowValue(modelName ?: stringResource(R.string.model_none), Modifier.weight(1f, fill = false))
                         Chevron()
                     },
                     onClick = onOpenModels,

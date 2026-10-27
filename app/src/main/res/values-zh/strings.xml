@@ -20,6 +20,7 @@
     <string name="action_start">开始</string>
     <string name="action_stop">停止</string>
     <string name="row_model">模型</string>
+    <string name="model_none">暂无</string>
     <string name="row_touch_access">触控方式</string>
     <string name="row_settings">设置</string>
     <string name="touch_shizuku">Shizuku</string>
@@ -67,7 +68,6 @@
     <string name="models_get">获取</string>
     <string name="models_update">更新</string>
     <string name="models_delete">删除</string>
-    <string name="models_built_in">内置</string>
     <string name="models_from_store">来自商店</string>
     <string name="models_from_file">来自文件</string>
     <string name="models_installed_label">已安装</string>
@@ -80,7 +80,8 @@
     <string name="models_next_start">下次点按“开始”时生效。</string>
     <string name="models_import_hint">先选择 .param 文件，再选择对应的 .bin 文件。</string>
     <string name="models_import_failed">无法导入该模型。</string>
-    <string name="models_none_installed">尚未安装模型。</string>
+    <string name="models_none_installed">尚无模型。请在“商店”标签页获取一个，或导入自己的模型。</string>
+    <string name="models_needed">请先获取模型。AimBuddy General 是“商店”标签页中的一个小型下载。</string>
 
     <!-- 设置 -->
     <string name="settings_title">设置</string>

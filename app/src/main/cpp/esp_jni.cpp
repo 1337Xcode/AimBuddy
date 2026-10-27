@@ -1,6 +1,4 @@
 #include <jni.h>
-#include <android/asset_manager.h>
-#include <android/asset_manager_jni.h>
 #include <android/hardware_buffer.h>
 #include <android/hardware_buffer_jni.h>
 
@@ -290,23 +288,18 @@ JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_resetSettings(JNIEnv* /* e
 
 /**
  * @brief Loads the detection model and tells the detector what its classes mean
- * @param paramPath Path of the .param file, or null to use the model bundled in the app
- * @param binPath Path of the .bin file, or null
+ * @param paramPath Path of the .param file
+ * @param binPath Path of the .bin file
  * @param roles Comma separated roles in class order, such as "body,head"; null or empty when unknown
  * @param endToEnd True if the model already removes duplicate detections
  * @param inputSize Width and height of the network input, or 0 to work it out
  * @return false if the model could not be used
  */
 JNIEXPORT jboolean JNICALL
-Java_com_aimbuddy_NativeBridge_loadModel(JNIEnv* env, jclass /* clazz */, jobject assetManager, jstring paramPath,
-                                         jstring binPath, jstring roles, jboolean endToEnd, jint inputSize) {
+Java_com_aimbuddy_NativeBridge_loadModel(JNIEnv* env, jclass /* clazz */, jstring paramPath, jstring binPath,
+                                         jstring roles, jboolean endToEnd, jint inputSize) {
     if (g_pipeline.isRunning()) {
         LOGE("Cannot load a model while running");
-        return JNI_FALSE;
-    }
-    AAssetManager* assets = AAssetManager_fromJava(env, assetManager);
-    if (assets == nullptr) {
-        LOGE("Failed to get the asset manager");
         return JNI_FALSE;
     }
 
@@ -317,7 +310,7 @@ Java_com_aimbuddy_NativeBridge_loadModel(JNIEnv* env, jclass /* clazz */, jobjec
     profile.inputSize = inputSize > 0 ? inputSize : 0;
     LOGI("Model profile: roles='%s' endToEnd=%d inputSize=%d", roleList.c_str(), endToEnd == JNI_TRUE, inputSize);
 
-    g_modelLoaded = g_pipeline.loadModel(assets, toStdString(env, paramPath), toStdString(env, binPath), profile);
+    g_modelLoaded = g_pipeline.loadModel(toStdString(env, paramPath), toStdString(env, binPath), profile);
     if (!g_modelLoaded) {
         LOGE("Failed to load the detection model");
     }

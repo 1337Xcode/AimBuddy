@@ -20,6 +20,7 @@
     <string name="action_start">Start</string>
     <string name="action_stop">Stop</string>
     <string name="row_model">Model</string>
+    <string name="model_none">None yet</string>
     <string name="row_touch_access">Touch access</string>
     <string name="row_settings">Settings</string>
     <string name="touch_shizuku">Shizuku</string>
@@ -69,7 +70,6 @@
     <string name="models_update">Update</string>
     <string name="models_version" translatable="false">v%1$d</string>
     <string name="models_delete">Delete</string>
-    <string name="models_built_in">Built in</string>
     <string name="models_from_store">From the store</string>
     <string name="models_from_file">From a file</string>
     <string name="models_installed_label">Installed</string>
@@ -82,7 +82,8 @@
     <string name="models_next_start">Used the next time you press Start.</string>
     <string name="models_import_hint">Choose the .param file, then the matching .bin file.</string>
     <string name="models_import_failed">That model could not be imported.</string>
-    <string name="models_none_installed">No models installed.</string>
+    <string name="models_none_installed">No model yet. Get one from the Store tab, or import your own.</string>
+    <string name="models_needed">Get a model first. AimBuddy General is a small download in the Store tab.</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>

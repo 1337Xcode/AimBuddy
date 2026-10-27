@@ -77,19 +77,12 @@ const float* tensorData(const ncnn::Mat& tensor) {
 }  // namespace
 
 bool YoloDetector::loadNet(ncnn::Net& net, const char* paramPath, const char* binPath) const {
-    if (paramPath != nullptr && binPath != nullptr && paramPath[0] != '\0' && binPath[0] != '\0') {
-        if (net.load_param(paramPath) == 0 && net.load_model(binPath) == 0) {
-            return true;
-        }
-        LOGW("Could not read the model files, trying the bundled model");
-        net.clear();
-    }
-    if (assets_ == nullptr) {
+    if (paramPath == nullptr || binPath == nullptr || paramPath[0] == '\0' || binPath[0] == '\0') {
+        LOGE("There are no model files to read");
         return false;
     }
-    if (net.load_param(assets_, Config::MODEL_PARAM_FILE) != 0 ||
-        net.load_model(assets_, Config::MODEL_BIN_FILE) != 0) {
-        LOGE("No usable model: %s", Config::MODEL_PARAM_FILE);
+    if (net.load_param(paramPath) != 0 || net.load_model(binPath) != 0) {
+        LOGE("Could not read the model files %s and %s", paramPath, binPath);
         net.clear();
         return false;
     }
@@ -135,11 +128,9 @@ bool YoloDetector::probeOutput(ncnn::Net& net) {
     return false;
 }
 
-bool YoloDetector::load(AAssetManager* assets, const char* paramPath, const char* binPath,
-                        const ModelProfile& profile) {
+bool YoloDetector::load(const char* paramPath, const char* binPath, const ModelProfile& profile) {
     unload();
     profile_ = profile;
-    assets_ = assets;
     paramPath_ = paramPath != nullptr ? paramPath : "";
     binPath_ = binPath != nullptr ? binPath : "";
 

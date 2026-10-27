@@ -20,6 +20,7 @@
     <string name="action_start">Старт</string>
     <string name="action_stop">Стоп</string>
     <string name="row_model">Модель</string>
+    <string name="model_none">Пока нет</string>
     <string name="row_touch_access">Доступ к касаниям</string>
     <string name="row_settings">Настройки</string>
     <string name="touch_shizuku">Shizuku</string>
@@ -67,7 +68,6 @@
     <string name="models_get">Скачать</string>
     <string name="models_update">Обновить</string>
     <string name="models_delete">Удалить</string>
-    <string name="models_built_in">Встроена</string>
     <string name="models_from_store">Из магазина</string>
     <string name="models_from_file">Из файла</string>
     <string name="models_installed_label">Установлена</string>
@@ -80,7 +80,8 @@
     <string name="models_next_start">Будет использована при следующем нажатии «Старт».</string>
     <string name="models_import_hint">Выберите файл .param, затем подходящий файл .bin.</string>
     <string name="models_import_failed">Не удалось импортировать модель.</string>
-    <string name="models_none_installed">Моделей нет.</string>
+    <string name="models_none_installed">Моделей пока нет. Получите одну на вкладке «Магазин» или импортируйте свою.</string>
+    <string name="models_needed">Сначала получите модель. AimBuddy General — небольшая загрузка на вкладке «Магазин».</string>
 
     <!-- Настройки -->
     <string name="settings_title">Настройки</string>

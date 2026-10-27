@@ -1,12 +1,10 @@
 package com.aimbuddy
 
-import android.content.res.AssetManager
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
-import java.io.IOException
 
 /**
  * What a model says about itself, read from a small JSON file saved next to it.
@@ -32,7 +30,6 @@ data class ModelProfileSpec(
 ) {
     companion object {
         private const val TAG = "ModelProfileSpec"
-        private const val ASSET_PROFILE_PATH = "models/model.json"
 
         /** Used when a model comes without a description. */
         val UNKNOWN = ModelProfileSpec(roles = null, endToEnd = false, inputSize = 0)
@@ -53,18 +50,6 @@ data class ModelProfileSpec(
                 parse(file.readText())
             } catch (e: JSONException) {
                 Log.w(TAG, "Ignoring unreadable model description ${file.name}: ${e.message}")
-                UNKNOWN
-            }
-        }
-
-        /** Reads the description bundled with the app next to its default model, if there is one. */
-        fun readFromAssets(assets: AssetManager): ModelProfileSpec {
-            return try {
-                assets.open(ASSET_PROFILE_PATH).use { parse(it.bufferedReader().readText()) }
-            } catch (_: IOException) {
-                UNKNOWN  // no description bundled
-            } catch (e: JSONException) {
-                Log.w(TAG, "Ignoring unreadable bundled model description: ${e.message}")
                 UNKNOWN
             }
         }

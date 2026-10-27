@@ -50,13 +50,12 @@ DetectionPipeline::DetectionPipeline() {
     capture_.setFrameObserver([this](const RoiFrame& frame) { measureCameraMotion(frame); });
 }
 
-bool DetectionPipeline::loadModel(AAssetManager* assets, const std::string& paramPath, const std::string& binPath,
-                                  const ModelProfile& profile) {
+bool DetectionPipeline::loadModel(const std::string& paramPath, const std::string& binPath, const ModelProfile& profile) {
     if (isRunning()) {
         LOGE("Cannot load a model while the pipeline is running");
         return false;
     }
-    if (!detector_.load(assets, paramPath.c_str(), binPath.c_str(), profile)) {
+    if (!detector_.load(paramPath.c_str(), binPath.c_str(), profile)) {
         return false;
     }
     capture_.setModelSize(detector_.inputSize());
