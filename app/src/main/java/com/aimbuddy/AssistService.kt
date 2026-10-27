@@ -179,7 +179,9 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
 
         val controller = OverlayController(this) { mainHandler.post { shutdown() } }
         overlay = controller
-        controller.show(streamerMode = false)
+        // Streamer mode set in an earlier run holds from the start, so the button is never on the screen even for a moment.
+        val streamerMode = NativeBridge.settingsSnapshot().lineSequence().any { it.trim() == "streamerMode=1" }
+        controller.show(streamerMode)
 
         displayManager = (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager).also {
             it.registerDisplayListener(displayListener, mainHandler)
