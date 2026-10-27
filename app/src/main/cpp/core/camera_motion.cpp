@@ -24,6 +24,14 @@ constexpr float kJumpConfidence = 0.5f;
 constexpr float kMaxGainStep = 1.35f;
 constexpr float kMaxDelayStepS = 0.012f;
 
+/// The scene has answered the finger when it slid at least this share of the finger's net travel
+/// (games slide it by far more than this), judged only once the finger has moved this far and
+/// frames covering nearly all of the time could be compared: a stretch in which the picture could
+/// not be read (a busy scene, a fast turn) hides slides, and the net slide would then fall short.
+constexpr float kAnswerMinShare = 0.15f;
+constexpr float kAnswerMinFingerPx = 30.0f;
+constexpr float kAnswerMinCoverage = 0.85f;
+
 /// A time later than any move can land, for "everything from here on".
 constexpr int64_t kForeverNs = INT64_MAX / 4;
 
@@ -109,7 +117,7 @@ void CameraMotion::addMeasurement(int64_t fromNs, int64_t toNs, float dx, float 
         float predictedX = 0.0f;
         float predictedY = 0.0f;
         modelShift(fromNs, toNs, &predictedX, &predictedY);
-        measured_.add(fromNs, toNs, predictedX, predictedY);
+        measured_.add(fromNs, toNs, predictedX, predictedY, false);
         return;
     }
     measured_.add(fromNs, toNs, dx, dy);
@@ -160,6 +168,34 @@ void CameraMotion::unseenFinger(float* dx, float* dy) const {
     std::lock_guard<std::mutex> lock(mutex_);
     // Everything that lands after the newest captured frame, however far ahead.
     fingers_.landedBetween(current_.delayS, measured_.latestNs(), kForeverNs, dx, dy);
+}
+
+CameraMotion::Answer CameraMotion::fingerAnswered(int64_t fromNs, int64_t toNs, float* fingerPx, float* slidePx) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    float fingerX = 0.0f;
+    float fingerY = 0.0f;
+    fingers_.landedBetween(current_.delayS, fromNs, toNs, &fingerX, &fingerY);
+    float slideX = 0.0f;
+    float slideY = 0.0f;
+    int64_t coveredNs = 0;
+    measured_.seenShiftBetween(fromNs, toNs, &slideX, &slideY, &coveredNs);
+    if (fingerPx != nullptr && slidePx != nullptr) {
+        const bool alongX = std::fabs(fingerX) >= std::fabs(fingerY);
+        *fingerPx = std::fabs(alongX ? fingerX : fingerY);
+        *slidePx = std::fabs(alongX ? slideX : slideY);
+    }
+    if (static_cast<float>(coveredNs) < kAnswerMinCoverage * static_cast<float>(toNs - fromNs)) {
+        return Answer::kUnknown;
+    }
+    // Each axis on its own, so a game that looks the other way up and down makes no difference.
+    const bool xMoved = std::fabs(fingerX) >= kAnswerMinFingerPx;
+    const bool yMoved = std::fabs(fingerY) >= kAnswerMinFingerPx;
+    if (!xMoved && !yMoved) {
+        return Answer::kUnknown;
+    }
+    const bool xAnswered = xMoved && std::fabs(slideX) >= kAnswerMinShare * std::fabs(fingerX);
+    const bool yAnswered = yMoved && std::fabs(slideY) >= kAnswerMinShare * std::fabs(fingerY);
+    return xAnswered || yAnswered ? Answer::kAnswered : Answer::kIgnored;
 }
 
 void CameraMotion::shiftBetween(int64_t fromNs, int64_t toNs, float* dx, float* dy) const {

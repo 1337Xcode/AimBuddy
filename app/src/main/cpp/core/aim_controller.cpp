@@ -62,6 +62,19 @@ constexpr float kMinStability = 0.2f;
 constexpr float kStabilityRecoveryPerS = 0.3f;
 constexpr float kCalmBeforeRecoveryS = 0.5f;
 
+/// A finger is given this long to show an effect before the game is judged to be ignoring it, and
+/// only the most recent stretch of this length is looked at (the records of moves and slides are short).
+constexpr float kAnswerWithinS = 1.4f;
+constexpr float kAnswerWindowS = 1.5f;
+
+/// The verdict "ignored" must hold this long before the finger is lifted, so a moment in which the
+/// picture was hard to read cannot condemn a finger that is being answered.
+constexpr float kIgnoredFor = 0.3f;
+
+/// After the first lift the finger waits this long before touching again; each further failure doubles it, to this limit.
+constexpr float kRetryFirstS = 0.25f;
+constexpr float kRetryLongestS = 4.0f;
+
 float lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 float nsToSeconds(int64_t ns) { return static_cast<float>(ns) * 1e-9f; }
@@ -135,10 +148,47 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
     telemetry_.deadzone = pursuit.deadzone;
     telemetry_.movingShare = pursuit.movingShare;
     watchForSwinging(nowNs, dt, pursuit);
+    if (touching_ && fingerSeemsDead(nowNs)) {
+        // The game is not answering this finger: lift it and try again after a wait.
+        const float wait = std::min(kRetryLongestS, kRetryFirstS * static_cast<float>(1 << std::min(deadStreak_, 4)));
+        mayTouchAfterNs_ = nowNs + static_cast<int64_t>(wait * 1e9f);
+        ++deadStreak_;
+        ++telemetry_.deadFingers;
+        const AimOutput out = lift();
+        noteFinger();
+        return out;
+    }
     const AimOutput out = touching_ ? moveFinger(nowNs, dt, pursuit, planFingerStep(nowNs, response, pursuit, player, dt))
-                                    : putFingerDown(pursuit);
+                                    : putFingerDown(nowNs, pursuit);
     noteFinger();
     return out;
+}
+
+/// True when the finger has moved a good way and the screen has not slid in answer, for a while.
+bool AimController::fingerSeemsDead(int64_t nowNs) {
+    if (nsToSeconds(nowNs - downNs_) < kAnswerWithinS) {
+        return false;
+    }
+    const int64_t fromNs = std::max(downNs_, nowNs - static_cast<int64_t>(kAnswerWindowS * 1e9f));
+    float fingerPx = 0.0f;
+    float slidePx = 0.0f;
+    switch (motion_->fingerAnswered(fromNs, nowNs, &fingerPx, &slidePx)) {
+        case CameraMotion::Answer::kAnswered:
+            deadStreak_ = 0;
+            ignoredSinceNs_ = 0;
+            return false;
+        case CameraMotion::Answer::kIgnored:
+            if (ignoredSinceNs_ == 0) {
+                ignoredSinceNs_ = nowNs;
+            }
+            telemetry_.deadFingerPx = fingerPx;
+            telemetry_.deadSlidePx = slidePx;
+            return nsToSeconds(nowNs - ignoredSinceNs_) >= kIgnoredFor;
+        case CameraMotion::Answer::kUnknown:
+            break;
+    }
+    ignoredSinceNs_ = 0;
+    return false;
 }
 
 /// Copies the finger's state into the telemetry at the end of a step.
@@ -291,10 +341,12 @@ bool AimController::beginPursuit(int64_t nowNs, const CameraResponse& response, 
     return true;
 }
 
-AimOutput AimController::putFingerDown(const Pursuit& pursuit) {
-    if (pursuit.onTarget()) {
-        return AimOutput();  // already on target: nothing to do until it moves
+AimOutput AimController::putFingerDown(int64_t nowNs, const Pursuit& pursuit) {
+    if (pursuit.onTarget() || nowNs < mayTouchAfterNs_) {
+        return AimOutput();  // already on target (nothing to do until it moves), or waiting after an ignored finger
     }
+    downNs_ = nowNs;
+    ignoredSinceNs_ = 0;
     touching_ = true;
     fingerX_ = settings_.anchorX;
     fingerY_ = settings_.anchorY;

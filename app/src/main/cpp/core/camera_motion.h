@@ -60,6 +60,22 @@ public:
     /// Finger travel in pixels that has been moved but whose effect no captured frame shows yet.
     void unseenFinger(float* dx, float* dy) const;
 
+    /// What the scene did in answer to the assist's finger over a stretch of time.
+    enum class Answer {
+        kUnknown,   ///< The finger moved too little, or the frames could not be compared well enough, to say.
+        kAnswered,  ///< The scene slid with the finger.
+        kIgnored,   ///< The finger moved a good way and the scene did not slide.
+    };
+
+    /**
+     * Judges whether the scene answered the finger's net movement inside (fromNs, toNs]. Only slides
+     * that were really seen count. Net movement is compared, not paths: the little jitter of a
+     * measurement of a still picture cancels out, where a path would pile it up. When given,
+     * `fingerPx` and `slidePx` receive the net travel of the finger and the net slide of the scene on
+     * the axis the finger moved most along.
+     */
+    Answer fingerAnswered(int64_t fromNs, int64_t toNs, float* fingerPx = nullptr, float* slidePx = nullptr) const;
+
     void shiftBetween(int64_t fromNs, int64_t toNs, float* dx, float* dy) const override;
 
     /// Forgets the recorded moves and measurements; what was learned about the response stays.

@@ -38,6 +38,7 @@ public:
         bool measureCamera = true;    ///< Whether the slide of the scene between frames is measured.
         float measureNoisePx = 0.7f;  ///< Std. dev. of that measurement.
         float dropoutRate = 0.10f;    ///< Share of frames in which the detector misses the target.
+        int ignoredTouches = 0;       ///< How many finger touches, from the first, the game takes no notice of.
     };
 
     /// What the controller believes before it has measured anything.
@@ -173,7 +174,8 @@ private:
         if (out.action == AimAction::kTouchDown) {
             fingerX_ = out.x;
             fingerY_ = out.y;
-        } else if (out.action == AimAction::kTouchMove) {
+            ++touches_;
+        } else if (out.action == AimAction::kTouchMove && touches_ > truth_.ignoredTouches) {
             const float dx = out.x - fingerX_;
             const float dy = out.y - fingerY_;
             fingerX_ = out.x;
@@ -201,6 +203,7 @@ private:
     float worldX_ = 0, worldY_ = 0, cameraX_ = 0, cameraY_ = 0;
     float fingerX_ = 0, fingerY_ = 0, lastDx_ = 0;
     int reversals_ = 0;
+    int touches_ = 0;
     int64_t lastCaptureNs_ = 0;
     float lastCameraX_ = 0, lastCameraY_ = 0;
 };

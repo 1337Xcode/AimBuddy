@@ -18,8 +18,11 @@ namespace aimbuddy {
  */
 class MeasuredMotion {
 public:
-    /// Adds the slide seen between two frames, spread evenly over the interval.
-    void add(int64_t fromNs, int64_t toNs, float dx, float dy) {
+    /**
+     * Adds the slide seen between two frames, spread evenly over the interval. `measured` is false
+     * for a slide that was not seen but assumed, because the frames could not be compared.
+     */
+    void add(int64_t fromNs, int64_t toNs, float dx, float dy, bool measured = true) {
         if (toNs <= fromNs) {
             return;
         }
@@ -27,8 +30,33 @@ public:
             head_ = (head_ + 1) % kCapacity;
             --count_;
         }
-        entries_[(head_ + count_) % kCapacity] = {fromNs, toNs, dx, dy};
+        entries_[(head_ + count_) % kCapacity] = {fromNs, toNs, dx, dy, measured};
         ++count_;
+    }
+
+    /**
+     * The net slide of the scene that was really seen inside (fromNs, toNs], and how much of that
+     * time was covered by frames that could be compared. Slides that were only assumed count for neither.
+     */
+    void seenShiftBetween(int64_t fromNs, int64_t toNs, float* dx, float* dy, int64_t* coveredNs) const {
+        float sumX = 0.0f;
+        float sumY = 0.0f;
+        int64_t covered = 0;
+        for (int i = 0; i < count_; ++i) {
+            const Entry& entry = entries_[(head_ + i) % kCapacity];
+            const int64_t overlapStart = std::max(fromNs, entry.fromNs);
+            const int64_t overlapEnd = std::min(toNs, entry.toNs);
+            if (overlapEnd <= overlapStart || !entry.measured) {
+                continue;
+            }
+            const float share = static_cast<float>(overlapEnd - overlapStart) / static_cast<float>(entry.toNs - entry.fromNs);
+            sumX += entry.dx * share;
+            sumY += entry.dy * share;
+            covered += overlapEnd - overlapStart;
+        }
+        *dx = sumX;
+        *dy = sumY;
+        *coveredNs = covered;
     }
 
     /// The slide inside (fromNs, toNs]. Time past the newest entry contributes nothing.
@@ -66,6 +94,7 @@ private:
         int64_t toNs;
         float dx;
         float dy;
+        bool measured;
     };
 
     /// About two seconds of history at 60 frames a second.

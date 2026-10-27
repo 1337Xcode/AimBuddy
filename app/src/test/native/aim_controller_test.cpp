@@ -306,3 +306,45 @@ TEST(the_stability_factor_calms_a_loop_that_swings) {
     CHECK(peak < 600.0f);            // and the aim was never flung far from the target
     CHECK(std::sqrt(lateSquares / lateSamples) < 12.0);   // it is calm by the end
 }
+
+TEST(aim_puts_the_finger_down_again_when_the_game_ignores_it) {
+    // The game takes no notice of the first touch (it began while the screen was turning, say).
+    // Moving that finger for ever would do nothing; the controller sees the scene is not sliding,
+    // lifts it, and the second touch is answered. The target is then reached.
+    SimulatedGame::Truth truth;
+    truth.gain = 3.0f;
+    truth.ignoredTouches = 1;
+    AimSettings settings = baseSettings();
+    settings.anchorRadiusPx = 900.0f;   // far enough that reaching the edge does not lift the finger first
+    SimulatedGame game(truth, settings, stationary(260.0f, 80.0f));
+    const Outcome result = measure(game, 8.0f, 260.0f);
+    CHECK(result.settleSeconds >= 0.0f);
+    CHECK(result.settleSeconds < 5.0f);
+    CHECK(result.finalRms < 8.0f);
+    CHECK(game.controller().telemetry().deadFingers >= 1);
+}
+
+TEST(aim_does_not_lift_a_finger_the_game_answers) {
+    // A working finger is never mistaken for a dead one, however slowly it moves.
+    SimulatedGame::Truth truth;
+    truth.gain = 0.6f;
+    SimulatedGame game(truth, baseSettings(), stationary(220.0f, 0.0f));
+    const Outcome result = measure(game, 6.0f, 220.0f);
+    CHECK(result.settleSeconds >= 0.0f);
+    CHECK(game.controller().telemetry().deadFingers == 0);
+}
+
+TEST(aim_waits_longer_each_time_the_game_keeps_ignoring_the_finger) {
+    // A game that never answers (the touch area is not where it looks around) is not poked every
+    // moment: each failed touch is followed by a longer wait.
+    SimulatedGame::Truth truth;
+    truth.gain = 3.0f;
+    truth.ignoredTouches = 1000;
+    AimSettings settings = baseSettings();
+    settings.anchorRadiusPx = 900.0f;
+    SimulatedGame game(truth, settings, stationary(260.0f, 80.0f));
+    game.run(20.0f, [](float, float, float) {});
+    const int lifts = game.controller().telemetry().deadFingers;
+    CHECK(lifts >= 5);
+    CHECK(lifts <= 7);   // with a wait that did not grow it would be one every 2 s: about 10
+}

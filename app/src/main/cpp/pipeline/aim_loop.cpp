@@ -226,6 +226,12 @@ void AimLoop::logChanges(touch::protocol::State state) {
              static_cast<int>(link_->reason()));
         loggedState_ = state;
     }
+    const int deadFingers = controller_.telemetry().deadFingers;
+    if (deadFingers != loggedDeadFingers_) {
+        LOGW("The game is not answering the assist finger (%d times; it moved %.0f px and the scene slid %.0f px): lifting it to try again",
+             deadFingers, controller_.telemetry().deadFingerPx, controller_.telemetry().deadSlidePx);
+        loggedDeadFingers_ = deadFingers;
+    }
     const bool touching = controller_.isTouching();
     if (touching != loggedTouching_) {
         LOGI("Assist finger %s (target %d)", touching ? "down" : "up", controller_.lockedTrackId());

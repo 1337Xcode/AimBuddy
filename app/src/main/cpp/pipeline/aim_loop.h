@@ -133,7 +133,8 @@ private:
     bool wasActive_ = false;    ///< The assist was working on the previous step, so there is something to undo.
     bool wasMerging_ = false;
     touch::protocol::State loggedState_ = touch::protocol::State::kStarting;   ///< What the log last said about the helper...
-    bool loggedTouching_ = false;                                              ///< ...and about the assist finger.
+    bool loggedTouching_ = false;                                              ///< ...and about the assist finger...
+    int loggedDeadFingers_ = 0;                                                ///< ...and about fingers the game ignored.
 
     std::atomic<bool> fingerDown_{false};
     std::atomic<int> lockedTrack_{-1};

@@ -65,6 +65,9 @@ struct AimTelemetry {
     float fingerX = 0.0f;       ///< Where the assist's finger is, display pixels.
     float fingerY = 0.0f;
     bool touching = false;
+    int deadFingers = 0;        ///< Times the finger was lifted and put down again because the game did not answer it.
+    float deadFingerPx = 0.0f;  ///< For the latest such time: how far the finger had moved (net, along its main axis)...
+    float deadSlidePx = 0.0f;   ///< ...and how far the scene had slid along it.
 };
 
 /**
@@ -88,6 +91,11 @@ struct AimTelemetry {
  *     measured (see CameraMotion), only a small amount of finger travel is allowed to be on its
  *     way at a time, so the first move is small and its effect teaches the real figure. If the
  *     aim swings anyway, a stability factor takes the strength down until it stops.
+ *
+ * A finger the game does not answer (the touch started while the screen was turning, or landed
+ * where the game does not look around) would be moved for ever for nothing. When the finger has
+ * been moved a good way and the scene has not slid with it, the finger is lifted and put down
+ * again, waiting a little longer each time it happens again.
  *
  * The class holds no threads or platform calls: call step() at a steady rate and carry out the
  * returned action. That keeps it testable against a simulated game.
@@ -163,7 +171,8 @@ private:
     float advanceClock(int64_t nowNs);
     bool beginPursuit(int64_t nowNs, const CameraResponse& response, const Tracker& tracker,
                       const ModelProfile& profile, Pursuit* pursuit);
-    AimOutput putFingerDown(const Pursuit& pursuit);
+    AimOutput putFingerDown(int64_t nowNs, const Pursuit& pursuit);
+    bool fingerSeemsDead(int64_t nowNs);
     FingerStep planFingerStep(int64_t nowNs, const CameraResponse& response, const Pursuit& pursuit,
                               const PlayerInput& player, float dt) const;
     AimOutput moveFinger(int64_t nowNs, float dt, const Pursuit& pursuit, FingerStep step);
@@ -189,6 +198,14 @@ private:
     int64_t rivalSinceNs_ = 0;
 
     AimTelemetry telemetry_;
+
+    // Is the finger being answered? When it went down, and the wait before it may go down again
+    // after the game ignored it.
+    int64_t downNs_ = 0;
+    int64_t ignoredSinceNs_ = 0;   ///< Since when the game has looked to be ignoring the finger; 0 when it has not.
+    int64_t mayTouchAfterNs_ = 0;
+    int deadStreak_ = 0;
+
     bool touching_ = false;
     bool releaseRequested_ = false;
     float fingerX_ = 0.0f;
