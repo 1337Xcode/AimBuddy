@@ -101,3 +101,36 @@ TEST(store_writes_and_reads_a_file) {
     CHECK(!reader.hasUnsavedChanges());
     std::remove(path.c_str());
 }
+
+TEST(a_single_setting_can_be_changed_by_its_file_name) {
+    const Settings original;
+    Settings changed = SettingsStore::withValue(original, "aimStrength", "0.25");
+    CHECK_NEAR(changed.aimStrength, 0.25, 1e-6);
+    changed = SettingsStore::withValue(changed, "showSnapLine", "1");
+    CHECK(changed.showSnapLine);
+    changed = SettingsStore::withValue(changed, "boxThickness", "4");
+    CHECK(changed.boxThickness == 4);
+    CHECK_NEAR(changed.aimStrength, 0.25, 1e-6);   // the earlier changes stay
+
+    // Values stay in range, and names or numbers that mean nothing change nothing.
+    CHECK_NEAR(SettingsStore::withValue(original, "aimStrength", "9").aimStrength, 1.0, 1e-6);
+    CHECK_NEAR(SettingsStore::withValue(original, "noSuchSetting", "1").aimStrength, original.aimStrength, 1e-6);
+    CHECK_NEAR(SettingsStore::withValue(original, "aimStrength", "abc").aimStrength, original.aimStrength, 1e-6);
+}
+
+TEST(resetting_keeps_only_the_language) {
+    Settings changed;
+    changed.language = 2;
+    changed.aimStrength = 0.9f;
+    changed.anchorRadius = 120.0f;
+    changed.showSnapLine = true;
+    changed.touchBackend = 2;
+
+    const Settings fresh = changed.resetKeepingLanguage();
+    const Settings defaults;
+    CHECK(fresh.language == 2);
+    CHECK_NEAR(fresh.aimStrength, defaults.aimStrength, 1e-6);
+    CHECK_NEAR(fresh.anchorRadius, defaults.anchorRadius, 1e-6);
+    CHECK(!fresh.showSnapLine);
+    CHECK(fresh.touchBackend == defaults.touchBackend);
+}

@@ -54,6 +54,18 @@ object NativeBridge {
     @JvmStatic
     external fun loadSettings(settingsPath: String)
 
+    /** All settings as `name=value` lines (the names are the ones in the settings file). */
+    @JvmStatic
+    external fun settingsSnapshot(): String
+
+    /** Changes one setting by name; unknown names and unreadable numbers change nothing. */
+    @JvmStatic
+    external fun setSetting(name: String, value: String)
+
+    /** Puts every setting back to how a fresh install starts, keeping the language. */
+    @JvmStatic
+    external fun resetSettings()
+
     /**
      * Loads the detection model. Paths are null for the model bundled in the app. `roles` is a
      * comma separated list such as "body,head" saying what each class of the model means.

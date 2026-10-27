@@ -151,6 +151,23 @@ Java_com_aimbuddy_NativeBridge_loadSettings(JNIEnv* env, jclass /* clazz */, jst
     }
 }
 
+/// All settings as `name=value` lines, for the app's screens.
+JNIEXPORT jstring JNICALL Java_com_aimbuddy_NativeBridge_settingsSnapshot(JNIEnv* env, jclass /* clazz */) {
+    const std::string text = aimbuddy::SettingsStore::serialize(g_settingsStore.get());
+    return env->NewStringUTF(text.c_str());
+}
+
+/// Changes one setting by name. Unknown names and unreadable numbers change nothing; values are kept in range.
+JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_setSetting(JNIEnv* env, jclass /* clazz */, jstring name, jstring value) {
+    g_settingsStore.set(
+        aimbuddy::SettingsStore::withValue(g_settingsStore.get(), toStdString(env, name), toStdString(env, value)));
+}
+
+/// Puts every setting back to how a fresh install starts, keeping the language.
+JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_resetSettings(JNIEnv* /* env */, jclass /* clazz */) {
+    g_settingsStore.set(g_settingsStore.get().resetKeepingLanguage());
+}
+
 /**
  * @brief Loads the detection model and tells the detector what its classes mean
  * @param paramPath Path of the .param file, or null to use the model bundled in the app

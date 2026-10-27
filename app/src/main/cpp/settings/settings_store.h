@@ -38,6 +38,9 @@ public:
     static std::string serialize(const Settings& settings);
     static Settings parse(const std::string& text);
 
+    /// `settings` with one setting changed by its file name, such as ("aimStrength", "0.7"). Unknown names change nothing.
+    static Settings withValue(const Settings& settings, const std::string& name, const std::string& value);
+
 private:
     mutable std::mutex mutex_;
     Settings settings_;

@@ -87,6 +87,38 @@ struct Reader {
     }
 };
 
+/// Sets the one field whose name matches, from text. Text that is not a number changes nothing.
+struct Setter {
+    const std::string* name;
+    const std::string* value;
+
+    void operator()(const char* fieldName, float& field) const {
+        if (*name != fieldName) {
+            return;
+        }
+        char* end = nullptr;
+        const float parsed = std::strtof(value->c_str(), &end);
+        if (end != value->c_str()) {
+            field = parsed;
+        }
+    }
+    void operator()(const char* fieldName, int& field) const {
+        if (*name != fieldName) {
+            return;
+        }
+        char* end = nullptr;
+        const long parsed = std::strtol(value->c_str(), &end, 10);
+        if (end != value->c_str()) {
+            field = static_cast<int>(parsed);
+        }
+    }
+    void operator()(const char* fieldName, bool& field) const {
+        int number = field ? 1 : 0;
+        (*this)(fieldName, number);
+        field = number != 0;
+    }
+};
+
 float clampTo(float value, float low, float high) { return std::clamp(value, low, high); }
 
 }  // namespace
@@ -110,6 +142,19 @@ void Settings::clamp() {
     anchorOpacity = clampTo(anchorOpacity, 0.1f, 1.0f);
     touchBackend = std::clamp(touchBackend, 0, 2);
     language = std::clamp(language, 0, 2);
+}
+
+Settings Settings::resetKeepingLanguage() const {
+    Settings fresh;
+    fresh.language = language;
+    return fresh;
+}
+
+Settings SettingsStore::withValue(const Settings& settings, const std::string& name, const std::string& value) {
+    Settings changed = settings;
+    visitFields(changed, Setter{&name, &value});
+    changed.clamp();
+    return changed;
 }
 
 std::string SettingsStore::serialize(const Settings& settings) {

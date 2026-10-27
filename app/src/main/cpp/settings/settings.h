@@ -52,6 +52,9 @@ struct Settings {
 
     /// Brings every value into its allowed range.
     void clamp();
+
+    /// The settings a fresh install starts with. The language is kept so the screen stays readable.
+    Settings resetKeepingLanguage() const;
 };
 
 }  // namespace aimbuddy
