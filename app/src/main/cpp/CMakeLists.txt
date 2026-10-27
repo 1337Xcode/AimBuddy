@@ -41,9 +41,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${ARM64_BASE_FLAGS}")
 # Core size & speed optimisations (apply to all build types)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
     -O3 \
-    -ffast-math \
     -fno-math-errno \
-    -fno-trapping-math \
     -fstrict-aliasing \
     -fomit-frame-pointer \
     -funroll-loops \
