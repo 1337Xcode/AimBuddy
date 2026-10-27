@@ -182,6 +182,9 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         // Streamer mode set in an earlier run holds from the start, so the button is never on the screen even for a moment.
         val streamerMode = NativeBridge.settingsSnapshot().lineSequence().any { it.trim() == "streamerMode=1" }
         controller.show(streamerMode)
+        if (streamerMode) {
+            showForegroundNotification(streamerMode = true)
+        }
 
         displayManager = (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager).also {
             it.registerDisplayListener(displayListener, mainHandler)
@@ -237,10 +240,10 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
                 if (sizeChanged && session != null) session.resize(shape.width, shape.height) else session?.imageSize ?: (0 to 0)
             NativeBridge.configureDisplay(shape.width, shape.height, captureWidth, captureHeight, shape.rotation)
             shown = shape
+            overlay?.keepIconOnScreen()
         } catch (e: Exception) {
             Log.e(TAG, "Could not follow the display change: ${e.message}", e)
         }
-            overlay?.keepIconOnScreen()
     }
 
     private fun realDisplay(): Display =
@@ -306,7 +309,12 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     // ---------------------------------------------------------------------------------------
 
     override fun onStreamerModeChanged(enabled: Boolean) {
-        mainHandler.post { overlay?.setStreamerMode(enabled) }
+        mainHandler.post {
+            overlay?.setStreamerMode(enabled)
+            if (running) {
+                showForegroundNotification(streamerMode = enabled)
+            }
+        }
     }
 
     override fun onStopRequested() {
@@ -317,7 +325,12 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
     // Notification
     // ---------------------------------------------------------------------------------------
 
-    private fun showForegroundNotification() {
+    /**
+     * Shows the notification that keeps the assist alive and has the Menu and Stop buttons. In streamer
+     * mode its small icon is empty: the system never lets a foreground service's notification out of the
+     * status bar, so what shows there must be nothing, or a recording that includes the status bar would show AimBuddy.
+     */
+    private fun showForegroundNotification(streamerMode: Boolean = false) {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW)
@@ -334,7 +347,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(getString(R.string.notification_text))
-            .setSmallIcon(R.drawable.ic_stat_aim)
+            .setSmallIcon(if (streamerMode) R.drawable.ic_stat_blank else R.drawable.ic_stat_aim)
             .setOngoing(true)
             .setContentIntent(open)
             .addAction(0, getString(R.string.notification_menu), menu)
