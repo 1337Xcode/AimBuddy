@@ -129,6 +129,9 @@ private:
     std::deque<SyntheticScene> synthetic_;
     std::atomic<bool> syntheticMode_{false};
 
+    /// Boxes kept with each recorded measurement.
+    static constexpr int kTracedMovers = 8;
+
     /// One measurement of the picture's slide between two frames, in screen pixels.
     struct MotionRow {
         int64_t fromNs = 0;
@@ -137,6 +140,7 @@ private:
         float dy = 0.0f;
         float quality = 0.0f;
         int movers = 0;   ///< How many detected enemies were left out of the measurement.
+        std::array<MovingBox, kTracedMovers> boxes{};   ///< The first few of them, in pixels of the reduced picture.
         std::array<float, GlobalMotionEstimator::kGrid * GlobalMotionEstimator::kGrid> grey{};   ///< The frame the slide ends at, reduced.
     };
     std::mutex motionTraceMutex_;

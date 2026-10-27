@@ -125,6 +125,10 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame, const Detecti
             row.dy = shift.dy * scale;
             row.quality = shift.quality;
             row.movers = moverCount;
+            const float toGrid = static_cast<float>(GlobalMotionEstimator::kGrid) / static_cast<float>(frame.roi.side);
+            for (int i = 0; i < moverCount && i < kTracedMovers; ++i) {
+                row.boxes[i] = {movers[i].left * toGrid, movers[i].top * toGrid, movers[i].right * toGrid, movers[i].bottom * toGrid};
+            }
             row.grey = sceneMotion_.lastGrey();
             motionTrace_.push_back(row);
         }
@@ -176,6 +180,9 @@ bool DetectionPipeline::writeMotionTrace(const std::string& path) {
         for (const MotionRow& row : motionTrace_) {
             std::fwrite(&row.toNs, sizeof(row.toNs), 1, pictures);
             std::fwrite(row.grey.data(), sizeof(float), row.grey.size(), pictures);
+            const int kept = std::min(row.movers, kTracedMovers);
+            std::fwrite(&kept, sizeof(kept), 1, pictures);
+            std::fwrite(row.boxes.data(), sizeof(MovingBox), static_cast<size_t>(kept), pictures);
         }
         std::fclose(pictures);
     }
