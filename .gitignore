@@ -84,6 +84,8 @@ training/export
 # Keep model deployment folder structure but ignore actual deployed model binaries
 app/src/main/assets/models/*
 !app/src/main/assets/models/.gitkeep
+# Models bundled only into local debug builds for testing
+app/src/debug/assets/
 
 # Model and checkpoint artifacts generated during training
 training/**/*.pt

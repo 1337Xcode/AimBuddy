@@ -141,6 +141,10 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
+            // A separate application id lets a debug build be installed next to the release build
+            // (they are signed with different keys, so they could not replace each other).
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
             debuggable = true
             jniDebuggable = false
             ndk {
