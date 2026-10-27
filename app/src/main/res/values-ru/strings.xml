@@ -10,8 +10,11 @@
     <string name="status_failed">Не удалось запустить</string>
     <string name="hint_ready">Нажмите «Старт», затем перейдите в игру.</string>
     <string name="hint_starting">Подготовка.</string>
-    <string name="hint_running_assist">Цели подсвечены, помощь в прицеливании готова.</string>
+    <string name="hint_running_assist">Цели подсвечены. Помощь в прицеливании включается в меню поверх игры.</string>
     <string name="hint_running_no_assist">Цели подсвечены. Для помощи в прицеливании нужен Shizuku или root.</string>
+    <string name="hint_touch_denied">Цели подсвечены. Этот телефон не даёт помощнику касаний использовать сенсорный экран.</string>
+    <string name="hint_touch_busy">Цели подсвечены. Сенсорный экран занят другой программой.</string>
+    <string name="hint_touch_unreachable">Цели подсвечены. Помощник касаний не запустился. Нажмите «Стоп», затем «Старт», чтобы повторить.</string>
     <string name="hint_connecting">Цели подсвечены. Подключаем помощь в прицеливании.</string>
     <string name="hint_stopping">Возвращаем сенсорный экран.</string>
     <string name="action_start">Старт</string>

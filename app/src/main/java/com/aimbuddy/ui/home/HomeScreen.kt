@@ -73,13 +73,24 @@ private fun statusFor(snapshot: AssistState.Snapshot): Status = when (snapshot.p
     AssistState.Phase.STOPPING ->
         Status(stringResource(R.string.status_stopping), stringResource(R.string.hint_stopping))
     AssistState.Phase.RUNNING -> {
-        val hint = when (snapshot.touch) {
+        val hint = when (val touch = snapshot.touch) {
             is AssistState.Touch.Connected -> R.string.hint_running_assist
             AssistState.Touch.Starting -> R.string.hint_connecting
-            else -> R.string.hint_running_no_assist
+            is AssistState.Touch.Unavailable -> unavailableHint(touch.reason)
+            AssistState.Touch.Off -> R.string.hint_running_no_assist
         }
         Status(stringResource(R.string.status_running), stringResource(hint))
     }
+}
+
+/** The sentence for a touch helper that could not be used: what the player can do depends on why. */
+internal fun unavailableHint(reason: Int): Int = when (reason) {
+    TouchHelper.Reason.NO_PRIVILEGE -> R.string.hint_running_no_assist
+    TouchHelper.Reason.NO_TOUCHSCREEN,
+    TouchHelper.Reason.TOUCHSCREEN_DENIED,
+    TouchHelper.Reason.VIRTUAL_DEVICE_DENIED -> R.string.hint_touch_denied
+    TouchHelper.Reason.GRAB_FAILED -> R.string.hint_touch_busy
+    else -> R.string.hint_touch_unreachable
 }
 
 /** The sentence that explains why a run ended without the player asking. */

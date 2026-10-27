@@ -10,8 +10,11 @@
     <string name="status_failed">无法启动</string>
     <string name="hint_ready">点按“开始”，然后切换到游戏。</string>
     <string name="hint_starting">正在准备。</string>
-    <string name="hint_running_assist">目标已高亮，瞄准辅助已就绪。</string>
+    <string name="hint_running_assist">目标已高亮。瞄准辅助在游戏内菜单中开启。</string>
     <string name="hint_running_no_assist">目标已高亮。瞄准辅助需要 Shizuku 或 root。</string>
+    <string name="hint_touch_denied">目标已高亮。此手机不允许触控助手使用触摸屏。</string>
+    <string name="hint_touch_busy">目标已高亮。另一个程序正在占用触摸屏。</string>
+    <string name="hint_touch_unreachable">目标已高亮。无法启动触控助手。请停止后再次点按“开始”重试。</string>
     <string name="hint_connecting">目标已高亮。正在连接瞄准辅助。</string>
     <string name="hint_stopping">正在归还触摸屏。</string>
     <string name="action_start">开始</string>

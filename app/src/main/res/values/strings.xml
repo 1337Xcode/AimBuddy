@@ -10,8 +10,11 @@
     <string name="status_failed">Couldn\'t start</string>
     <string name="hint_ready">Press Start, then switch to your game.</string>
     <string name="hint_starting">Getting everything ready.</string>
-    <string name="hint_running_assist">Targets are highlighted and aim assist is ready.</string>
+    <string name="hint_running_assist">Targets are highlighted. Aim assist is switched on from the in-game menu.</string>
     <string name="hint_running_no_assist">Targets are highlighted. Aim assist needs Shizuku or root.</string>
+    <string name="hint_touch_denied">Targets are highlighted. This phone does not let the touch helper use the touchscreen.</string>
+    <string name="hint_touch_busy">Targets are highlighted. Another program is holding the touchscreen.</string>
+    <string name="hint_touch_unreachable">Targets are highlighted. The touch helper could not be started. Stop and press Start to try again.</string>
     <string name="hint_connecting">Targets are highlighted. Connecting aim assist.</string>
     <string name="hint_stopping">Giving the touchscreen back.</string>
     <string name="action_start">Start</string>
