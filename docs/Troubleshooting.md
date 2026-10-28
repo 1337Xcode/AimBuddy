@@ -73,8 +73,15 @@ Other things you may notice:
 | Message | Cause and fix |
 |---------|---------------|
 | Can't reach the store. | The list is one small file on GitHub. Check the connection and try again. Without a connection you can still import a model from files. |
-| That model could not be downloaded. | The connection dropped or a file did not match its checksum. The model you had is untouched. Try again. |
-| That model could not be imported. | Choose the `.param` file first and then the matching `.bin` file of the same export. |
+| No connection. The list below was saved earlier. | The store could not be reached now, so the list from the last visit is shown. Models on it can still be downloaded if the connection is back; Try again reads the list afresh. |
+| No connection. Check the internet and try again. (under a model) | The phone could not reach the store, or the connection broke on the way. Tap Try again once it is back. |
+| The download was damaged. Try again. (under a model) | What arrived was not the size or the checksum the store lists. The model you had is untouched. Tap Try again. |
+| Not enough space on the phone. (under a model) | Free some storage and tap Try again. |
+| That model could not be downloaded. | Anything else, such as the store answering with an error. The model you had is untouched. Try again. |
+| That model could not be imported. | The files could not be copied. Choose the `.param` file first and then the matching `.bin` file of the same export. |
+| AimBuddy cannot read that pair of files as a detection model. | The files were copied but the detector could not load them and run them once, so they are not kept and the model in use stays as it was. Check that the `.param` and the `.bin` come from the same export, and that the model is a YOLO detector with the output shape the app reads (see [Training](Training.md)). |
+
+A download shows how much has arrived, how fast and how long is left, with a Cancel button beside it. Cancelling ends the read at once and leaves nothing behind.
 | Can't reach GitHub. (an update) | Check the connection and try again. |
 | The download could not be verified. (an update) | The file does not match what GitHub lists for it, is not a newer build of AimBuddy, or is not signed at all. Try again. |
 | The update is signed with another key. (an update) | Android never replaces an app with one signed by another key. The installed copy was probably built on another computer, or signed by you. Tap Releases, uninstall AimBuddy once, and install the release from there by hand. The settings and downloaded models go with it. |
