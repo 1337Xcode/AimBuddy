@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -30,6 +31,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -37,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -53,6 +58,12 @@ import com.aimbuddy.ui.theme.Space
 
 /** The widest a single column of rows gets, so lines stay readable on a tablet or a phone turned sideways. */
 val ContentMaxWidth = 640.dp
+
+/** A window shorter than this, as a phone held sideways is, gets rows close together and a top bar that makes way for them. */
+private val ShortWindowHeight = 480.dp
+
+/** Whether the rows on screen are kept close together. [ScreenScaffold] sets it for a window too short for roomy ones. */
+val LocalTightRows = compositionLocalOf { false }
 
 /** The height of the bar a screen's title sits in, under the status bar. */
 private val TopBarHeight = Space.xxl
@@ -80,6 +91,9 @@ fun screenPadding(): PaddingValues {
  *
  * The content is laid out in columns at least [columnWidth] wide, as many as fit, up to [maxWidth]
  * across. A phone held upright gets one column and the same phone held sideways gets two.
+ *
+ * In a window too short for roomy rows (a phone held sideways) the rows sit closer together and the bar
+ * slides away while the content scrolls forward, which gives the content back about a sixth of its height.
  */
 @Composable
 fun ScreenScaffold(
@@ -95,24 +109,40 @@ fun ScreenScaffold(
     val direction = LocalLayoutDirection.current
     val gridState = rememberLazyStaggeredGridState()
     val scrolled by remember { derivedStateOf { gridState.canScrollBackward } }
+    val tight = LocalConfiguration.current.screenHeightDp < ShortWindowHeight.value
+    val slide = remember { TopBarSlide(canHide = { gridState.canScrollForward }) }
 
-    Column(modifier = modifier.fillMaxSize().background(AppTheme.palette.background)) {
-        TopBar(title = title, onBack = onBack, maxWidth = maxWidth, showDivider = scrolled, actions = actions)
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(AppTheme.palette.background)
+            .then(if (tight) Modifier.nestedScroll(slide.connection) else Modifier),
+    ) {
+        TopBar(
+            title = title,
+            onBack = onBack,
+            maxWidth = maxWidth,
+            showDivider = scrolled,
+            slide = if (tight) slide else null,
+            actions = actions,
+        )
         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            LazyVerticalStaggeredGrid(
-                state = gridState,
-                columns = StaggeredGridCells.Adaptive(columnWidth),
-                modifier = Modifier.fillMaxHeight().widthIn(max = maxWidth),
-                contentPadding = PaddingValues.Absolute(
-                    left = insets.calculateLeftPadding(direction) + Space.l,
-                    top = Space.m,
-                    right = insets.calculateRightPadding(direction) + Space.l,
-                    bottom = insets.calculateBottomPadding() + Space.xl,
-                ),
-                verticalItemSpacing = Space.xl,
-                horizontalArrangement = Arrangement.spacedBy(Space.l),
-                content = content,
-            )
+            CompositionLocalProvider(LocalTightRows provides tight) {
+                LazyVerticalStaggeredGrid(
+                    state = gridState,
+                    columns = StaggeredGridCells.Adaptive(columnWidth),
+                    modifier = Modifier.fillMaxHeight().widthIn(max = maxWidth),
+                    contentPadding = PaddingValues.Absolute(
+                        left = insets.calculateLeftPadding(direction) + Space.l,
+                        top = Space.m,
+                        right = insets.calculateRightPadding(direction) + Space.l,
+                        bottom = insets.calculateBottomPadding() + Space.xl,
+                    ),
+                    verticalItemSpacing = if (tight) Space.l else Space.xl,
+                    horizontalArrangement = Arrangement.spacedBy(Space.l),
+                    content = content,
+                )
+            }
             NavigationBarScrim()
         }
     }
@@ -120,7 +150,8 @@ fun ScreenScaffold(
 
 /**
  * The bar at the top of a screen: the back arrow at the start, the title in the middle, actions at
- * the end. It reaches under the status bar so the bar and the page behind it are one color.
+ * the end. It reaches under the status bar so the bar and the page behind it are one color. When a
+ * [slide] is given the bar can move up out of view, but the strip under the status bar stays.
  */
 @Composable
 private fun TopBar(
@@ -128,54 +159,53 @@ private fun TopBar(
     onBack: (() -> Unit)?,
     maxWidth: Dp,
     showDivider: Boolean,
+    slide: TopBarSlide?,
     actions: @Composable RowScope.() -> Unit,
 ) {
     val insets = WindowInsets.safeDrawing.asPaddingValues()
     val direction = LocalLayoutDirection.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(AppTheme.palette.background)
-            .padding(top = insets.calculateTopPadding()),
-    ) {
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Box(
-                modifier = Modifier
-                    .widthIn(max = maxWidth)
-                    .fillMaxWidth()
-                    .height(TopBarHeight)
-                    .padding(
-                        start = insets.calculateLeftPadding(direction) + Space.s,
-                        end = insets.calculateRightPadding(direction) + Space.s,
-                    ),
-            ) {
-                if (onBack != null) {
-                    Box(modifier = Modifier.align(Alignment.CenterStart)) { BackButton(onBack) }
-                }
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = AppTheme.palette.text,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    // Room for a button on each side keeps the title in the middle and clear of them.
+    Column(modifier = Modifier.fillMaxWidth().background(AppTheme.palette.background)) {
+        Spacer(modifier = Modifier.height(insets.calculateTopPadding()))
+        Column(modifier = if (slide != null) slide.slide(Modifier) else Modifier) {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Box(
                     modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = TopButtonSize + Space.xs)
-                        .semantics { heading() },
-                )
-                Row(
-                    modifier = Modifier.align(Alignment.CenterEnd),
-                    verticalAlignment = Alignment.CenterVertically,
-                    content = actions,
-                )
+                        .widthIn(max = maxWidth)
+                        .fillMaxWidth()
+                        .height(TopBarHeight)
+                        .padding(
+                            start = insets.calculateLeftPadding(direction) + Space.s,
+                            end = insets.calculateRightPadding(direction) + Space.s,
+                        ),
+                ) {
+                    if (onBack != null) {
+                        Box(modifier = Modifier.align(Alignment.CenterStart)) { BackButton(onBack) }
+                    }
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = AppTheme.palette.text,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        // Room for a button on each side keeps the title in the middle and clear of them.
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(horizontal = TopButtonSize + Space.xs)
+                            .semantics { heading() },
+                    )
+                    Row(
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        verticalAlignment = Alignment.CenterVertically,
+                        content = actions,
+                    )
+                }
             }
-        }
-        if (showDivider) {
-            Hairline()
-        } else {
-            Box(modifier = Modifier.height(Space.hairline))
+            if (showDivider) {
+                Hairline()
+            } else {
+                Box(modifier = Modifier.height(Space.hairline))
+            }
         }
     }
 }

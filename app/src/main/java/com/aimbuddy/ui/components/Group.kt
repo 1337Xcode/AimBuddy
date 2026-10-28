@@ -38,6 +38,9 @@ import com.aimbuddy.ui.theme.Space
 /** The height of one row in a group: tall enough for a thumb. */
 val RowHeight = Space.xxl
 
+/** The height of a row where rows are kept close together (see [LocalTightRows]): still about a thumb. */
+val RowHeightTight = Space.xl + Space.m
+
 /** The most of a row's width that what sits at its end may take, so a long value never squeezes the title. */
 private const val TRAILING_SHARE = 0.45f
 
@@ -130,7 +133,7 @@ fun ListRow(
         modifier = modifier
             .fillMaxWidth()
             .then(clickable)
-            .heightIn(min = RowHeight)
+            .heightIn(min = if (LocalTightRows.current) RowHeightTight else RowHeight)
             .padding(horizontal = Space.l, vertical = Space.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {

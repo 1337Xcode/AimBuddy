@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Slider
@@ -30,6 +31,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,6 +77,9 @@ fun SwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Uni
 /** The thumb of a slider: a white disc the finger holds. */
 private val SliderThumbSize = Space.xl - Space.xs
 
+/** The smallest height of a slider where rows are kept close together: the thumb with a little around it. */
+private val SliderTargetTight = 40.dp
+
 /** A row with a title, its value at the end, and a slider under them. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,10 +92,11 @@ fun SliderRow(
     steps: Int = 0,
 ) {
     val palette = AppTheme.palette
+    val tight = LocalTightRows.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = Space.s),
+            .padding(vertical = if (tight) Space.xs else Space.s),
     ) {
         // The slider below carries the title and the value for a screen reader, so this line is only drawn.
         Row(
@@ -112,41 +118,44 @@ fun SliderRow(
             activeTickColor = Color.Transparent,
             inactiveTickColor = Color.Transparent,
         )
+        val smallestTarget = if (tight) SliderTargetTight else LocalMinimumInteractiveComponentSize.current
         // A slider keeps half a thumb free at each end of its track, so it is given that much more room than
         // the text above it: the ends of the track then sit under the ends of the text.
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier
-                .padding(horizontal = Space.l - SliderThumbSize / 2)
-                .semantics {
-                    contentDescription = title
-                    stateDescription = valueText
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides smallestTarget) {
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .padding(horizontal = Space.l - SliderThumbSize / 2)
+                    .semantics {
+                        contentDescription = title
+                        stateDescription = valueText
+                    },
+                valueRange = range,
+                steps = steps,
+                colors = colors,
+                thumb = {
+                    Box(
+                        modifier = Modifier
+                            .size(SliderThumbSize)
+                            .shadow(Space.xs, CircleShape)
+                            .background(Color.White, CircleShape),
+                    )
                 },
-            valueRange = range,
-            steps = steps,
-            colors = colors,
-            thumb = {
-                Box(
-                    modifier = Modifier
-                        .size(SliderThumbSize)
-                        .shadow(Space.xs, CircleShape)
-                        .background(Color.White, CircleShape),
-                )
-            },
-            track = { state ->
-                SliderDefaults.Track(
-                    sliderState = state,
-                    colors = colors,
-                    enabled = true,
-                    thumbTrackGapSize = 0.dp,
-                    trackInsideCornerSize = 0.dp,
-                    drawStopIndicator = null,
-                    drawTick = { _, _ -> },
-                    modifier = Modifier.height(Space.s - 2.dp),
-                )
-            },
-        )
+                track = { state ->
+                    SliderDefaults.Track(
+                        sliderState = state,
+                        colors = colors,
+                        enabled = true,
+                        thumbTrackGapSize = 0.dp,
+                        trackInsideCornerSize = 0.dp,
+                        drawStopIndicator = null,
+                        drawTick = { _, _ -> },
+                        modifier = Modifier.height(Space.s - 2.dp),
+                    )
+                },
+            )
+        }
     }
 }
 
@@ -156,7 +165,7 @@ fun SegmentedRow(title: String, options: List<String>, selected: Int, onSelect: 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Space.l, vertical = Space.m),
+            .padding(horizontal = Space.l, vertical = if (LocalTightRows.current) Space.s else Space.m),
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
         Text(text = title, style = MaterialTheme.typography.titleMedium, color = AppTheme.palette.text)
@@ -210,17 +219,18 @@ private const val SwatchesPerLine = 5
 @Composable
 fun SwatchRow(title: String, swatches: List<Swatch>, selected: Int, onSelect: (Int) -> Unit) {
     val palette = AppTheme.palette
+    val tight = LocalTightRows.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Space.l, vertical = Space.m),
-        verticalArrangement = Arrangement.spacedBy(Space.m),
+            .padding(horizontal = Space.l, vertical = if (tight) Space.s else Space.m),
+        verticalArrangement = Arrangement.spacedBy(if (tight) Space.s else Space.m),
     ) {
         Text(text = title, style = MaterialTheme.typography.titleMedium, color = palette.text)
         FlowRow(
             maxItemsInEachRow = SwatchesPerLine,
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalArrangement = Arrangement.spacedBy(Space.m),
+            verticalArrangement = Arrangement.spacedBy(if (tight) Space.s else Space.m),
             modifier = Modifier.fillMaxWidth(),
         ) {
             swatches.forEachIndexed { index, swatch ->
