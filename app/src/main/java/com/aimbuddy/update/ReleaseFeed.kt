@@ -16,19 +16,25 @@ data class UpdateInfo(
 /** Reads GitHub's list of the project's releases and picks the update, if there is one. */
 object ReleaseFeed {
 
-    /** The release file is named `AimBuddy-v<version>.apk` (see the release workflow). */
+    /**
+     * A release carries two files (see the release workflow): `AimBuddy-v<version>.apk`, the app, and
+     * `AimBuddy-v<version>-debug.apk`, the debuggable build that installs next to it as another app.
+     */
     private val APK_NAME = Regex("AimBuddy.*\\.apk")
+    private const val DEBUG_APK_SUFFIX = "-debug.apk"
 
     private const val DIGEST_PREFIX = "sha256:"
 
     /**
      * Returns the newest release that is newer than [current] and has an APK, or null when the app is
      * up to date. Pre-releases are offered only to someone who already runs one, so a stable
-     * install is never moved onto a beta. Drafts are never offered.
+     * install is never moved onto a beta. Drafts are never offered. A debug build ([debugBuild]) is
+     * offered the debug file and any other build the other one, because each can only be replaced by
+     * a build of its own package.
      *
      * @throws JSONException when [json] is not the list GitHub's releases endpoint returns.
      */
-    fun newest(json: String, current: AppVersion): UpdateInfo? {
+    fun newest(json: String, current: AppVersion, debugBuild: Boolean): UpdateInfo? {
         val releases = JSONArray(json)
         var bestVersion: AppVersion = current
         var best: UpdateInfo? = null
@@ -41,19 +47,20 @@ object ReleaseFeed {
             if (version <= bestVersion) {
                 continue
             }
-            val info = infoFor(release, version) ?: continue
+            val info = infoFor(release, version, debugBuild) ?: continue
             bestVersion = version
             best = info
         }
         return best
     }
 
-    /** The APK of a release, or null when it has none. */
-    private fun infoFor(release: JSONObject, version: AppVersion): UpdateInfo? {
+    /** The APK of a release for the kind of build asked for, or null when the release has none. */
+    private fun infoFor(release: JSONObject, version: AppVersion, debugBuild: Boolean): UpdateInfo? {
         val assets = release.optJSONArray("assets") ?: return null
         for (index in 0 until assets.length()) {
             val asset = assets.optJSONObject(index) ?: continue
-            if (!APK_NAME.matches(asset.optString("name"))) {
+            val name = asset.optString("name")
+            if (!APK_NAME.matches(name) || name.endsWith(DEBUG_APK_SUFFIX) != debugBuild) {
                 continue
             }
             val url = asset.optString("browser_download_url")

@@ -33,7 +33,7 @@ class AppUpdater(
     fun findUpdate(): UpdateInfo? {
         val current = AppVersion.parse(BuildConfig.AIMBUDDY_VERSION) ?: return null
         val json = Http.getText(releasesUrl, accept = "application/vnd.github+json", allowInsecure = allowInsecure)
-        return ReleaseFeed.newest(json, current)
+        return ReleaseFeed.newest(json, current, BuildConfig.DEBUG)
     }
 
     /**

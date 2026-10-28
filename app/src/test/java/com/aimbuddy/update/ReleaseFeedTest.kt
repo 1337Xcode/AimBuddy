@@ -19,11 +19,11 @@ class ReleaseFeedTest {
         tag: String,
         prerelease: Boolean = tag.contains('-'),
         draft: Boolean = false,
-        assetName: String? = "AimBuddy-$tag.apk",
+        assetNames: List<String> = listOf("AimBuddy-$tag.apk"),
         digest: String? = "sha256:ABCDEF0123456789",
     ): JSONObject {
         val assets = JSONArray()
-        if (assetName != null) {
+        for (assetName in assetNames) {
             val asset = JSONObject()
                 .put("name", assetName)
                 .put("size", 13271663L)
@@ -38,16 +38,19 @@ class ReleaseFeedTest {
 
     private fun feed(vararg releases: JSONObject): String = JSONArray(releases.toList()).toString()
 
+    /** What the app (not the debug build) is offered from [json]. */
+    private fun forTheApp(json: String, current: String): UpdateInfo? = ReleaseFeed.newest(json, version(current), debugBuild = false)
+
     @Test
     fun offersNothingWhenThisIsTheNewestRelease() {
         val json = feed(release("v0.3.0-beta.3"), release("v0.3.0-beta.2"))
-        assertNull(ReleaseFeed.newest(json, version("0.3.0-beta.3")))
+        assertNull(forTheApp(json, "0.3.0-beta.3"))
     }
 
     @Test
     fun offersTheNewestReleaseWhateverTheOrderOfTheList() {
         val json = feed(release("v0.3.0-beta.2"), release("v0.3.0-beta.4"), release("v0.3.0-beta.3"))
-        val update = ReleaseFeed.newest(json, version("0.3.0-beta.1"))
+        val update = forTheApp(json, "0.3.0-beta.1")
         assertNotNull(update)
         assertEquals("0.3.0-beta.4", update!!.version)
         assertEquals("https://github.com/1337Xcode/AimBuddy/releases/download/v0.3.0-beta.4/AimBuddy-v0.3.0-beta.4.apk", update.apkUrl)
@@ -55,14 +58,21 @@ class ReleaseFeedTest {
     }
 
     @Test
+    fun offersAnEarlyBetaOfALaterPatchOverTheLastBetaOfAnEarlierOne() {
+        val json = feed(release("v0.3.5-beta.1"), release("v0.3.0-beta.3"))
+        assertEquals("0.3.5-beta.1", forTheApp(json, "0.3.0-beta.3")!!.version)
+        assertNull(forTheApp(json, "0.3.5-beta.1"))
+    }
+
+    @Test
     fun readsTheChecksumGitHubListsInLowerCase() {
-        val update = ReleaseFeed.newest(feed(release("v0.4.0")), version("0.3.0"))
+        val update = forTheApp(feed(release("v0.4.0")), "0.3.0")
         assertEquals("abcdef0123456789", update!!.sha256)
     }
 
     @Test
     fun hasNoChecksumWhenGitHubListsNone() {
-        val update = ReleaseFeed.newest(feed(release("v0.4.0", digest = null)), version("0.3.0"))
+        val update = forTheApp(feed(release("v0.4.0", digest = null)), "0.3.0")
         assertNull(update!!.sha256)
     }
 
@@ -70,31 +80,61 @@ class ReleaseFeedTest {
     fun skipsDraftsAndReleasesWithoutAnApk() {
         val json = feed(
             release("v0.5.0", draft = true),
-            release("v0.4.5", assetName = null),
-            release("v0.4.2", assetName = "source.zip"),
+            release("v0.4.5", assetNames = emptyList()),
+            release("v0.4.2", assetNames = listOf("source.zip")),
             release("v0.4.0"),
         )
-        assertEquals("0.4.0", ReleaseFeed.newest(json, version("0.3.0"))!!.version)
+        assertEquals("0.4.0", forTheApp(json, "0.3.0")!!.version)
     }
 
     @Test
     fun leavesPreReleasesToThoseWhoRunOne() {
         val json = feed(release("v0.5.0-beta.1"), release("v0.4.0", prerelease = false))
-        assertEquals("0.4.0", ReleaseFeed.newest(json, version("0.3.0"))!!.version)
-        assertEquals("0.5.0-beta.1", ReleaseFeed.newest(json, version("0.3.0-beta.2"))!!.version)
+        assertEquals("0.4.0", forTheApp(json, "0.3.0")!!.version)
+        assertEquals("0.5.0-beta.1", forTheApp(json, "0.3.0-beta.2")!!.version)
     }
 
     @Test
     fun ignoresTagsThatAreNotVersions() {
         val json = feed(release("nightly"), release("v0.4.0"))
-        assertEquals("0.4.0", ReleaseFeed.newest(json, version("0.3.0"))!!.version)
+        assertEquals("0.4.0", forTheApp(json, "0.3.0")!!.version)
+    }
+
+    @Test
+    fun offersTheAppItsOwnFileAndTheDebugBuildItsOwn() {
+        // The debug file comes first in the list, as it may: the choice is made by the kind of build, not by position.
+        val both = listOf("AimBuddy-v0.4.0-debug.apk", "AimBuddy-v0.4.0.apk")
+        val json = feed(release("v0.4.0", assetNames = both))
+        val app = ReleaseFeed.newest(json, version("0.3.0"), debugBuild = false)
+        val debug = ReleaseFeed.newest(json, version("0.3.0"), debugBuild = true)
+        assertEquals("https://github.com/1337Xcode/AimBuddy/releases/download/v0.4.0/AimBuddy-v0.4.0.apk", app!!.apkUrl)
+        assertEquals("https://github.com/1337Xcode/AimBuddy/releases/download/v0.4.0/AimBuddy-v0.4.0-debug.apk", debug!!.apkUrl)
+    }
+
+    @Test
+    fun neverOffersTheAppADebugFileOrTheDebugBuildTheAppsFile() {
+        val onlyDebug = feed(release("v0.4.0", assetNames = listOf("AimBuddy-v0.4.0-debug.apk")))
+        val onlyApp = feed(release("v0.4.0", assetNames = listOf("AimBuddy-v0.4.0.apk")))
+        assertNull(ReleaseFeed.newest(onlyDebug, version("0.3.0"), debugBuild = false))
+        assertNull(ReleaseFeed.newest(onlyApp, version("0.3.0"), debugBuild = true))
+    }
+
+    @Test
+    fun fallsBackToAnOlderReleaseThatHasTheRightFile() {
+        // The newest release has no debug file, so the debug build is offered the newest one that does.
+        val json = feed(
+            release("v0.5.0", assetNames = listOf("AimBuddy-v0.5.0.apk")),
+            release("v0.4.0", assetNames = listOf("AimBuddy-v0.4.0.apk", "AimBuddy-v0.4.0-debug.apk")),
+        )
+        assertEquals("0.4.0", ReleaseFeed.newest(json, version("0.3.0"), debugBuild = true)!!.version)
+        assertEquals("0.5.0", ReleaseFeed.newest(json, version("0.3.0"), debugBuild = false)!!.version)
     }
 
     @Test
     fun refusesAnswersThatAreNotAListOfReleases() {
         for (text in listOf("", "{}", "Not Found", "{\"message\": \"API rate limit exceeded\"}")) {
             try {
-                ReleaseFeed.newest(text, version("0.3.0"))
+                forTheApp(text, "0.3.0")
                 fail("accepted \"$text\"")
             } catch (expected: JSONException) {
                 // the caller reports that GitHub could not be read
