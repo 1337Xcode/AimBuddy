@@ -20,6 +20,8 @@
     <string name="action_start">Старт</string>
     <string name="action_stop">Стоп</string>
     <string name="row_model">Модель</string>
+    <string name="row_detection">Обнаружение</string>
+    <string name="detect_by_colour">Цвет, без модели</string>
     <string name="model_none">Пока нет</string>
     <string name="row_touch_access">Доступ к касаниям</string>
     <string name="row_settings">Настройки</string>
@@ -113,6 +115,13 @@
     <string name="s_snap_line">Линия к ближайшей цели</string>
     <string name="s_performance">Показатели работы</string>
     <string name="s_confidence">Уверенность обнаружения</string>
+    <string name="s_detect_with">Искать цели по</string>
+    <string name="s_detect_model">Модели</string>
+    <string name="s_detect_colour">Цвету</string>
+    <string name="s_detect_footer">Модель распознаёт людей. Поиск по цвету экспериментальный: он ищет один цвет, например контур, которым игра обводит врагов, и не требует модели. Выбор вступает в силу при нажатии «Старт».</string>
+    <string name="s_colour_footer">Поиск по цвету не требует модели. Нажмите «Старт», откройте меню в игре, нажмите «Запомнить цвет» и коснитесь цвета контура противника внутри синего квадрата. Тот же цвет в окружении или на кнопках экрана даёт ложные цели. Выбор вступает в силу при нажатии «Старт».</string>
+    <string name="s_colour_tolerance">Допуск цвета</string>
+    <string name="s_colour_smallest">Наименьшая цель</string>
     <string name="s_zone">Область обнаружения</string>
     <string name="s_aim_at">Целиться в</string>
     <string name="s_head">Голова</string>

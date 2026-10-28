@@ -204,16 +204,51 @@ private fun OverlayGroup(settings: SettingsView, actions: SettingsActions) {
 /** How sure the detector has to be, and how much of the screen it looks at. */
 @Composable
 private fun DetectionGroup(settings: SettingsView, actions: SettingsActions) {
-    Group(title = stringResource(R.string.settings_detection)) {
+    val byColour = settings.int("detector", 0) == 1
+    Group(
+        title = stringResource(R.string.settings_detection),
+        footer = stringResource(if (byColour) R.string.s_colour_footer else R.string.s_detect_footer),
+    ) {
         row {
-            val confidence = settings.float("confidence", 0.5f)
-            SliderRow(
-                title = stringResource(R.string.s_confidence),
-                value = confidence,
-                range = 0.1f..0.95f,
-                valueText = "${(confidence * 100).roundToInt()}%",
-                onValueChange = { actions.set("confidence", it.toString()) },
+            SegmentedRow(
+                title = stringResource(R.string.s_detect_with),
+                options = listOf(stringResource(R.string.s_detect_model), stringResource(R.string.s_detect_colour)),
+                selected = settings.int("detector", 0).coerceIn(0, 1),
+                onSelect = { actions.set("detector", it.toString()) },
             )
+        }
+        if (byColour) {
+            row {
+                val tolerance = settings.float("colourTolerance", 14f)
+                SliderRow(
+                    title = stringResource(R.string.s_colour_tolerance),
+                    value = tolerance,
+                    range = 4f..40f,
+                    valueText = "${tolerance.roundToInt()}°",
+                    onValueChange = { actions.set("colourTolerance", it.roundToInt().toString()) },
+                )
+            }
+            row {
+                val smallest = settings.float("colourMinHeight", 40f)
+                SliderRow(
+                    title = stringResource(R.string.s_colour_smallest),
+                    value = smallest,
+                    range = 10f..300f,
+                    valueText = "${smallest.roundToInt()} px",
+                    onValueChange = { actions.set("colourMinHeight", it.roundToInt().toString()) },
+                )
+            }
+        } else {
+            row {
+                val confidence = settings.float("confidence", 0.5f)
+                SliderRow(
+                    title = stringResource(R.string.s_confidence),
+                    value = confidence,
+                    range = 0.1f..0.95f,
+                    valueText = "${(confidence * 100).roundToInt()}%",
+                    onValueChange = { actions.set("confidence", it.toString()) },
+                )
+            }
         }
         row {
             val zone = settings.float("detectionZoneRadius", 200f)

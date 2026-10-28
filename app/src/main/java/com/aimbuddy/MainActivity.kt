@@ -221,6 +221,7 @@ class MainActivity : AppCompatActivity() {
         }
         val snapshot by AssistState.state.collectAsStateWithLifecycle()
         val settings by viewModel.settings.collectAsStateWithLifecycle()
+        val detectsByColour = settings.int("detector", 0) == 1
         val appearance by viewModel.appearance.collectAsStateWithLifecycle()
         val touchAccess by viewModel.touchAccess.collectAsStateWithLifecycle()
         val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
@@ -259,10 +260,11 @@ class MainActivity : AppCompatActivity() {
                     Screen.HOME -> HomeScreen(
                         snapshot = snapshot,
                         modelName = models.installed.firstOrNull { it.id == models.activeId }?.title,
+                        detectsByColour = detectsByColour,
                         touchAccess = touchAccess,
                         updateStatus = updateStatus,
                         onStart = {
-                            if (models.activeId == null) {
+                            if (models.activeId == null && !detectsByColour) {
                                 // Nothing to detect with yet: the store is where the first model comes from.
                                 screen = Screen.MODELS
                                 viewModel.post(UiMessage(R.string.models_needed))

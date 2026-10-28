@@ -20,6 +20,8 @@
     <string name="action_start">开始</string>
     <string name="action_stop">停止</string>
     <string name="row_model">模型</string>
+    <string name="row_detection">检测</string>
+    <string name="detect_by_colour">颜色，无需模型</string>
     <string name="model_none">暂无</string>
     <string name="row_touch_access">触控方式</string>
     <string name="row_settings">设置</string>
@@ -113,6 +115,13 @@
     <string name="s_snap_line">指向最近目标的线</string>
     <string name="s_performance">性能读数</string>
     <string name="s_confidence">检测置信度</string>
+    <string name="s_detect_with">查找目标的方式</string>
+    <string name="s_detect_model">模型</string>
+    <string name="s_detect_colour">颜色</string>
+    <string name="s_detect_footer">模型用来识别人物。颜色为实验功能：只查找一种颜色（例如游戏给敌人描的轮廓），不需要模型。点击开始时确定所选方式。</string>
+    <string name="s_colour_footer">颜色检测不需要模型。点击开始后，打开游戏内菜单，点击“学习颜色”，然后在蓝色方框内点按敌人轮廓的颜色。场景或屏幕按钮中出现相同颜色会产生误报。点击开始时确定所选方式。</string>
+    <string name="s_colour_tolerance">颜色容差</string>
+    <string name="s_colour_smallest">最小目标</string>
     <string name="s_zone">检测区域</string>
     <string name="s_aim_at">瞄准部位</string>
     <string name="s_head">头部</string>

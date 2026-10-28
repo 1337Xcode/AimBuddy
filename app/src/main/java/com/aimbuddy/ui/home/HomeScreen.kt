@@ -111,6 +111,7 @@ private fun failureText(failure: AssistState.Failure): Int = when (failure) {
 fun HomeScreen(
     snapshot: AssistState.Snapshot,
     modelName: String?,
+    detectsByColour: Boolean,
     touchAccess: TouchAccess,
     updateStatus: UpdateStatus,
     onStart: () -> Unit,
@@ -125,7 +126,7 @@ fun HomeScreen(
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(AppTheme.palette.background)) {
         val sideBySide = maxWidth > maxHeight && maxWidth >= 600.dp
         val list: @Composable () -> Unit = {
-            HomeList(snapshot, modelName, touchAccess, updateStatus, onOpenModels, onOpenSettings, onTouchAccess, onOpenProject, onUpdate)
+            HomeList(snapshot, modelName, detectsByColour, touchAccess, updateStatus, onOpenModels, onOpenSettings, onTouchAccess, onOpenProject, onUpdate)
         }
         val padding = screenPadding()
         if (sideBySide) {
@@ -240,6 +241,7 @@ private fun PowerButton(phase: AssistState.Phase, onStart: () -> Unit, onStop: (
 private fun HomeList(
     snapshot: AssistState.Snapshot,
     modelName: String?,
+    detectsByColour: Boolean,
     touchAccess: TouchAccess,
     updateStatus: UpdateStatus,
     onOpenModels: () -> Unit,
@@ -262,14 +264,18 @@ private fun HomeList(
         UpdateBanner(updateStatus, onUpdate)
         Group {
             row {
+                // With a colour to look for there is no model: the row says so and leads to where that is chosen.
                 ListRow(
-                    title = stringResource(R.string.row_model),
-                    leading = { IconBadge(Icons.Rounded.Memory, if (modelName != null) Color(0xFF8E5CF7) else Color(0xFFFF9F0A)) },
+                    title = stringResource(if (detectsByColour) R.string.row_detection else R.string.row_model),
+                    leading = { IconBadge(Icons.Rounded.Memory, if (modelName != null || detectsByColour) Color(0xFF8E5CF7) else Color(0xFFFF9F0A)) },
                     trailing = {
-                        RowValue(modelName ?: stringResource(R.string.model_none), Modifier.weight(1f, fill = false))
+                        RowValue(
+                            if (detectsByColour) stringResource(R.string.detect_by_colour) else modelName ?: stringResource(R.string.model_none),
+                            Modifier.weight(1f, fill = false),
+                        )
                         Chevron()
                     },
-                    onClick = onOpenModels,
+                    onClick = if (detectsByColour) onOpenSettings else onOpenModels,
                 )
             }
             row {

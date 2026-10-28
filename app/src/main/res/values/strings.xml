@@ -20,6 +20,8 @@
     <string name="action_start">Start</string>
     <string name="action_stop">Stop</string>
     <string name="row_model">Model</string>
+    <string name="row_detection">Detection</string>
+    <string name="detect_by_colour">Colour, no model</string>
     <string name="model_none">None yet</string>
     <string name="row_touch_access">Touch access</string>
     <string name="row_settings">Settings</string>
@@ -115,6 +117,13 @@
     <string name="s_snap_line">Line to nearest target</string>
     <string name="s_performance">Performance readout</string>
     <string name="s_confidence">Detection confidence</string>
+    <string name="s_detect_with">Find targets with</string>
+    <string name="s_detect_model">Model</string>
+    <string name="s_detect_colour">Colour</string>
+    <string name="s_detect_footer">A model recognises people. Colour is experimental: it looks for one colour, such as the outline a game draws round enemies, and needs no model. The choice is taken when you press Start.</string>
+    <string name="s_colour_footer">Colour detection needs no model. Press Start, open the in-game menu, press Learn colour and tap the colour of an enemy\'s outline inside the blue square. A colour that is also in the scenery or on the screen\'s buttons gives false targets. The choice is taken when you press Start.</string>
+    <string name="s_colour_tolerance">Colour tolerance</string>
+    <string name="s_colour_smallest">Smallest target</string>
     <string name="s_zone">Detection area</string>
     <string name="s_aim_at">Aim at</string>
     <string name="s_head">Head</string>
