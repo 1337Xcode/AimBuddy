@@ -124,6 +124,14 @@
     <string name="s_nearest">У прицела</string>
     <string name="s_largest">Крупная</string>
     <string name="s_certain">Надёжная</string>
+    <string name="s_after_landing">После наведения</string>
+    <string name="s_keep_following">Следить</string>
+    <string name="s_one_correction">Один раз</string>
+    <string name="s_switching">Смена цели</string>
+    <string name="s_sticky">Держать</string>
+    <string name="s_balanced">Баланс</string>
+    <string name="s_quick">Быстро</string>
+    <string name="s_aim_footer">«Один раз» поднимает палец, как только прицел на цели, и оставляет наведение вам до следующей цели. «Держать» дольше удерживает цель, прежде чем перейти к более близкой; «Быстро» переходит сразу.</string>
     <string name="s_sensitivity">Чувствительность камеры</string>
     <string name="s_delay">Задержка отклика</string>
     <string name="s_invert">Инвертировать вертикаль</string>

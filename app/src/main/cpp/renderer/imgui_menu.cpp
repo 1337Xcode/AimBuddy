@@ -738,6 +738,10 @@ bool drawAimTab(Settings& s) {
     changed |= ImGui::SliderFloat(T(Key::AimRadius), &s.aimFovRadius, 50.0f, 650.0f, "%.0f px");
     const char* priorities[] = {T(Key::PriorityNearest), T(Key::PriorityLargest), T(Key::PriorityCertain)};
     changed |= ImGui::Combo(T(Key::AimPriority), &s.aimPriority, priorities, 3);
+    const char* afterLanding[] = {T(Key::AfterKeepFollowing), T(Key::AfterOneCorrection)};
+    changed |= ImGui::Combo(T(Key::AimAfterLanding), &s.aimAfterLanding, afterLanding, 2);
+    const char* switching[] = {T(Key::SwitchSticky), T(Key::SwitchBalanced), T(Key::SwitchQuick)};
+    changed |= ImGui::Combo(T(Key::AimSwitching), &s.aimSwitching, switching, 3);
 
     ImGui::SeparatorText(T(Key::CalibrationTitle));
     ImGui::TextWrapped("%s", T(Key::CalibrationHint));

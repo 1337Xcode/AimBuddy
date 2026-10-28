@@ -124,6 +124,14 @@
     <string name="s_nearest">靠近准星</string>
     <string name="s_largest">最大</string>
     <string name="s_certain">最可信</string>
+    <string name="s_after_landing">到达目标后</string>
+    <string name="s_keep_following">持续跟随</string>
+    <string name="s_one_correction">只修正一次</string>
+    <string name="s_switching">切换目标</string>
+    <string name="s_sticky">稳定</string>
+    <string name="s_balanced">均衡</string>
+    <string name="s_quick">快速</string>
+    <string name="s_aim_footer">“只修正一次”会在准星对准目标后抬起手指，之后由你自己瞄准，直到下一个目标。“稳定”会更久地保持当前目标，“快速”则立即切换到更近的目标。</string>
     <string name="s_sensitivity">视角灵敏度</string>
     <string name="s_delay">响应延迟</string>
     <string name="s_invert">反转垂直方向</string>

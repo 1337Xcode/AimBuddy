@@ -90,6 +90,8 @@ aimbuddy::AimLoopConfig makeAimLoopConfig() {
     config.aim.strength = settings.aimStrength;
     config.aim.fovRadiusPx = settings.aimFovRadius;
     config.aim.priority = settings.aimPriority;
+    config.aim.afterLanding = static_cast<aimbuddy::AfterLanding>(settings.aimAfterLanding);
+    config.aim.setSwitching(static_cast<aimbuddy::Switching>(settings.aimSwitching));
     const aimbuddy::TouchArea touchArea = settings.touchAreaOn(displayWidth, displayHeight);
     config.aim.anchorX = touchArea.centerX;
     config.aim.anchorY = touchArea.centerY;

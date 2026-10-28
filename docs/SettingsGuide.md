@@ -39,6 +39,8 @@ The assist starts off every time AimBuddy runs, because it moves the aim by itse
 | Strength | 60% | How quickly the aim closes on a target. Higher closes faster and can overshoot; lower is calmer. |
 | Reach | 220 px | Targets farther than this from the crosshair are left alone. |
 | Target pick | Crosshair | Which target to take when there are several: the one nearest the crosshair, the biggest, or the one the detector is surest of. The assist keeps the target it has until a better one is clearly better, so it does not hop between two that are almost equally good. |
+| Once on target | Keep following | What the assist does when the crosshair is on a target. Keep following stays with it: it follows the target as it moves and brings the crosshair back if it drifts off. One correction lifts the finger after the crosshair has stayed on the target for a moment and leaves the aiming to you; it makes another correction only for the next target, or for the same one after it left the reach and came back. |
+| Switching targets | Balanced | How readily the assist moves to another target that has come closer to the crosshair. Sticky moves only to one less than 55% as far away, after 0.3 s. Balanced: 70% as far, after 0.15 s. Quick: 85% as far, after 0.06 s, which follows the crosshair from one player to the next almost at once. |
 
 ## Game camera
 

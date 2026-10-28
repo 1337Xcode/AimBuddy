@@ -24,6 +24,8 @@ TEST(settings_survive_a_round_trip) {
     original.assistEnabled = true;
     original.aimZone = 1;
     original.aimStrength = 0.8f;
+    original.aimAfterLanding = 1;
+    original.aimSwitching = 2;
     original.sceneGain = 2.25f;
     original.actuationDelayMs = 72.0f;
     original.invertY = true;
@@ -40,6 +42,8 @@ TEST(settings_survive_a_round_trip) {
     CHECK(!loaded.assistEnabled);   // the assist is never saved: it starts off every run
     CHECK(loaded.aimZone == 1);
     CHECK_NEAR(loaded.aimStrength, 0.8, 1e-6);
+    CHECK(loaded.aimAfterLanding == 1);
+    CHECK(loaded.aimSwitching == 2);
     CHECK_NEAR(loaded.sceneGain, 2.25, 1e-6);
     CHECK_NEAR(loaded.actuationDelayMs, 72.0, 1e-4);
     CHECK(loaded.invertY);
@@ -61,13 +65,15 @@ TEST(settings_keep_defaults_for_missing_and_unknown_names) {
 
 TEST(settings_are_clamped_when_read) {
     const Settings loaded = SettingsStore::parse(
-        "aimStrength=7\nconfidence=-3\nboxThickness=99\nsceneGain=0\nlanguage=42\nanchorRadius=9999\n");
+        "aimStrength=7\nconfidence=-3\nboxThickness=99\nsceneGain=0\nlanguage=42\nanchorRadius=9999\naimAfterLanding=5\naimSwitching=-1\n");
     CHECK_NEAR(loaded.aimStrength, 1.0, 1e-6);
     CHECK_NEAR(loaded.confidence, 0.1, 1e-6);
     CHECK(loaded.boxThickness == 6);
     CHECK_NEAR(loaded.sceneGain, 0.1, 1e-6);
     CHECK(loaded.language == 2);
     CHECK_NEAR(loaded.anchorRadius, 500.0, 1e-6);
+    CHECK(loaded.aimAfterLanding == 1);
+    CHECK(loaded.aimSwitching == 0);
 }
 
 TEST(a_value_that_is_not_a_number_keeps_the_default_when_read) {

@@ -45,6 +45,8 @@ struct Settings {
     float aimStrength = 0.6f;             ///< 0 to 1: how quickly the aim closes on a target.
     float aimFovRadius = 220.0f;          ///< Targets further than this from the crosshair are left alone.
     int aimPriority = 0;                  ///< Which target to prefer: 0 closest to the crosshair, 1 biggest, 2 most certain.
+    int aimAfterLanding = 0;              ///< Once on a target: 0 keep following it, 1 one correction and then leave it to the player.
+    int aimSwitching = 1;                 ///< How readily the lock moves to another target: 0 sticky, 1 balanced, 2 quick.
     bool autoCalibrate = true;            ///< Measure how the game answers the assist finger instead of trusting the two numbers below.
     float sceneGain = 1.5f;               ///< How far the scene slides per pixel the assist finger moves (the guess used until measured).
     float actuationDelayMs = 50.0f;       ///< How long the game takes to react to the finger (the guess used until measured).

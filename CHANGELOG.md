@@ -6,6 +6,9 @@ Dates are in ISO-8601 (YYYY-MM-DD).
 
 ## [Unreleased]
 
+### Added
+- Two aim choices, in the app's Settings and in the in-game menu (English, Chinese and Russian). "Once on target" is what the assist does when the crosshair is on a target: keep following it, as before, or make one correction, lift the finger and leave the aiming to the player until the next target (or until the same one has left the reach and come back). In the simulation the one correction landed on a still target 300 px away in under a second, and it did not follow a target swinging 140 px to either side afterwards, which is the point of it. "Switching targets" is how readily the lock moves to a target that has come closer to the crosshair: Sticky (the rival must be 45% closer and stay so for 0.3 s), Balanced (30% closer for 0.15 s, as before) or Quick (15% closer for 0.06 s, which moves from one player to the next almost at once).
+
 ### Fixed
 - Pressing Stop within a few seconds of Start crashed the app when Shizuku was running: Stop interrupts the thread that waits for Shizuku to start the touch helper, and nothing caught the interruption. The wait now gives up quietly and the stop finishes. Found in 0.3.5-beta.1.
 - Start did nothing for a player who had said no to the notification permission twice: the app asked again as fast as the system answered (50 times in 4 seconds on an emulator) and never reached the screen capture step. It asks once for each press of Start now.

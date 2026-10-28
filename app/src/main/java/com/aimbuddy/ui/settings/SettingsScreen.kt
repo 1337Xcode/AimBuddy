@@ -231,7 +231,7 @@ private fun DetectionGroup(settings: SettingsView, actions: SettingsActions) {
 /** Where the assist aims, how hard it pulls, and which target it takes. */
 @Composable
 private fun AimGroup(settings: SettingsView, actions: SettingsActions) {
-    Group(title = stringResource(R.string.settings_aim)) {
+    Group(title = stringResource(R.string.settings_aim), footer = stringResource(R.string.s_aim_footer)) {
         row {
             SegmentedRow(
                 title = stringResource(R.string.s_aim_at),
@@ -266,6 +266,22 @@ private fun AimGroup(settings: SettingsView, actions: SettingsActions) {
                 options = listOf(stringResource(R.string.s_nearest), stringResource(R.string.s_largest), stringResource(R.string.s_certain)),
                 selected = settings.int("aimPriority", 0).coerceIn(0, 2),
                 onSelect = { actions.set("aimPriority", it.toString()) },
+            )
+        }
+        row {
+            SegmentedRow(
+                title = stringResource(R.string.s_after_landing),
+                options = listOf(stringResource(R.string.s_keep_following), stringResource(R.string.s_one_correction)),
+                selected = settings.int("aimAfterLanding", 0).coerceIn(0, 1),
+                onSelect = { actions.set("aimAfterLanding", it.toString()) },
+            )
+        }
+        row {
+            SegmentedRow(
+                title = stringResource(R.string.s_switching),
+                options = listOf(stringResource(R.string.s_sticky), stringResource(R.string.s_balanced), stringResource(R.string.s_quick)),
+                selected = settings.int("aimSwitching", 1).coerceIn(0, 2),
+                onSelect = { actions.set("aimSwitching", it.toString()) },
             )
         }
     }

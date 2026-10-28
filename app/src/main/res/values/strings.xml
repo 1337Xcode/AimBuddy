@@ -126,6 +126,14 @@
     <string name="s_nearest">Crosshair</string>
     <string name="s_largest">Biggest</string>
     <string name="s_certain">Certain</string>
+    <string name="s_after_landing">Once on target</string>
+    <string name="s_keep_following">Keep following</string>
+    <string name="s_one_correction">One correction</string>
+    <string name="s_switching">Switching targets</string>
+    <string name="s_sticky">Sticky</string>
+    <string name="s_balanced">Balanced</string>
+    <string name="s_quick">Quick</string>
+    <string name="s_aim_footer">One correction lifts the finger once the crosshair is on a target and leaves the aiming to you until the next one. Sticky keeps a target longer before moving to another that is closer; Quick moves at once.</string>
     <string name="s_sensitivity">Camera sensitivity</string>
     <string name="s_delay">Response delay</string>
     <string name="s_invert">Invert vertical</string>
