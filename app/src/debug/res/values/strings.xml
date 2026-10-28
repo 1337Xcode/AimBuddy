@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The debug build installs beside the app, so its name on the phone says which one it is. The name is not translated. -->
+    <string name="app_name">AimBuddy Debug</string>
+</resources>
