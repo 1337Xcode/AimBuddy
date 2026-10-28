@@ -20,6 +20,15 @@
     <!-- Optional non-root input backend (Shizuku) -->
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
 
+    <!--
+      Since Android 11 an app sees only the packages it names here or has dealt with. Shizuku has dealt with
+      this app only once it is running, so without this the app could not tell that Shizuku is installed
+      (and offer to open it) at the very moment the player needs to start it.
+    -->
+    <queries>
+        <package android:name="moe.shizuku.privileged.api"/>
+    </queries>
+
     <!-- Vulkan GPU feature — optional so the app still runs on devices without Vulkan -->
     <uses-feature android:name="android.hardware.vulkan.level" android:version="1" android:required="false"/>
     <uses-feature android:name="android.hardware.vulkan.version" android:version="0x00401000" android:required="false"/>
