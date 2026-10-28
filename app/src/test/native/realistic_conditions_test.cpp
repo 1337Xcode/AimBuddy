@@ -21,6 +21,14 @@ SimulatedGame::Truth phoneInAMatch() {
     return truth;
 }
 
+/// A slow phone: 8 detections a second, each arriving 130 ms after its frame.
+SimulatedGame::Truth slowPhone() {
+    SimulatedGame::Truth truth = phoneInAMatch();
+    truth.detectionPeriodMs = 125;
+    truth.detectionLatencyMs = 130;
+    return truth;
+}
+
 /// The player swings the camera from side to side with their thumb: `peakPxPerSecond` at the fastest.
 std::function<void(float, float*, float*)> playerSwinging(float hertz, float peakPxPerSecond) {
     return [=](float t, float* speedX, float* speedY) {
@@ -64,6 +72,19 @@ TEST(drawn_boxes_stay_on_a_target_while_the_player_turns) {
     const SimulatedGame::DrawnBoxes drawn = game.judgeDrawnBoxes(8.0f, 1.0f);
     CHECK(drawn.missingShare < 0.02);
     CHECK(drawn.errorRms < 14.0);
+}
+
+TEST(a_slow_phone_keeps_a_box_on_a_target_and_the_assist_keeps_following_it) {
+    // At 8 detections a second the newest result is over 130 ms old and the next is 125 ms away. Counting that
+    // wait as time the target went unseen dimmed the box for 41 percent of the time and made the assist let go
+    // of the target and touch down again 8 times in 10 seconds, where a phone twice as quick did it once.
+    SimulatedGame boxes(slowPhone(), assistOff(), stationary(0.0f, 0.0f));
+    const SimulatedGame::DrawnBoxes drawn = boxes.judgeDrawnBoxes(12.0f, 1.0f);
+    CHECK(drawn.missingShare < 0.02);
+
+    SimulatedGame aimed(slowPhone(), baseSettings(), stationary(150.0f, -50.0f));
+    aimed.run(10.0f, [](float, float, float) {});
+    CHECK(aimed.touchCount() <= 2);
 }
 
 TEST(boxes_that_show_up_for_a_single_frame_are_not_drawn) {

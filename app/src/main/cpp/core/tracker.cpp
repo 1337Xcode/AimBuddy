@@ -20,6 +20,17 @@ constexpr float kClippedVarianceScale = 16.0f;
 
 constexpr float kNanosecondsPerSecond = 1e9f;
 
+/// A pause between two results longer than this (the app was in the background) says nothing about how often they come.
+constexpr int64_t kMaxArrivalGapNs = 1'000'000'000;
+
+/// A missed target is held for this many times the gap between results, if that is longer than the configured time,
+/// and forgotten after this many. Results that come every 200 ms leave 300 ms to hold a target that one of them missed.
+constexpr int64_t kHoldGaps = 3;       // in halves: 1.5 gaps
+constexpr int64_t kCoastGaps = 7;      // in halves: 3.5 gaps
+
+/// Results come as often as they have until this many gaps have passed without one; only then is the detector quiet.
+constexpr int64_t kQuietAfterGaps = 2;
+
 float square(float v) { return v * v; }
 
 float nsToSeconds(int64_t ns) { return static_cast<float>(ns) / kNanosecondsPerSecond; }
@@ -88,7 +99,24 @@ void Tracker::reset() {
     std::lock_guard<std::mutex> lock(mutex_);
     trackCount_ = 0;
     nextId_ = 1;
+    hasArrival_ = false;
+    latestArrivalNs_ = 0;
+    arrivalGapNs_ = 0;
 }
+
+void Tracker::noteArrival(int64_t captureNs, int64_t arrivalNs) {
+    arrivalNs = arrivalNs < 0 ? captureNs : arrivalNs;
+    if (hasArrival_ && arrivalNs > latestArrivalNs_) {
+        const int64_t gapNs = std::min(arrivalNs - latestArrivalNs_, kMaxArrivalGapNs);
+        arrivalGapNs_ = arrivalGapNs_ == 0 ? gapNs : arrivalGapNs_ + (gapNs - arrivalGapNs_) / 4;
+    }
+    latestArrivalNs_ = hasArrival_ ? std::max(latestArrivalNs_, arrivalNs) : arrivalNs;
+    hasArrival_ = true;
+}
+
+int64_t Tracker::holdNs() const { return std::max(config_.holdNs, arrivalGapNs_ * kHoldGaps / 2); }
+
+int64_t Tracker::coastNs() const { return std::max(config_.coastNs, arrivalGapNs_ * kCoastGaps / 2); }
 
 void Tracker::predictTrack(Track& track, int64_t toNs) const {
     if (toNs <= track.stateNs) {
@@ -276,9 +304,11 @@ int Tracker::matchPass(const int* trackIndices, int trackCount, const int* detec
     return matchCount;
 }
 
-void Tracker::update(const Detection* detections, int count, int64_t captureNs, const ScanRegion* scanned) {
+void Tracker::update(const Detection* detections, int count, int64_t captureNs, const ScanRegion* scanned,
+                     int64_t arrivalNs) {
     std::lock_guard<std::mutex> lock(mutex_);
     count = std::max(0, std::min(count, kMaxDetections));
+    noteArrival(captureNs, arrivalNs);
 
     // Time since each target's previous update, used below to age targets that were missed.
     int64_t stepNs[kMaxTracks];
@@ -376,7 +406,7 @@ void Tracker::update(const Detection* detections, int count, int64_t captureNs, 
         track.phase = TrackPhase::kCoasting;
         const bool wasScanned = scanned == nullptr || scanned->contains(track.x.position, track.y.position);
         (wasScanned ? track.missNs : track.unobservedNs) += stepNs[i];
-        if (track.missNs > config_.coastNs || track.unobservedNs > config_.unobservedNs) {
+        if (track.missNs > coastNs() || track.unobservedNs > config_.unobservedNs) {
             removeTrackAt(i);
         }
     }
@@ -467,11 +497,18 @@ void Tracker::projectTrack(const Track& track, int64_t atNs, TrackView& view) co
     if (track.phase == TrackPhase::kTentative) {
         view.opacity = track.score >= config_.showTentativeScore ? 1.0f : 0.0f;
     } else {
-        const int64_t unseenNs = std::max<int64_t>(0, atNs - track.lastSeenNs);
-        const float fade = nsToSeconds(config_.coastNs - config_.holdNs);
-        view.opacity = unseenNs <= config_.holdNs
+        // What counts as unseen is the time of the frames that missed the target, and the time the detector has
+        // been quiet. How old the newest result is for its frame does not count, and neither does the wait for
+        // the next one while results come as often as they have: a slow phone would else dim every box between
+        // two results, and the assist would let go of a target it is looking right at.
+        const int64_t quietNs = std::max<int64_t>(0, atNs - latestArrivalNs_ - kQuietAfterGaps * arrivalGapNs_);
+        const int64_t missedNs = track.matchedNow ? 0 : track.missNs + track.unobservedNs;
+        const int64_t unseenNs = missedNs + quietNs;
+        const int64_t holdLimitNs = holdNs();
+        const float fade = nsToSeconds(coastNs() - holdLimitNs);
+        view.opacity = unseenNs <= holdLimitNs
                            ? 1.0f
-                           : std::max(0.0f, 1.0f - nsToSeconds(unseenNs - config_.holdNs) / std::max(fade, 1e-3f));
+                           : std::max(0.0f, 1.0f - nsToSeconds(unseenNs - holdLimitNs) / std::max(fade, 1e-3f));
     }
 }
 

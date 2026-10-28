@@ -157,9 +157,13 @@ public:
      *
      * `captureNs` is when the frame was on screen (steady clock), which is earlier than now by
      * the pipeline delay. `scanned` is the region the detector examined; targets outside it are
-     * not counted as missed. Pass nullptr when the whole screen was scanned.
+     * not counted as missed. Pass nullptr when the whole screen was scanned. `arrivalNs` is when
+     * the result reached the tracker, on the same clock; from it the tracker learns how often
+     * results come, and so how long a target that one of them missed can still be trusted. A
+     * negative `arrivalNs` says the result arrived the instant the frame was captured.
      */
-    void update(const Detection* detections, int count, int64_t captureNs, const ScanRegion* scanned);
+    void update(const Detection* detections, int count, int64_t captureNs, const ScanRegion* scanned,
+                int64_t arrivalNs = -1);
 
     /**
      * Writes the expected state of every target at `atNs`, in the order the targets were found.
@@ -217,11 +221,21 @@ private:
     void removeDuplicates();
     void removeTrackAt(int index);
 
+    /// Learns how often results arrive (see update()).
+    void noteArrival(int64_t captureNs, int64_t arrivalNs);
+    /// How long a missed target is still drawn at full strength, and how long until it is forgotten. The
+    /// configured times are for a detector that runs about 30 times a second; a slower one gets longer ones.
+    int64_t holdNs() const;
+    int64_t coastNs() const;
+
     TrackerConfig config_;
     const EgoMotion* egoMotion_ = nullptr;
     std::array<Track, kMaxTracks> tracks_{};
     int trackCount_ = 0;
     int nextId_ = 1;
+    bool hasArrival_ = false;
+    int64_t latestArrivalNs_ = 0;   ///< When the newest result arrived.
+    int64_t arrivalGapNs_ = 0;      ///< Smoothed time between two results; 0 until there have been two.
     mutable std::mutex mutex_;
 };
 

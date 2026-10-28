@@ -256,6 +256,67 @@ TEST(tracker_coasts_then_fades_a_target_that_goes_missing) {
     CHECK(drawnCount(tracker, 40 * 16 * kMs) == 0);
 }
 
+TEST(tracker_keeps_a_target_at_full_strength_between_the_results_of_a_slow_detector) {
+    // Results come every 250 ms and reach the tracker 200 ms after their frame, so the newest one is never less
+    // than 200 ms old. The target it found is still the newest word there is until the next result comes.
+    Tracker tracker;
+    for (int result = 0; result < 6; ++result) {
+        Detection d = box(400.0f, 300.0f, 60.0f, 180.0f, 0.9f);
+        const int64_t captureNs = result * 250 * kMs;
+        tracker.update(&d, 1, captureNs, nullptr, captureNs + 200 * kMs);
+    }
+    const int64_t lastArrivalNs = (5 * 250 + 200) * kMs;
+    TrackView view;
+    for (const int64_t afterMs : {0, 100, 249}) {
+        CHECK(viewNear(tracker, lastArrivalNs + afterMs * kMs, 400.0f, 300.0f, &view));
+        CHECK_NEAR(view.opacity, 1.0, 1e-4);
+    }
+}
+
+TEST(tracker_holds_a_target_that_one_result_of_a_slow_detector_missed) {
+    // Results every 200 ms. One that finds nothing is no reason to let go of a target for a detector that
+    // takes this long, where it would be for one that runs 30 times a second.
+    Tracker tracker;
+    int64_t captureNs = 0;
+    for (int result = 0; result < 6; ++result, captureNs += 200 * kMs) {
+        Detection d = box(400.0f, 300.0f, 60.0f, 180.0f, 0.9f);
+        tracker.update(&d, 1, captureNs, nullptr, captureNs + 150 * kMs);
+    }
+    tracker.update(nullptr, 0, captureNs, nullptr, captureNs + 150 * kMs);   // one miss
+    TrackView view;
+    CHECK(viewNear(tracker, captureNs + 150 * kMs, 400.0f, 300.0f, &view));
+    CHECK_NEAR(view.opacity, 1.0, 1e-4);
+    CHECK(view.phase == TrackPhase::kCoasting);
+
+    // Three misses in a row (600 ms) leave it fading, still there; a fourth (800 ms) is the end of it.
+    for (int miss = 1; miss < 3; ++miss) {
+        captureNs += 200 * kMs;
+        tracker.update(nullptr, 0, captureNs, nullptr, captureNs + 150 * kMs);
+    }
+    CHECK(viewNear(tracker, captureNs + 150 * kMs, 400.0f, 300.0f, &view));
+    CHECK(view.opacity > 0.0f && view.opacity < 0.6f);
+    captureNs += 200 * kMs;
+    tracker.update(nullptr, 0, captureNs, nullptr, captureNs + 150 * kMs);
+    CHECK(drawnCount(tracker, captureNs + 150 * kMs) == 0);
+}
+
+TEST(tracker_fades_a_target_when_a_slow_detector_goes_quiet) {
+    // The same detector, 200 ms between results, which then stops altogether. The wait for the next one is
+    // not counted for two gaps and then for as long as a target is held, so the box is gone about a second later.
+    Tracker tracker;
+    for (int result = 0; result < 6; ++result) {
+        Detection d = box(400.0f, 300.0f, 60.0f, 180.0f, 0.9f);
+        tracker.update(&d, 1, result * 200 * kMs, nullptr, result * 200 * kMs + 150 * kMs);
+    }
+    const int64_t lastArrivalNs = (5 * 200 + 150) * kMs;
+    TrackView view;
+    CHECK(viewNear(tracker, lastArrivalNs + 500 * kMs, 400.0f, 300.0f, &view));
+    CHECK_NEAR(view.opacity, 1.0, 1e-4);
+    CHECK(viewNear(tracker, lastArrivalNs + 800 * kMs, 400.0f, 300.0f, &view));
+    CHECK(view.opacity > 0.0f && view.opacity < 1.0f);
+    CHECK(drawnCount(tracker, lastArrivalNs + 1200 * kMs) == 0);
+}
+
 TEST(tracker_does_not_age_a_target_outside_the_scanned_region) {
     Tracker tracker;
     const ScanRegion wide{0.0f, 0.0f, 1000.0f, 800.0f};

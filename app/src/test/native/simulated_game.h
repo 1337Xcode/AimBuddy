@@ -410,7 +410,7 @@ private:
             lastCaptureNs_ = pd.captureNs;
             lastCameraX_ = pd.cameraX;
             lastCameraY_ = pd.cameraY;
-            tracker_.update(pd.detections.data(), static_cast<int>(pd.detections.size()), pd.captureNs, nullptr);
+            tracker_.update(pd.detections.data(), static_cast<int>(pd.detections.size()), pd.captureNs, nullptr, nowNs);
         }
     }
 
