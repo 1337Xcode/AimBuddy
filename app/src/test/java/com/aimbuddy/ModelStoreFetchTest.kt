@@ -32,7 +32,7 @@ class ModelStoreFetchTest {
         return JSONObject().put("schema", 1).put("models", JSONArray(models)).toString()
     }
 
-    private fun idsOf(repository: ModelStoreRepository) = repository.fetchModels().map { it.id }
+    private fun idsOf(repository: ModelStoreRepository) = repository.fetchModels().models.map { it.id }
 
     @Test
     fun aFreshListIsUsedEvenWhenACopyOfItCannotBeKept() {
@@ -55,6 +55,21 @@ class ModelStoreFetchTest {
         online = false
 
         assertEquals(listOf("saved-model"), idsOf(repository))
+    }
+
+    @Test
+    fun aListSavedByAnEarlierVisitIsSaidToBeSaved() {
+        val cache = folder.newFolder("cache")
+        var online = true
+        val repository = ModelStoreRepository(baseUrl, cache) {
+            if (online) indexOf("saved-model") else throw IOException("no connection")
+        }
+
+        assertEquals(false, repository.fetchModels().saved)   // read from the store just now
+
+        online = false
+
+        assertEquals(true, repository.fetchModels().saved)    // read from what the last visit kept
     }
 
     @Test

@@ -53,6 +53,8 @@ data class StoreModelDefinition(
 /** The files of a model that was just installed. */
 class InstalledFiles(val param: File, val bin: File)
 
+/** The models the store lists, and whether this is the copy saved by an earlier visit because the store could not be reached now. */
+data class StoreList(val models: List<StoreModelDefinition>, val saved: Boolean)
 
 /**
  * Reads the store: the models published in the project's `model` folder on GitHub, and the files of
@@ -88,8 +90,8 @@ class ModelStoreRepository(
         }
     }
 
-    /** Fetches the list of models. Without a connection the copy saved by the last success is used. */
-    fun fetchModels(): List<StoreModelDefinition> {
+    /** Fetches the list of models. Without a connection the copy saved by the last success is used, and says so. */
+    fun fetchModels(): StoreList {
         val cache = File(cacheDir, INDEX_FILE)
         val text: String
         val models: List<StoreModelDefinition>
@@ -107,16 +109,16 @@ class ModelStoreRepository(
         } catch (e: IOException) {
             Log.w(TAG, "Could not keep a copy of the store's list: ${e.message}")
         }
-        return models
+        return StoreList(models, saved = false)
     }
 
     /** Reads the list saved by the last success, or rethrows [cause] when there is none. */
-    private fun fallBackToSavedList(cache: File, cause: Exception): List<StoreModelDefinition> {
+    private fun fallBackToSavedList(cache: File, cause: Exception): StoreList {
         if (!cache.isFile) {
             throw IOException("The store could not be read: ${cause.message}", cause)
         }
         Log.w(TAG, "Using the saved list of models: ${cause.message}")
-        return parseIndex(cache.readText(), baseUrl)
+        return StoreList(parseIndex(cache.readText(), baseUrl), saved = true)
     }
 
     /**

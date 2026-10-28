@@ -54,11 +54,18 @@ data class UiMessage(@StringRes val resId: Int, val args: List<Any> = emptyList(
 /** How the app's look is set. Kept in the app's preferences. */
 data class Appearance(val mode: ThemeMode = ThemeMode.SYSTEM, val accent: Accent = Accent.BLUE)
 
-/** What the models screens show about the store. `icons` holds the picture file of each model that has one, by id. */
+/**
+ * What the models screens show about the store. `icons` holds the picture file of each model that has one, by id,
+ * and `saved` says the list is the one kept by an earlier visit, because the store could not be reached now.
+ */
 sealed interface StoreState {
     data object Idle : StoreState
     data object Loading : StoreState
-    data class Ready(val models: List<StoreModelDefinition>, val icons: Map<String, String> = emptyMap()) : StoreState
+    data class Ready(
+        val models: List<StoreModelDefinition>,
+        val icons: Map<String, String> = emptyMap(),
+        val saved: Boolean = false,
+    ) : StoreState
     data object Failed : StoreState
 }
 
@@ -353,10 +360,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { storeRepository.fetchModels() } }
             _models.update {
-                it.copy(store = result.fold({ list -> StoreState.Ready(list) }, { StoreState.Failed }))
+                it.copy(store = result.fold({ list -> StoreState.Ready(list.models, saved = list.saved) }, { StoreState.Failed }))
             }
             result.exceptionOrNull()?.let { Log.w(TAG, "The store could not be read: ${it.message}") }
-            result.getOrNull()?.let { loadIcons(it) }
+            result.getOrNull()?.let { loadIcons(it.models) }
         }
     }
 

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FileOpen
@@ -272,6 +273,19 @@ private fun LazyStaggeredGridScope.storeTab(
             }
         }
         is StoreState.Ready -> {
+            if (store.saved) {
+                item {
+                    Group {
+                        row {
+                            ListRow(
+                                title = stringResource(R.string.models_store_saved),
+                                leading = { IconBadge(Icons.Rounded.CloudOff, AppTheme.palette.textDim) },
+                                trailing = { SmallPill(text = stringResource(R.string.models_retry), onClick = onRetry) },
+                            )
+                        }
+                    }
+                }
+            }
             if (store.models.isEmpty()) {
                 item { EmptyNote(stringResource(R.string.models_store_empty)) }
             } else {

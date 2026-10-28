@@ -88,6 +88,7 @@
     <string name="models_error_offline">没有网络连接。请检查网络后重试。</string>
     <string name="models_error_damaged">下载的文件已损坏，请重试。</string>
     <string name="models_error_space">手机存储空间不足。</string>
+    <string name="models_store_saved">没有网络连接。下方是之前保存的列表。</string>
     <string name="models_delete_title">删除此模型？</string>
     <string name="models_delete_message">将从此手机移除“%1$s”。</string>
     <string name="models_next_start">下次点按“开始”时生效。</string>

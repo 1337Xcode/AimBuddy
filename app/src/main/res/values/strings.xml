@@ -90,6 +90,7 @@
     <string name="models_error_offline">No connection. Check the internet and try again.</string>
     <string name="models_error_damaged">The download was damaged. Try again.</string>
     <string name="models_error_space">Not enough space on the phone.</string>
+    <string name="models_store_saved">No connection. The list below was saved earlier.</string>
     <string name="models_delete_title">Delete this model?</string>
     <string name="models_delete_message">\"%1$s\" will be removed from this phone.</string>
     <string name="models_next_start">Used the next time you press Start.</string>
