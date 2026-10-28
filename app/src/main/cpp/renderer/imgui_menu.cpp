@@ -844,8 +844,8 @@ bool drawColourSection(Settings& s) {
         startColourPicking();
     }
     ImGui::TextWrapped("%s", T(Key::LearnColourHint));
-    changed |= ImGui::SliderFloat(T(Key::ColourTolerance), &s.colourTolerance, 4.0f, 40.0f, "%.0f deg");
-    changed |= ImGui::SliderFloat(T(Key::ColourMinHeight), &s.colourMinHeight, 10.0f, 300.0f, "%.0f px");
+    changed |= menu::Slider(T(Key::ColourTolerance), &s.colourTolerance, 4.0f, 40.0f, "%.0f deg");
+    changed |= menu::Slider(T(Key::ColourMinHeight), &s.colourMinHeight, 10.0f, 300.0f, "%.0f px");
     return changed;
 }
 
@@ -861,20 +861,20 @@ bool drawVisualsTab(Settings& s) {
     ImGui::Separator();
 
     changed |= ImGui::ColorEdit3(T(Key::BoxColor), s.boxColor, ImGuiColorEditFlags_NoInputs);
-    changed |= ImGui::SliderInt(T(Key::BoxThickness), &s.boxThickness, 1, 6);
+    changed |= menu::SliderInt(T(Key::BoxThickness), &s.boxThickness, 1, 6, "%d");
     ImGui::Separator();
 
     if (aimbuddy::pipeline().detectsByColour()) {
         changed |= drawColourSection(s);
     } else {
-        changed |= ImGui::SliderFloat(T(Key::Confidence), &s.confidence, 0.1f, 0.95f, "%.2f");
+        changed |= menu::Slider(T(Key::Confidence), &s.confidence, 0.1f, 0.95f, "%.2f");
     }
-    changed |= ImGui::SliderFloat(T(Key::DetectionZone), &s.detectionZoneRadius, 100.0f, 650.0f, "%.0f px");
+    changed |= menu::Slider(T(Key::DetectionZone), &s.detectionZoneRadius, 100.0f, 650.0f, "%.0f px");
     ImGui::Separator();
 
     changed |= ImGui::Checkbox(T(Key::ShowAnchor), &s.showAnchor);
     if (s.showAnchor) {
-        changed |= ImGui::SliderFloat(T(Key::AnchorOpacity), &s.anchorOpacity, 0.1f, 1.0f, "%.2f");
+        changed |= menu::Slider(T(Key::AnchorOpacity), &s.anchorOpacity, 0.1f, 1.0f, "%.2f");
     }
     ImGui::Separator();
 
@@ -901,8 +901,8 @@ bool drawAimTab(Settings& s) {
 
     const char* zones[] = {T(Key::ZoneHead), T(Key::ZoneChest), T(Key::ZoneCentre)};
     changed |= ImGui::Combo(T(Key::AimZone), &s.aimZone, zones, 3);
-    changed |= ImGui::SliderFloat(T(Key::AimStrength), &s.aimStrength, 0.0f, 1.0f, "%.2f");
-    changed |= ImGui::SliderFloat(T(Key::AimRadius), &s.aimFovRadius, 50.0f, 650.0f, "%.0f px");
+    changed |= menu::Slider(T(Key::AimStrength), &s.aimStrength, 0.0f, 1.0f, "%.2f");
+    changed |= menu::Slider(T(Key::AimRadius), &s.aimFovRadius, 50.0f, 650.0f, "%.0f px");
     const char* priorities[] = {T(Key::PriorityNearest), T(Key::PriorityLargest), T(Key::PriorityCertain)};
     changed |= ImGui::Combo(T(Key::AimPriority), &s.aimPriority, priorities, 3);
     const char* afterLanding[] = {T(Key::AfterKeepFollowing), T(Key::AfterOneCorrection)};
@@ -912,8 +912,8 @@ bool drawAimTab(Settings& s) {
 
     ImGui::SeparatorText(T(Key::CalibrationTitle));
     ImGui::TextWrapped("%s", T(Key::CalibrationHint));
-    changed |= ImGui::SliderFloat(T(Key::CameraSensitivity), &s.sceneGain, 0.2f, 6.0f, "%.2f");
-    changed |= ImGui::SliderFloat(T(Key::ResponseDelay), &s.actuationDelayMs, 0.0f, 200.0f, "%.0f ms");
+    changed |= menu::Slider(T(Key::CameraSensitivity), &s.sceneGain, 0.2f, 6.0f, "%.2f");
+    changed |= menu::Slider(T(Key::ResponseDelay), &s.actuationDelayMs, 0.0f, 200.0f, "%.0f ms");
     changed |= ImGui::Checkbox(T(Key::InvertVertical), &s.invertY);
 
     ImGui::SeparatorText(T(Key::TouchAreaTitle));
@@ -926,9 +926,9 @@ bool drawAimTab(Settings& s) {
         changed = true;
     }
     if (ImGui::CollapsingHeader(T(Key::FineTune))) {
-        changed |= ImGui::SliderFloat(T(Key::AnchorX), &s.anchorX, 0.05f, 0.95f, "%.2f");
-        changed |= ImGui::SliderFloat(T(Key::AnchorY), &s.anchorY, 0.05f, 0.95f, "%.2f");
-        changed |= ImGui::SliderFloat(T(Key::AnchorSize), &s.anchorRadius, 50.0f, 500.0f, "%.0f px");
+        changed |= menu::Slider(T(Key::AnchorX), &s.anchorX, 0.05f, 0.95f, "%.2f");
+        changed |= menu::Slider(T(Key::AnchorY), &s.anchorY, 0.05f, 0.95f, "%.2f");
+        changed |= menu::Slider(T(Key::AnchorSize), &s.anchorRadius, 50.0f, 500.0f, "%.0f px");
     }
     return changed;
 }
