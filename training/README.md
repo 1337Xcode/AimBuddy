@@ -122,7 +122,7 @@ Rules:
 
 - values normalized to `[0,1]`
 - class id must be `0`
-- no cross-split leakage between train, valid, and test
+- no cross-split leakage between train, valid, and test: the frames of one video stay in one split
 
 Expected dataset paths:
 

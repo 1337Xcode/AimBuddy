@@ -20,6 +20,15 @@ Built: the touch helper makes a virtual touchscreen that mirrors the real one an
 - **An accessibility service that dispatches gestures.** The player would have to turn on an accessibility service, and its gestures are strokes with a path and a duration fixed when they are sent, where the assist needs a finger that follows a moving target frame by frame beside the player's own finger. Not tried.
 - **A kernel driver or module.** It needs a custom kernel for each phone.
 
+## A general model for mobile shooters
+
+AimBuddy General finds people in most 3D shooters. A model trained on footage of several mobile shooters could be better at it, and this is what it would take, as found on the development machine (an RTX 3050 laptop GPU with 4 GB; `torch` there is the CPU build and `ultralytics` is not installed):
+
+- **Footage.** There is none on disk. The pipeline turns videos into frames and labels them with a teacher model (`training/README.md`), so what is missing is gameplay video of several games, and the right to use it.
+- **A way to know it got better.** A test set of frames from games and videos the model was not trained on, labelled by hand, scored at the size the app runs the model (256 pixels). Without it a new model can only be compared by eye.
+- **The training size.** `training/config/config.ini` trains at 640 pixels and exports a model that runs at 256, to learn small and distant people. Whether that costs accuracy at 256 has not been measured here, because there is no data to measure on. A first experiment once there is data: train at 256 and at 640, score both at 256.
+- **The setup.** Install `torch` with CUDA and `ultralytics` (`training/setup.sh` or `scripts/01_setup_environment.bat`), which is a download of a few gigabytes, and a 4 GB card needs a small batch.
+
 ## Left out on purpose
 
 Reading the game's memory, hiding the app or the virtual touchscreen from the game (random device names and ids), and pulling the trigger for the player. Some of the reference tools do these. AimBuddy does not.

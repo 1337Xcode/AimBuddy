@@ -47,7 +47,7 @@ flowchart LR
     N[raw_frames/negatives/] --> M[Mine negatives]
     T --> U[Unsplit pool]
     M --> U
-    U --> S[Hash split 80/15/5]
+    U --> S[Hash split by video 80/15/5]
     S --> D[Validate dataset]
     D --> TR[Train at imgsz=640]
     TR --> EX[Export NCNN at imgsz=256]
@@ -154,7 +154,7 @@ class_id x_center y_center width height
 Rules:
 - All coordinates normalized to [0, 1].
 - Class ID must be `0` (single class: enemy).
-- No data leakage between train, valid, and test splits.
+- No data leakage between train, valid, and test splits. Frames of one video look almost the same, so `split_dataset.py` keeps all of them in one split (it hashes the video's name, not the frame's). Frames that are not named `<video>_frame_<number>` count as one video each. Run its tests with `python -m unittest discover -s tests` in `training/`.
 - Include background-only images (empty label files) to reduce false positives.
 
 ## Skipping Manual Labelling
