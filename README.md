@@ -70,6 +70,7 @@ Each build generates its own launcher icon from a random seed; `-Paimbuddy.iconS
 | [Performance](docs/Performance.md) | What costs time, and how to read the numbers |
 | [Training](docs/Training.md) | Training a detector for your game |
 | [Troubleshooting](docs/Troubleshooting.md) | When something does not work |
+| [Deferred](docs/deferred.md) | What is not built yet, and why |
 | [Releasing](docs/Releasing.md) | Building, signing and publishing, and how updates reach players |
 | [Model store](model/README.md) | How models are published and installed |
 | [Changelog](CHANGELOG.md) | What changed in each release |
