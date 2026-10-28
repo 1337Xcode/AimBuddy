@@ -16,7 +16,7 @@ Android 11 or newer, arm64. Kotlin and Jetpack Compose for the app, C++17 for de
 
 **An overlay that Android's rules do not break.** From Android 12 the system drops every touch that passes through another app's overlay that is more opaque than 0.8, and it judges a `SurfaceView` by a rule that ignores transparent pixels. The overlay is therefore drawn in a `TextureView` in a window kept just under the limit, and it becomes opaque only while its menu takes touches. A window marked secure is drawn as solid black in every capture that is not secure, and that includes the app's own capture of the screen. So streamer mode draws nothing over the game and makes the window secure only while the menu is open.
 
-**An app that updates itself, and the models it runs.** The app reads the project's GitHub releases and downloads a newer APK. It installs it only after checking the SHA-256, the package name, that the version is newer, and that the signing certificate is the one already installed. Models come from a static index in this repository: every file is checked against the size and SHA-256 the index gives, a new model replaces the old one only when it is complete, and the default model is also built into the APK so a first run needs no connection. See [model/README.md](model/README.md).
+**An app that updates itself, and the models it runs.** The app reads the project's GitHub releases and downloads a newer APK. It installs it only after checking the SHA-256, the package name, that the version is newer, and that the signing certificate is the one already installed. Models come from a static index in this repository: every file is checked against the size and SHA-256 the index gives, a new model replaces the old one only when it is complete, and the APK carries no model of its own, so a first run opens on the Models page, where the default model is one tap away. See [model/README.md](model/README.md).
 
 ## How a frame becomes a touch
 
@@ -38,13 +38,13 @@ tracker -> overlay (outlines, drawn a little ahead of now)
 
 ## Install
 
-1. Download the latest APK from [Releases](https://github.com/1337Xcode/AimBuddy/releases) and open it.
+1. Download `AimBuddy-v<version>.apk` from [Releases](https://github.com/1337Xcode/AimBuddy/releases) and open it. The `-debug` file beside it is a debuggable build for testing and bug reports; you do not need it. The app installs over beta 2 and later without uninstalling. If Android says the package conflicts with an existing one, uninstall the old copy once and install again, see [Troubleshooting](docs/Troubleshooting.md).
 2. Open AimBuddy. It opens on the Models page: tap Get on AimBuddy General, or import a model of your own. The app carries no model, so this comes first.
 3. When it asks, allow display over other apps, notifications and screen capture.
 4. For aim assist, give AimBuddy touch access with [Shizuku](docs/ShizukuSetup.md) (no root needed) or with root. Without either, AimBuddy still outlines people.
 5. Press Start, then switch to your game.
 
-The first release that can update itself has to be installed by hand once; after that updates arrive in the app.
+Releases before 0.3.5-beta.1 cannot update themselves, so install that one by hand; later ones arrive in the app.
 
 ## Build from source
 
@@ -81,7 +81,7 @@ Each build generates its own launcher icon from a random seed; `-Paimbuddy.iconS
 
 AimBuddy is released under the AimBuddy Community Free Use License v1.0. In short: use it, change it and share it freely; do not sell it; anything you build from it stays free under the same terms and says "Based on AimBuddy" with a link here. See [LICENSE](LICENSE) for the full terms.
 
-The YOLO26 detector that comes with the app is made by Ultralytics and is licensed under AGPL-3.0.
+AimBuddy General, the detection model the store offers, is trained with Ultralytics YOLO26 and is licensed under AGPL-3.0.
 
 ## Legal notice
 

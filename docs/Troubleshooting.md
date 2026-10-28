@@ -1,6 +1,14 @@
 # Troubleshooting
 
-When something does not work: first what the app says, then the build, the touch access, detection, the aim, the models and the training pipeline.
+When something does not work: first installing the app, then what the app says, the touch access, detection, the aim, the models, the build and the training pipeline.
+
+## Installing
+
+| What Android says | Cause and fix |
+|-------------------|---------------|
+| App not installed as package conflicts with an existing package. | The copy on your phone is signed with another key than the file you are installing, and Android never lets one replace the other. Releases from beta 2 on share one key, so they install over each other. The usual causes are a beta 1 that you signed yourself, or a debug build made on a computer, which carries that computer's own key. Uninstall AimBuddy once, then install again. The settings and downloaded models go with it. |
+| App not installed. (and nothing more) | The file is damaged or incomplete, or it is for another kind of phone: AimBuddy needs an arm64 phone with Android 11 or newer. Download the file again. |
+| A second AimBuddy appears after the install. | That is the debug build (`com.aimbuddy.debug`), which installs beside the app instead of replacing it. Its name on the phone is AimBuddy Debug. Keep the app and delete the debug build if you do not need it. |
 
 ## Starting
 
@@ -65,7 +73,8 @@ Other things you may notice:
 | That model could not be downloaded. | The connection dropped or a file did not match its checksum. The model you had is untouched. Try again. |
 | That model could not be imported. | Choose the `.param` file first and then the matching `.bin` file of the same export. |
 | Can't reach GitHub. (an update) | Check the connection and try again. |
-| The download could not be verified. (an update) | The file does not match what GitHub lists for it, is not a newer build of AimBuddy, or is signed with another key than the installed copy, for example when a debug build is installed. Try again. If the installed copy is a debug build, remove it and install the release by hand, see [Releasing](Releasing.md). The settings go with it. |
+| The download could not be verified. (an update) | The file does not match what GitHub lists for it, is not a newer build of AimBuddy, or is not signed at all. Try again. |
+| The update is signed with another key. (an update) | Android never replaces an app with one signed by another key. The installed copy was probably built on another computer, or signed by you. Tap Releases, uninstall AimBuddy once, and install the release from there by hand. The settings and downloaded models go with it. |
 | The update could not be installed. | The system's installer refused the update. Free some storage and try again; if it repeats, install the release by hand. |
 | Allow AimBuddy to install apps, then come back. | Open Settings, Apps, Special app access, Install unknown apps, choose AimBuddy and allow it. |
 
@@ -95,7 +104,7 @@ The NCNN libraries were built with a different libc++ than the NDK's. `esp_jni.c
 
 ### The installer says the package is invalid or conflicts with an existing package
 
-See "Installing a build by hand" in [Releasing](Releasing.md).
+See [Installing](#installing) above, and "Installing a build by hand" in [Releasing](Releasing.md) for the commands that remove a copy that will not go.
 
 ## Training
 
