@@ -11,7 +11,7 @@ struct GlobalShift {
     float dx = 0.0f;        ///< Positive: the scene moved right.
     float dy = 0.0f;        ///< Positive: the scene moved down.
     float quality = 0.0f;   ///< 0 to 1: how far the measurement can be trusted.
-    bool unchanged = false; ///< The two frames are practically identical, so nothing moved.
+    bool unchanged = false; ///< The two frames are practically identical. Whether the camera stood still is what `quality` says: a picture without edges looks the same however far it slid.
 };
 
 /// A part of the frame in which something moves by itself (a detected enemy), in pixels of the frame given to push().
@@ -95,6 +95,7 @@ private:
     void transform(Grid& grid, bool inverse) const;
     void fft1d(Complex* data, int stride, bool inverse) const;
     void learnStaticPixels();
+    void computeWeights();
     int findCandidates(Candidate* candidates);
     float refineShift(float* shiftX, float* shiftY, int steps, float frameTextured) const;
     float measureFrameTexture() const;

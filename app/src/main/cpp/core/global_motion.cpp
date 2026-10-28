@@ -97,6 +97,13 @@ constexpr float kExplainedWeightKept = 0.1f;
 constexpr float kMoverMarginShare = 0.12f;
 constexpr float kMoverMarginCells = 1.0f;
 
+/// How far a picture can be believed on what it shows of the scene's motion, from 0 to 1, given the weight of its
+/// pixels that have an edge: nothing up to the minimum share of the picture, everything from the full share up.
+float textureEvidence(float texturedWeight) {
+    const float cells = static_cast<float>(kCells);
+    return texturedWeight > kMinTexturedShare * cells ? std::min(1.0f, texturedWeight / (kFullTexturedShare * cells)) : 0.0f;
+}
+
 /// Wraps an index in [0, kGrid) to a signed offset in [-kGrid / 2, kGrid / 2).
 int signedOffset(int index) { return index < kGrid / 2 ? index : index - kGrid; }
 
@@ -377,9 +384,8 @@ float GlobalMotionEstimator::refineShift(float* shiftX, float* shiftY, int steps
         // How well the compared pixels agree, trusted less when the picture as a whole has few edges.
         // The amount of texture that counts is the picture's, not the part this shift overlaps: a
         // large slide leaves less to compare, and that must not make the right shift look weak.
-        const float evidence = std::min(1.0f, frameTextured / (kFullTexturedShare * static_cast<float>(kCells)));
-        const bool enough = frameTextured > kMinTexturedShare * kCells && textured >= kMinOverlapShare * frameTextured &&
-                            matched >= kMinMatchedWeight;
+        const float evidence = textureEvidence(frameTextured);
+        const bool enough = evidence > 0.0f && textured >= kMinOverlapShare * frameTextured && matched >= kMinMatchedWeight;
         explained = enough ? static_cast<float>(matched / textured * std::sqrt(evidence)) : 0.0f;
         if (step == steps) {
             break;
@@ -472,6 +478,16 @@ void GlobalMotionEstimator::markMovers(const MovingBox* movers, int moverCount, 
     }
 }
 
+/// Sets how much each pixel counts in this comparison: by its place in the window, less so the more it has
+/// proved not to move with the scene, and not at all where something moves by itself.
+void GlobalMotionEstimator::computeWeights() {
+    for (int i = 0; i < kCells; ++i) {
+        const float left = static_cast<float>(staticScore_[i]) / static_cast<float>(kStaticIgnored);
+        weight_[i] = window_[i] * std::clamp(1.0f - left, 0.0f, 1.0f) * (1.0f - leftOut_[i]);
+        layerWeight_[i] = weight_[i];
+    }
+}
+
 /// Measures how far the picture in `grey_` slid compared with `previousGrey_`, then keeps it as the next frame's reference.
 GlobalShift GlobalMotionEstimator::compareWithPrevious(int side) {
     GlobalShift result;
@@ -501,21 +517,18 @@ GlobalShift GlobalMotionEstimator::compareWithPrevious(int side) {
         return result;
     }
     if (static_cast<float>(changedPixels) < kUnchangedShare * kCells) {
+        // The frames are the same. The camera stood still only if the picture has edges that would have
+        // slid with it: a sky or a plain wall looks the same however far the camera turned.
+        computeWeights();
         result.unchanged = true;
-        result.quality = 1.0f;
+        result.quality = textureEvidence(measureFrameTexture());
         return result;
     }
     // When the picture as a whole has clearly moved, whatever stayed the same is not part of the scene.
     if (static_cast<float>(changedPixels) > kMotionShare * kCells) {
         learnStaticPixels();
     }
-
-    // Every pixel counts by its place in the window, less so the more it has proved not to move with the scene.
-    for (int i = 0; i < kCells; ++i) {
-        const float left = static_cast<float>(staticScore_[i]) / static_cast<float>(kStaticIgnored);
-        weight_[i] = window_[i] * std::clamp(1.0f - left, 0.0f, 1.0f) * (1.0f - leftOut_[i]);
-        layerWeight_[i] = weight_[i];
-    }
+    computeWeights();
 
     // The scene covers most of the picture, so the shift that explains the picture best is the
     // scene's motion; something moving by itself, or the parts that stay put, explain far less.

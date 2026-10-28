@@ -182,6 +182,33 @@ TEST(global_motion_sees_identical_frames_as_unchanged) {
     CHECK(result.quality > 0.9f);
 }
 
+TEST(global_motion_cannot_vouch_for_a_flat_picture_that_did_not_change) {
+    // A sky or a plain wall looks the same however far the camera turned, so two equal frames of it
+    // say nothing about the camera. Called "unchanged with full trust" they would teach the controller
+    // that the game ignores the finger.
+    Frame flat;
+    for (int y = 0; y < kSide; ++y) {
+        for (int x = 0; x < kSide; ++x) {
+            flat.set(x, y, 128.0f);
+        }
+    }
+    const GlobalShift result = measureShift(flat, flat);
+    CHECK(result.unchanged);
+    CHECK_NEAR(result.quality, 0.0, 1e-6);
+}
+
+TEST(global_motion_cannot_vouch_for_a_picture_that_is_all_one_enemy) {
+    // A box that covers the whole picture is left out, and what is left has nothing to compare.
+    const Texture scene(16);
+    const Frame frame = renderScene(scene, 0.0f, 0.0f);
+    const MovingBox everything[] = {{0.0f, 0.0f, static_cast<float>(kSide), static_cast<float>(kSide)}};
+    GlobalMotionEstimator estimator;
+    estimator.push(frame.rgba.data(), kSide, kSide * 4, everything, 1);
+    const GlobalShift result = estimator.push(frame.rgba.data(), kSide, kSide * 4, everything, 1);
+    CHECK(result.unchanged);
+    CHECK_NEAR(result.quality, 0.0, 1e-6);
+}
+
 TEST(global_motion_needs_two_frames_and_a_steady_size) {
     const Texture texture(8);
     const Frame frame = renderScene(texture, 0.0f, 0.0f);
