@@ -253,8 +253,9 @@ void drawPerformanceReadout(ImDrawList* list, const ImVec2& windowSize) {
     const aimbuddy::DetectionPipeline::Stats stats = aimbuddy::pipeline().stats();
     char text[64];
     const bool gpu = std::strncmp(stats.backend, "GPU", 3) == 0;
+    const bool colour = std::strcmp(stats.backend, "Colour") == 0;
     std::snprintf(text, sizeof(text), "%.0f/s  %.0f ms  %s", stats.detectionsPerSecond, stats.frameAgeMs,
-                  stats.backend[0] == '\0' ? "" : (gpu ? "GPU" : "CPU"));
+                  stats.backend[0] == '\0' ? "" : (colour ? "Colour" : (gpu ? "GPU" : "CPU")));
     ImFont* font = ImGui::GetFont();
     const float size = ImGui::GetFontSize();
     const float padding = kReadoutPaddingEm * size;
