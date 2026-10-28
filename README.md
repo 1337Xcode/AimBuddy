@@ -1,6 +1,6 @@
 # AimBuddy
 
-An on-device computer vision and control system that helps people aim in touchscreen 3D shooters. It finds people in the game picture with a neural network, outlines them, and can steer the view toward the nearest one with one extra finger. It is built for players with low vision or motor impairments, for whom fast, precise aiming on a touchscreen is the barrier.
+An on-device computer vision and control system that helps people aim in touchscreen 3D shooters. It finds people in the game picture with a neural network (or, as an experiment, by the colour of the outline a game draws round them), outlines them, and can steer the view toward the nearest one with one extra finger. It is built for players with low vision or motor impairments, for whom fast, precise aiming on a touchscreen is the barrier.
 
 Android 11 or newer, arm64. Kotlin and Jetpack Compose for the app, C++17 for detection, tracking and control, NCNN for inference on the CPU or through Vulkan, Shizuku or root for touch access. Free and open source.
 
@@ -13,6 +13,8 @@ Android 11 or newer, arm64. Kotlin and Jetpack Compose for the app, C++17 for de
 **A second finger on a screen that Android will not share.** The input dispatcher follows one input device at a time in a window, so a second virtual touchscreen next to the real one loses its moves whenever a real finger is down. The touch helper (`libaimtouch.so`, run through Shizuku or root) instead takes over the real touchscreen, passes every event to one virtual copy of it, and adds the assist's finger to that copy as an extra contact. The game sees one screen with the player's fingers plus one. The helper takes the screen only when no finger is on it, needs a heartbeat from the app, gives the screen back when both volume keys are held, and if it is killed the kernel gives the screen back by itself. The merge logic (`TouchMux`) performs no input or output, so it is tested on a computer.
 
 **Detection on a phone that is also running the game.** The detector reads only a square around the crosshair, copied out of the capture buffer inside the callback. The newest frame wins: a slow phone drops frames instead of falling behind, so a result is never older than one detection. At start the model is timed on the CPU and on the GPU, and the GPU is used only if it is clearly faster, because the game needs it too. CPU work stays on the fast cores, and detection is cut to fewer runs a second when Android reports that the phone is getting hot. The tracker is a Kalman filter with two-pass association in the manner of ByteTrack, and its speed estimate is free of the camera's own movement.
+
+**Detection with no model.** The experimental colour mode finds players by one colour, such as the outline a game draws round enemies. The player taps the colour once. A lookup table turns each pixel into yes or no, small gaps are closed, the pieces are labelled and joined, and the patches shaped like a person go to the tracker a model's boxes go to. It took 6.6 to 9.8 ms a frame on the development emulator. The overlay's own marks are in the picture the finder reads, so the overlay turns its colours away from the colour looked for.
 
 **An overlay that Android's rules do not break.** From Android 12 the system drops every touch that passes through another app's overlay that is more opaque than 0.8, and it judges a `SurfaceView` by a rule that ignores transparent pixels. The overlay is therefore drawn in a `TextureView` in a window kept just under the limit, and it becomes opaque only while its menu takes touches. A window marked secure is drawn as solid black in every capture that is not secure, and that includes the app's own capture of the screen. So streamer mode draws nothing over the game, and the only secure window is a see-through one over the menu while the menu is open: a recording shows a black panel there and the game everywhere else.
 
@@ -32,7 +34,7 @@ tracker -> overlay (outlines, drawn a little ahead of now)
 
 ## How it is verified
 
-- `app/src/test/native` holds C++ tests of the parts that perform no input or output: the tracker, camera motion, the touch merger, the detector's decoding and the settings. The aim controller is run against a simulated game with a known camera gain and delay, and has to settle for gains and delays it was not told.
+- `app/src/test/native` holds C++ tests of the parts that perform no input or output: the tracker, camera motion, the touch merger, the detector's decoding, the colour finder and the settings. The aim controller is run against a simulated game with a known camera gain and delay, and has to settle for gains and delays it was not told.
 - `app/src/test/java` holds Kotlin tests of the update logic, the model store and the thermal limits.
 - Debug builds include a stand-in first-person game with a known camera response, used to run the whole loop on an emulator.
 

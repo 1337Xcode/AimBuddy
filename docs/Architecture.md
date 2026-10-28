@@ -29,12 +29,23 @@ flowchart LR
 ```
 
 1. **Capture.** `CaptureSession` mirrors the display with MediaProjection into an `ImageReader`. Each frame goes to `RoiCapture`, which copies out only the square region the detector needs (set by the "Detection area" setting) and publishes it. The mailbox keeps one frame, the newest, so a slow phone drops frames instead of falling behind.
-2. **Detect.** `DetectionPipeline` runs on its own thread. `YoloDetector` runs an NCNN model on the region. At start it times the model on the CPU and on the GPU (Vulkan) and keeps the faster one, because the GPU is shared with the game. What each class of the model means comes from the model's `model.json` (see `ModelProfile`). While the phone reports that it is warm or hot, `ThermalGovernor` asks the pipeline for fewer detections a second, and `FrameThinner` skips the frames over that limit.
+2. **Detect.** `DetectionPipeline` runs on its own thread. `YoloDetector` runs an NCNN model on the region, or, when the player chose colour detection, `ColourBlobFinder` looks for patches of one colour in it (see Colour detection). At start it times the model on the CPU and on the GPU (Vulkan) and keeps the faster one, because the GPU is shared with the game. What each class of the model means comes from the model's `model.json` (see `ModelProfile`). While the phone reports that it is warm or hot, `ThermalGovernor` asks the pipeline for fewer detections a second, and `FrameThinner` skips the frames over that limit.
 3. **Measure the camera.** `DetectionPipeline` hands every captured frame to `GlobalMotion` on the capture thread, at most 30 times a second, whether or not the detector looks at it. A box found in a frame is drawn well over a tenth of a second later, and the camera has to be known up to that moment, not only up to the picture the box was found in. `GlobalMotion` reduces both frames to 64 by 64 grey values and finds how far the whole picture slid by phase correlation, leaving out the targets being followed, the game's fixed interface and AimBuddy's own boxes. The result goes into `CameraMotion`, which also carries the player's own turn a little past the newest frame (fading out, and not while the assist's own finger is moving, because then it cannot tell whose slide it was).
 4. **Track.** `Tracker` pairs the boxes with the targets it already follows (strong detections first, then weaker ones, in the manner of ByteTrack), smooths each target with a Kalman filter and measures its speed, free of the camera's own movement. A new target is drawn and aimed at from its third sighting on, or at once when the detector is at least 90 percent sure, so a box the detector reports for a single frame is never shown. A target that looks to be standing still is smoothed harder than one that is clearly moving, and only the part of a speed the filter is sure of is carried forward to draw the box. A target that goes unseen for a few frames keeps moving along its path, so a box never blinks because of one missed detection.
 5. **Aim.** `AimLoop` runs `AimController` at a steady rate. The controller picks a target (nearest the crosshair, biggest, or most certain), predicts where it will be when this step's move takes effect, and decides how far to drag the extra finger. Each move is recorded in `CameraMotion`, so the next frames are judged knowing what the assist itself did. A target that stays put on the screen, away from the crosshair, while the camera sweeps a good way past it (the player's own weapon or character, which a detector sometimes takes for an enemy) can never be reached, so the controller gives up on it for a few seconds, longer each time it happens in the same place. The overlay stops drawing such a box too, for as long as the controller remembers it, so a gun does not stay outlined as a person.
 6. **Touch.** `TouchLink` sends the move to the helper. The helper writes it to a virtual touchscreen next to the player's own fingers.
 7. **Draw.** The overlay reads the tracker's targets on every frame and draws them. It draws a little ahead of now, so a box lands where the target will be when the frame reaches the glass.
+
+## Colour detection
+
+Choosing Colour in the Detection settings replaces the model with `ColourBlobFinder` (`core/colour_blobs.*`), for games that draw an outline or a team colour round the players. The choice is read when the assist starts, so there is no model to load and no CPU or GPU to choose.
+
+- **Learning.** The player presses Learn colour in the in-game menu and taps the colour inside the detection square. `DetectionPipeline` reads the next frame and takes the most vivid colour in a square of 11 by 11 pixels round the tap (`learnColour`: an outline is vivid, and what is behind it mostly is not). It keeps that hue, and how vivid and how bright it was as the least a pixel may be. A spot with no vivid colour is refused and the old colour stays.
+- **Finding.** A table of 65536 entries, filled once for each colour, turns a pixel of 5, 6 and 5 bits into yes or no. Small gaps in the mask are closed, so that a thin outline broken by the scenery stays one piece. The pieces are labelled, pieces that lie close together (the head and the body of one player, with a gap between) are joined, and a piece is kept when its size and shape could be a person (`BlobFilter`).
+- **Reporting.** Each patch becomes a detection of the one class with a score of 0.9, and the tracker takes it as it takes a model's box. The region is sized as for a model of 256 pixels, and the performance readout says Colour.
+- **What it cannot do.** It finds a colour, not a person: the same colour in the scenery, on the game's buttons or on the player's own weapon is a target too. The overlay's own marks are in the picture the finder reads, so while a colour is looked for the overlay turns its own colours half way round the colour wheel when they are close to it (`clearOfTarget` in `imgui_menu.cpp`).
+
+The finder allocates nothing once it has seen the size of the picture, and is tested on computer made pictures in `app/src/test/native/colour_blobs_test.cpp`.
 
 ## The camera is unknown, and the controller knows it
 
@@ -114,7 +125,7 @@ The tracker is shared by the pipeline thread, the aim loop and the overlay, and 
 
 ## Testing
 
-- `app/src/test/native` holds the C++ tests of the parts that do no input or output: the tracker, the aim controller against a simulated game with a known camera response, camera motion, the touch merger, the detector's decoding, and the settings. Run them with `sh app/src/test/native/run.sh`.
+- `app/src/test/native` holds the C++ tests of the parts that do no input or output: the tracker, the aim controller against a simulated game with a known camera response, camera motion, the touch merger, the detector's decoding, the colour finder, and the settings. Run them with `sh app/src/test/native/run.sh`.
 - `app/src/test/java` holds the Kotlin tests of the update logic, the model store and model files, the touch hints on the Home screen and the thermal limits: `./gradlew testDebugUnitTest`.
 - Debug builds contain a playground (`app/src/debug`), a stand-in first-person game with a known camera gain and delay, and a few hooks into the native code that record traces. They are compiled in only for debug builds (`AIMBUDDY_DEBUG_HOOKS`).
 
@@ -127,6 +138,7 @@ The tracker is shared by the pipeline thread, the aim loop and the overlay, and 
 | What runs while the assist is on | `AssistService.kt` |
 | Screen capture | `CaptureSession.kt`, `capture/roi_capture.*` |
 | Detection and the models | `detector/`, `core/detection_decoder.*`, `core/model_profile.h` |
+| Detecting by colour | `core/colour_blobs.*`, `DetectionPipeline::detectByColour` |
 | Easing off when the phone is hot | `ThermalGovernor.kt`, `core/frame_thinner.h` |
 | How the picture's motion is measured | `core/global_motion.*`, `core/camera_motion.*`, `core/response_estimator.*` |
 | Following targets | `core/tracker.*` |

@@ -28,6 +28,12 @@ The two outlines are drawn while you play when their switches are on, and always
 |---------|---------|--------------|
 | Detection confidence | 50% | The lowest score that starts a target, 10% to 95%. Lower finds more targets and more false ones. |
 | Detection area | 200 px | The radius around the crosshair that the detector looks at, 100 to 650 px. A smaller area makes targets look larger to the detector, so far ones are easier to find; targets outside it are not seen. The square it makes is never smaller than the model's input or larger than 1.75 times it, so the ends of the slider can look alike. |
+| Find targets with | Model | What finds the targets: the detection model, or Colour (experimental), which needs no model and looks for one colour, such as the outline some games draw round enemies. Taken when you press Start. |
+| Learn colour | | With Colour chosen, in the in-game menu only. The menu closes and a bar asks you to tap the colour inside the blue square. AimBuddy takes the most vivid colour round the tap; a dull spot says so and keeps the colour it had. Not offered in streamer mode. |
+| Colour tolerance | 14 deg | How far either side of the learned hue still counts, 4 to 40 degrees. Raise it if the outline's shade changes with the light, lower it if the scenery is picked up. |
+| Smallest target | 40 px | Patches of the colour shorter than this, in screen pixels, are not targets, 10 to 300 px. |
+
+Colour detection finds patches of the learned colour inside the blue square, joins the head and the body of one player, and keeps the patches that are shaped like a person. It cannot tell an enemy's outline from the same colour anywhere else, so a colour that is also in the scenery or on the game's buttons gives false targets: learn a colour the game uses for nothing but enemies. While it is on, the overlay turns its own marks away from that colour, and the performance readout says Colour instead of CPU or GPU.
 
 ## Aim assist
 

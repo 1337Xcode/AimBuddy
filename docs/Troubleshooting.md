@@ -46,6 +46,8 @@ Other things you may notice:
 
 - **No boxes at all.** If streamer mode is on, nothing is drawn over the game, so turn it off to see them. Otherwise lower the detection confidence, and check that the enemies are inside the detection area (the blue square, which shows while the menu is open and, with Detection area outline on, while you play).
 - **Boxes on things that are not enemies.** Raise the detection confidence. If it keeps happening in your game, train a model on it, see [Training](Training.md).
+- **Colour detection finds nothing.** The choice is taken when you press Start, so press Start again after choosing Colour. Then open the in-game menu, press Learn colour and tap the outline itself, not the player's body. A dull or grey spot cannot be learned, and the bar says so. If the outline's shade changes with the light, raise the colour tolerance; if the players are far away, lower the smallest target.
+- **Colour detection boxes things that are not enemies.** The same colour is in the scenery or on the game's buttons. Learn a colour the game uses for nothing but enemies, lower the colour tolerance, or raise the smallest target.
 - **Boxes arrive late or only a few times a second.** See [Performance](Performance.md), which also explains the numbers of the performance readout. When the phone reports that it is hot, AimBuddy runs fewer detections a second on purpose, and goes back to full speed once the phone has cooled down.
 
 ## Aim
