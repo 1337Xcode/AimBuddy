@@ -349,6 +349,28 @@ TEST(aim_waits_longer_each_time_the_game_keeps_ignoring_the_finger) {
     CHECK(lifts <= 7);   // with a wait that did not grow it would be one every 2 s: about 10
 }
 
+TEST(aim_does_not_touch_again_and_again_when_an_ignored_finger_keeps_reaching_the_edge) {
+    // The same game that never answers, with a small touch area: the finger reaches its edge in a
+    // moment, is lifted to be put down at the anchor, and every new touch used to start the wait for
+    // an answer over, so it was never judged dead and was put down hundreds of times.
+    SimulatedGame::Truth truth;
+    truth.gain = 3.0f;
+    truth.ignoredTouches = 100000;
+    AimSettings settings = baseSettings();
+    settings.anchorRadiusPx = 60.0f;
+    SimulatedGame::Belief trusted{3.0f, 0.05f, false};   // figures set by hand are trusted, so the finger moves freely
+    SimulatedGame game(truth, settings, stationary(260.0f, 80.0f), 1, trusted);
+    int touchesInFirstHalf = -1;
+    game.run(20.0f, [&](float seconds, float, float) {
+        if (seconds >= 10.0f && touchesInFirstHalf < 0) {
+            touchesInFirstHalf = game.touchCount();
+        }
+    });
+    const int touchesInSecondHalf = game.touchCount() - touchesInFirstHalf;
+    CHECK(game.controller().telemetry().deadFingers >= 3);
+    CHECK(touchesInSecondHalf * 3 <= touchesInFirstHalf * 2);   // the waits grow, so the touches thin out
+}
+
 TEST(aim_does_not_run_away_when_a_saved_camera_figure_is_far_wrong) {
     // An earlier run left the belief that the scene slides 0.9 px per finger pixel, with high
     // confidence; this game really slides it 6 px. The figures are only trusted as a guess, so the

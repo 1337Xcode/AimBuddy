@@ -205,6 +205,7 @@ private:
                       const ModelProfile& profile, Pursuit* pursuit);
     AimOutput putFingerDown(int64_t nowNs, const Pursuit& pursuit);
     bool fingerSeemsDead(int64_t nowNs);
+    void endRun();
     FingerStep planFingerStep(int64_t nowNs, const CameraResponse& response, const Pursuit& pursuit,
                               const PlayerInput& player, float dt) const;
     AimOutput moveFinger(int64_t nowNs, float dt, const Pursuit& pursuit, FingerStep step);
@@ -250,12 +251,13 @@ private:
     int watchLooks_ = 0;
     int futileLooks_ = 0;
 
-    // Is the finger being answered? When it went down, and the wait before it may go down again
-    // after the game ignored it.
-    int64_t downNs_ = 0;
+    // Is the finger being answered? A run is the touches made one after another for the same pursuit: a
+    // finger lifted at the edge of its circle and put down again at the anchor belongs to the same run,
+    // so a game that ignores every touch is judged over the whole run and not over each touch alone.
+    int64_t runStartNs_ = 0;       ///< When the run began; 0 when no finger has been down since the last one ended.
     int64_t ignoredSinceNs_ = 0;   ///< Since when the game has looked to be ignoring the finger; 0 when it has not.
-    int64_t mayTouchAfterNs_ = 0;
-    int deadStreak_ = 0;
+    int64_t mayTouchAfterNs_ = 0;  ///< The wait before the finger may go down again after the game ignored it.
+    int deadStreak_ = 0;           ///< Times in a row the game ignored the finger; sets how long the wait is.
 
     bool touching_ = false;
     bool releaseRequested_ = false;

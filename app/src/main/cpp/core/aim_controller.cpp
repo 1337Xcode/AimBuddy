@@ -165,6 +165,7 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
     if (releaseRequested_) {
         releaseRequested_ = false;
         forgetTarget();
+        endRun();
         return lift();
     }
 
@@ -173,7 +174,11 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
     telemetry_.targetId = -1;
     if (!beginPursuit(nowNs, response, tracker, profile, &pursuit)) {
         // Nobody to follow: let go. A lock that is only briefly out of sight keeps the finger down, still.
-        const AimOutput out = lockedTrackId() < 0 ? lift() : AimOutput();
+        AimOutput out;
+        if (lockedTrackId() < 0) {
+            out = lift();
+            endRun();
+        }
         noteFinger();
         return out;
     }
@@ -186,6 +191,7 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
     if (cannotCloseOn(nowNs, tracker, *pursuit.body)) {
         // Not part of the scene: let go of it and of the finger, and look for another.
         const AimOutput out = lift();
+        endRun();
         noteFinger();
         return out;
     }
@@ -196,6 +202,7 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
         ++deadStreak_;
         ++telemetry_.deadFingers;
         const AimOutput out = lift();
+        endRun();
         noteFinger();
         return out;
     }
@@ -207,10 +214,10 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
 
 /// True when the finger has moved a good way and the screen has not slid in answer, for a while.
 bool AimController::fingerSeemsDead(int64_t nowNs) {
-    if (nsToSeconds(nowNs - downNs_) < kAnswerWithinS) {
+    if (nsToSeconds(nowNs - runStartNs_) < kAnswerWithinS) {
         return false;
     }
-    const int64_t fromNs = std::max(downNs_, nowNs - static_cast<int64_t>(kAnswerWindowS * 1e9f));
+    const int64_t fromNs = std::max(runStartNs_, nowNs - static_cast<int64_t>(kAnswerWindowS * 1e9f));
     float fingerPx = 0.0f;
     float slidePx = 0.0f;
     switch (motion_->fingerAnswered(fromNs, nowNs, &fingerPx, &slidePx)) {
@@ -230,6 +237,13 @@ bool AimController::fingerSeemsDead(int64_t nowNs) {
     }
     ignoredSinceNs_ = 0;
     return false;
+}
+
+/// Ends the run of touches: the next finger gets the full time to show an effect, and a game that ignored
+/// the one before is not held against it.
+void AimController::endRun() {
+    runStartNs_ = 0;
+    ignoredSinceNs_ = 0;
 }
 
 /// Copies the finger's state into the telemetry at the end of a step.
@@ -536,11 +550,18 @@ bool AimController::beginPursuit(int64_t nowNs, const CameraResponse& response, 
 }
 
 AimOutput AimController::putFingerDown(int64_t nowNs, const Pursuit& pursuit) {
-    if (pursuit.onTarget() || nowNs < mayTouchAfterNs_) {
-        return AimOutput();  // already on target (nothing to do until it moves), or waiting after an ignored finger
+    if (pursuit.onTarget()) {
+        endRun();   // nothing to do until the target moves, and the touch that follows is a new run
+        return AimOutput();
     }
-    downNs_ = nowNs;
-    ignoredSinceNs_ = 0;
+    if (nowNs < mayTouchAfterNs_) {
+        return AimOutput();  // waiting after an ignored finger
+    }
+    // A finger put down again after reaching the edge of its circle carries on the run it was in: the time
+    // the game has had to answer is counted from the first touch, not from this one.
+    if (runStartNs_ == 0) {
+        runStartNs_ = nowNs;
+    }
     touching_ = true;
     fingerX_ = settings_.anchorX;
     fingerY_ = settings_.anchorY;

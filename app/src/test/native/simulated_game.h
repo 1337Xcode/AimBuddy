@@ -129,6 +129,9 @@ public:
 
     int fingerReversals() const { return reversals_; }
 
+    /// How many times the assist put its finger down, whether or not the game took notice.
+    int touchCount() const { return touches_; }
+
     /// How far the assist has turned the camera in all, in screen pixels.
     float cameraTravelByAssistPx() const { return assistTravelPx_; }
 
