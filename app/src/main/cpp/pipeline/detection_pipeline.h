@@ -60,10 +60,10 @@ public:
         float minHeightScreenPx = 40.0f;   ///< Patches shorter than this are not targets.
     };
 
-    /// What came of the latest request to learn the colour under the crosshair.
+    /// What came of the latest request to learn the colour the player tapped.
     enum class ColourLearning { kNone, kLearned, kNotFound };
 
-    /// Told, on the pipeline thread, what the colour under the crosshair is (or that there was none).
+    /// Told, on the pipeline thread, what the colour the player tapped is (or that there was none).
     using ColourSink = std::function<void(bool found, const ColourRange& range)>;
 
     /// Loads the model. Must not be called while running. Returns false if the model is unusable.
@@ -83,8 +83,10 @@ public:
     /// What the colour detector looks for. Thread safe.
     void setColourTarget(const ColourTarget& target);
 
-    /// Asks for the colour at the crosshair to be learned from the next frame. Thread safe.
-    void requestColourLearning() {
+    /// Asks for the colour at a place on the screen (display pixels) to be learned from the next frame. Thread safe.
+    void requestColourPick(float screenX, float screenY) {
+        pickX_.store(screenX, std::memory_order_relaxed);
+        pickY_.store(screenY, std::memory_order_relaxed);
         learningResult_.store(static_cast<int>(ColourLearning::kNone), std::memory_order_release);
         learnRequested_.store(true, std::memory_order_release);
     }
@@ -164,6 +166,8 @@ private:
     std::mutex colourMutex_;              ///< Guards colourTarget_, which the capture thread sets and the pipeline thread reads.
     ColourTarget colourTarget_;
     std::atomic<bool> learnRequested_{false};
+    std::atomic<float> pickX_{0.0f};      ///< Where on the screen the colour is to be read, while learnRequested_ is set.
+    std::atomic<float> pickY_{0.0f};
     std::atomic<int> learningResult_{static_cast<int>(ColourLearning::kNone)};
     ColourSink colourSink_;
     Tracker tracker_;

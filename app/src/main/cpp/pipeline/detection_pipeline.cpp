@@ -33,10 +33,9 @@ constexpr int kColourModelSize = 256;
 constexpr float kColourScore = 0.9f;
 constexpr float kColourConfidence = 0.5f;
 
-/// Learning looks at a square round the crosshair that reaches a fourth of the region's width to each side (and at
-/// least this many pixels), so that an outline a little way from the crosshair is in it.
-constexpr int kLearnHalfShareOfSide = 4;
-constexpr int kLearnMinHalfPx = 12;
+/// Learning looks at the square of pixels this far from the place the player tapped, each way: a thin outline a
+/// finger's width from where it landed is in it, and not so much round it that the scenery outweighs the outline.
+constexpr int kPickHalfPx = 5;
 
 /// A patch of the colour is never counted shorter than this, whatever the minimum height set in screen pixels comes to in the region.
 constexpr int kLeastPatchHeightPx = 8;
@@ -365,7 +364,7 @@ bool DetectionPipeline::detectByColour(const RoiFrame& frame, DetectionBatch& ba
     return true;
 }
 
-/// Takes the most vivid colour round the crosshair, the middle of the region, as the one to look for.
+/// Takes the most vivid colour round the place the player tapped as the one to look for.
 void DetectionPipeline::learnColourFrom(const RoiFrame& frame) {
     const int side = frame.roi.side;
     ColourRange range;
@@ -373,14 +372,18 @@ void DetectionPipeline::learnColourFrom(const RoiFrame& frame) {
         std::lock_guard<std::mutex> lock(colourMutex_);
         range = colourTarget_.range;   // keeps the player's tolerance
     }
-    const int half = std::max(kLearnMinHalfPx, side / kLearnHalfShareOfSide);
-    const bool found = side > 0 && frame.rgba.size() >= static_cast<size_t>(side) * static_cast<size_t>(side) * 4 &&
-                       learnColour(frame.rgba.data(), side, side * 4, side / 2, side / 2, half, &range);
+    // The tap is in display pixels; the frame is the region of the capture image the detector reads.
+    const float screenPerCapture = frame.geometry.screenPerCapture();
+    const int pickX = static_cast<int>(std::lround(pickX_.load(std::memory_order_relaxed) / screenPerCapture)) - frame.roi.x;
+    const int pickY = static_cast<int>(std::lround(pickY_.load(std::memory_order_relaxed) / screenPerCapture)) - frame.roi.y;
+    const bool inside = pickX >= 0 && pickY >= 0 && pickX < side && pickY < side;
+    const bool found = inside && frame.rgba.size() >= static_cast<size_t>(side) * static_cast<size_t>(side) * 4 &&
+                       learnColour(frame.rgba.data(), side, side * 4, pickX, pickY, kPickHalfPx, &range);
     if (found) {
         LOGI("Learned the colour: hue %.0f, saturation from %.2f, brightness from %.2f", range.hueDegrees, range.minSaturation,
              range.minValue);
     } else {
-        LOGI("No vivid colour near the crosshair to learn");
+        LOGI("No vivid colour where the player tapped (%s)", inside ? "it is dull" : "outside the region");
     }
     if (colourSink_) {
         colourSink_(found, range);
