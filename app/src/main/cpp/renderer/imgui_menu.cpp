@@ -386,6 +386,18 @@ int collectTargets(aimbuddy::TrackView* views) {
     return kept;
 }
 
+/// How many of the targets are people, not what the model also marks (a weapon, say).
+int countBodies(const aimbuddy::TrackView* views, int count) {
+    const aimbuddy::ModelProfile& profile = aimbuddy::pipeline().profile();
+    int bodies = 0;
+    for (int i = 0; i < count; ++i) {
+        if (profile.roleOf(views[i].classId) == aimbuddy::ClassRole::kBody) {
+            ++bodies;
+        }
+    }
+    return bodies;
+}
+
 /// Draws a line, a box or a marker for every target, and the zones the detector and the assist work in.
 void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCountOut) {
     ImDrawList* list = ImGui::GetBackgroundDrawList();
@@ -697,6 +709,17 @@ bool handlePickTouch(int action, float x, float y, const ImVec2& origin) {
     return true;
 }
 
+/// Closes the tools that draw over the game, which streamer mode does not offer: the touch area editor, and picking a colour.
+void abandonSetupTools() {
+    if (g_zoneEditing.load(std::memory_order_relaxed) || g_picking.load(std::memory_order_relaxed)) {
+        g_zoneEditing.store(false, std::memory_order_relaxed);
+        g_picking.store(false, std::memory_order_relaxed);
+        g_learnStage = LearnStage::kIdle;
+        g_grab = Grab::kNone;
+        resetTouch();
+    }
+}
+
 /// Draws the area, the dot that resizes it, and the small panel with Done and Reset.
 void drawZoneEditor(const Settings& settings, const ImVec2& origin) {
     ImDrawList* list = ImGui::GetBackgroundDrawList();
@@ -874,15 +897,19 @@ bool drawColourRow(const Settings& s) {
     drawColourDot(row, dot, s);
     ImGui::SetCursorScreenPos(ImVec2(row.x + dot + gap, row.y + 0.5f * (dot - ImGui::GetTextLineHeight())));
     ImGui::TextUnformatted(status);
+    ImGui::BeginDisabled(s.streamerMode);   // picking a colour draws over the game
+    bool tapped = false;
     if (sideBySide) {
         ImGui::SetCursorScreenPos(ImVec2(row.x + rowWidth - buttonWidth, row.y + 0.5f * (dot - buttonHeight)));
-        const bool tapped = menu::PillButton(learn, ImVec2(buttonWidth, buttonHeight), style);
+        tapped = menu::PillButton(learn, ImVec2(buttonWidth, buttonHeight), style);
         ImGui::SetCursorScreenPos(ImVec2(row.x, row.y + dot));   // the next control starts under the dot
         ImGui::Dummy(ImVec2(rowWidth, 0.0f));
-        return tapped;
+    } else {
+        ImGui::SetCursorScreenPos(ImVec2(row.x, row.y + dot + ImGui::GetStyle().ItemSpacing.y));
+        tapped = menu::PillButton(learn, ImVec2(rowWidth, buttonHeight), style);
     }
-    ImGui::SetCursorScreenPos(ImVec2(row.x, row.y + dot + ImGui::GetStyle().ItemSpacing.y));
-    return menu::PillButton(learn, ImVec2(rowWidth, buttonHeight), style);
+    ImGui::EndDisabled();
+    return tapped;
 }
 
 /// What is looked for when targets are found by colour: the colour and the button that learns it, how strictly it is matched, and how to learn it.
@@ -897,7 +924,7 @@ bool drawColourSection(Settings& s) {
     changed |= menu::Slider(T(Key::ColourTolerance), &s.colourTolerance, 4.0f, 40.0f, "%.0f deg");
     changed |= menu::Slider(T(Key::ColourMinHeight), &s.colourMinHeight, 10.0f, 300.0f, "%.0f px");
     menu::EndCard();
-    menu::Footnote(T(Key::LearnColourHint));
+    menu::Footnote(T(s.streamerMode ? Key::NotInStreamerMode : Key::LearnColourHint));
     return changed;
 }
 
@@ -969,13 +996,18 @@ bool drawAimTab(Settings& s) {
     changed |= ImGui::Checkbox(T(Key::InvertVertical), &s.invertY);
 
     ImGui::SeparatorText(T(Key::TouchAreaTitle));
+    ImGui::BeginDisabled(s.streamerMode);   // the editor draws over the game
     if (ImGui::Button(T(Key::MoveTouchArea))) {
         openZoneEditor();
     }
+    ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button(T(Key::ResetTouchArea))) {
         resetZone(s);
         changed = true;
+    }
+    if (s.streamerMode) {
+        menu::Footnote(T(Key::NotInStreamerMode));
     }
     if (ImGui::CollapsingHeader(T(Key::FineTune))) {
         changed |= menu::Slider(T(Key::AnchorX), &s.anchorX, 0.05f, 0.95f, "%.2f");
@@ -1117,7 +1149,9 @@ bool drawMenu(Settings& settings, int bodyCount) {
 
     bool changed = false;
     bool open = true;
-    if (ImGui::Begin(T(Key::AppTitle), &open, ImGuiWindowFlags_NoCollapse)) {
+    // In streamer mode the menu keeps the size it has, so that the secure window Kotlin puts over it always matches.
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | (settings.streamerMode ? ImGuiWindowFlags_NoResize : 0);
+    if (ImGui::Begin(T(Key::AppTitle), &open, flags)) {
         g_menuSize = ImGui::GetWindowSize();
         const ImVec2 position = ImGui::GetWindowPos();
         g_menuRect[0] = position.x;
@@ -1276,11 +1310,13 @@ Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */)
         const ImVec2 origin(static_cast<float>(g_overlayOriginX.load(std::memory_order_relaxed)),
                             static_cast<float>(g_overlayOriginY.load(std::memory_order_relaxed)));
         int bodyCount = 0;
-        // Streamer mode draws nothing over the game, so a recording, and AimBuddy's own capture, see it
-        // as it is. The menu and the touch area editor still show what is behind them.
-        const bool controlsOpen = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed) ||
-                                  g_picking.load(std::memory_order_relaxed);
-        if (!settings.streamerMode || controlsOpen) {
+        if (settings.streamerMode) {
+            // Streamer mode draws nothing over the game, so a recording, and AimBuddy's own capture, see it as it
+            // is. The menu is all that shows, and Kotlin hides it from captures with a secure window of its size.
+            abandonSetupTools();
+            aimbuddy::TrackView views[aimbuddy::kMaxTracks];
+            bodyCount = countBodies(views, collectTargets(views));
+        } else {
             drawGameOverlay(settings, origin, &bodyCount);
         }
 

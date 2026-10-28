@@ -120,6 +120,7 @@ enum class Key : int {
     FineTune,
     ZoneEditorHint,
     Done,
+    NotInStreamerMode,
 
     // Colour detection
     DetectColour,
@@ -225,6 +226,9 @@ inline const char* kTranslations[static_cast<int>(Key::Count)][static_cast<int>(
                                 "拖动圆圈来移动，拖动圆点来调整大小。",
                                 "Перетащите круг, чтобы переместить. Перетащите точку, чтобы изменить размер."},
     /* Done */                 {"Done", "完成", "Готово"},
+    /* NotInStreamerMode */    {"Not available in streamer mode, which draws nothing over the game. Turn it off to use this.",
+                                "主播模式不会在游戏画面上绘制任何内容，所以这里不可用。关闭主播模式后即可使用。",
+                                "Недоступно в режиме стримера: он ничего не рисует поверх игры. Отключите его, чтобы пользоваться этим."},
 
     /* DetectColour */         {"Colour detection", "颜色检测", "Поиск по цвету"},
     /* ColourNotLearned */     {"No colour learned yet", "尚未学习颜色", "Цвет ещё не выбран"},
