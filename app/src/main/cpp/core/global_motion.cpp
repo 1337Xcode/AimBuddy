@@ -275,11 +275,11 @@ int GlobalMotionEstimator::findCandidates(Candidate* candidates) {
         const Complex& b = previous_[i];
         surface[i].re = a.re * b.re + a.im * b.im;
         surface[i].im = a.im * b.re - a.re * b.im;
-        powerSum += std::hypot(surface[i].re, surface[i].im);
+        powerSum += std::sqrt(surface[i].re * surface[i].re + surface[i].im * surface[i].im);
     }
     const float floorPower = 0.01f * static_cast<float>(powerSum / kCells) + 1e-6f;
     for (int i = 0; i < kCells; ++i) {
-        const float magnitude = std::hypot(surface[i].re, surface[i].im) + floorPower;
+        const float magnitude = std::sqrt(surface[i].re * surface[i].re + surface[i].im * surface[i].im) + floorPower;
         surface[i].re = surface[i].re / magnitude * lowPass_[i];
         surface[i].im = surface[i].im / magnitude * lowPass_[i];
     }
@@ -371,7 +371,7 @@ float GlobalMotionEstimator::refineShift(float* shiftX, float* shiftY, int steps
                 jyy += w * gy * gy;
                 jxe += w * gx * difference;
                 jye += w * gy * difference;
-                if (std::hypot(gx, gy) >= kTextureMinGradient) {
+                if (gx * gx + gy * gy >= kTextureMinGradient * kTextureMinGradient) {
                     textured += weight_[i];
                     matched += static_cast<double>(weight_[i]) * robust;
                 }
@@ -414,7 +414,7 @@ float GlobalMotionEstimator::measureFrameTexture() const {
             const int i = y * kGrid + x;
             const float gx = 0.5f * (grey_[i + 1] - grey_[i - 1]);
             const float gy = 0.5f * (grey_[i + kGrid] - grey_[i - kGrid]);
-            if (std::hypot(gx, gy) >= kTextureMinGradient) {
+            if (gx * gx + gy * gy >= kTextureMinGradient * kTextureMinGradient) {
                 textured += weight_[i];
             }
         }
