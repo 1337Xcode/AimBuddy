@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <sstream>
 
@@ -69,7 +71,32 @@ struct Writer {
     void operator()(const char* name, bool value) const { *out << name << '=' << (value ? 1 : 0) << '\n'; }
 };
 
-/// Sets each field from the matching entry of a parsed file, leaving it alone when there is none.
+/// Reads a number that starts `text`. False for text with no number in it, and for a value that is not finite:
+/// NaN passes every clamp, so it would travel on to the aim loop's finger position.
+bool parseFloat(const std::string& text, float* number) {
+    char* end = nullptr;
+    const float parsed = std::strtof(text.c_str(), &end);
+    if (end == text.c_str() || !std::isfinite(parsed)) {
+        return false;
+    }
+    *number = parsed;
+    return true;
+}
+
+/// Reads a whole number that starts `text`. One too big for an int becomes the largest (or smallest) int, for the
+/// clamp that follows to bring in range; wrapped around, it could land on a perfectly good value.
+bool parseInt(const std::string& text, int* number) {
+    char* end = nullptr;
+    const long parsed = std::strtol(text.c_str(), &end, 10);
+    if (end == text.c_str()) {
+        return false;
+    }
+    *number = static_cast<int>(std::clamp<long>(parsed, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
+    return true;
+}
+
+/// Sets each field from the matching entry of a parsed file, leaving it alone when there is none or when
+/// the entry is not a number, so a damaged line costs that one setting its value, not its default.
 struct Reader {
     const std::map<std::string, std::string>* values;
 
@@ -79,17 +106,20 @@ struct Reader {
     }
     void operator()(const char* name, float& field) const {
         if (const std::string* text = find(name)) {
-            field = std::strtof(text->c_str(), nullptr);
+            parseFloat(*text, &field);
         }
     }
     void operator()(const char* name, int& field) const {
         if (const std::string* text = find(name)) {
-            field = static_cast<int>(std::strtol(text->c_str(), nullptr, 10));
+            parseInt(*text, &field);
         }
     }
     void operator()(const char* name, bool& field) const {
+        int number = 0;
         if (const std::string* text = find(name)) {
-            field = std::strtol(text->c_str(), nullptr, 10) != 0;
+            if (parseInt(*text, &number)) {
+                field = number != 0;
+            }
         }
     }
 };
@@ -100,23 +130,13 @@ struct Setter {
     const std::string* value;
 
     void operator()(const char* fieldName, float& field) const {
-        if (*name != fieldName) {
-            return;
-        }
-        char* end = nullptr;
-        const float parsed = std::strtof(value->c_str(), &end);
-        if (end != value->c_str()) {
-            field = parsed;
+        if (*name == fieldName) {
+            parseFloat(*value, &field);
         }
     }
     void operator()(const char* fieldName, int& field) const {
-        if (*name != fieldName) {
-            return;
-        }
-        char* end = nullptr;
-        const long parsed = std::strtol(value->c_str(), &end, 10);
-        if (end != value->c_str()) {
-            field = static_cast<int>(parsed);
+        if (*name == fieldName) {
+            parseInt(*value, &field);
         }
     }
     void operator()(const char* fieldName, bool& field) const {
@@ -249,7 +269,9 @@ bool SettingsStore::saveIfChanged(const std::string& path) {
     {
         std::ofstream file(temporary, std::ios::trunc);
         file << text;
+        file.close();   // buffered text is written here, so a full disk shows only now, and a short file must not replace the good one
         if (!file) {
+            std::remove(temporary.c_str());
             std::lock_guard<std::mutex> lock(mutex_);
             dirty_ = true;
             return false;

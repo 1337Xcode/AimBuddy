@@ -70,6 +70,37 @@ TEST(settings_are_clamped_when_read) {
     CHECK_NEAR(loaded.anchorRadius, 500.0, 1e-6);
 }
 
+TEST(a_value_that_is_not_a_number_keeps_the_default_when_read) {
+    // Text, or nothing at all, after the sign: reading it as zero would mean 10% confidence and a sensitivity of 0.1.
+    const Settings defaults;
+    const Settings loaded = SettingsStore::parse("sceneGain=\nconfidence=abc\nshowLabels=true\nboxThickness=\naimStrength=0.9\n");
+    CHECK_NEAR(loaded.sceneGain, defaults.sceneGain, 1e-6);
+    CHECK_NEAR(loaded.confidence, defaults.confidence, 1e-6);
+    CHECK(loaded.showLabels == defaults.showLabels);
+    CHECK(loaded.boxThickness == defaults.boxThickness);
+    CHECK_NEAR(loaded.aimStrength, 0.9, 1e-6);   // the good line next to the bad ones is still read
+}
+
+TEST(a_number_that_is_not_finite_is_refused) {
+    // NaN passes every clamp, and would reach the aim loop's finger position.
+    const Settings defaults;
+    const Settings loaded = SettingsStore::parse("anchorX=nan\nconfidence=inf\naimStrength=-inf\naimFovRadius=NaN\n");
+    CHECK_NEAR(loaded.anchorX, defaults.anchorX, 1e-6);
+    CHECK_NEAR(loaded.confidence, defaults.confidence, 1e-6);
+    CHECK_NEAR(loaded.aimStrength, defaults.aimStrength, 1e-6);
+    CHECK_NEAR(loaded.aimFovRadius, defaults.aimFovRadius, 1e-6);
+
+    CHECK_NEAR(SettingsStore::withValue(defaults, "anchorY", "nan").anchorY, defaults.anchorY, 1e-6);
+    CHECK_NEAR(SettingsStore::withValue(defaults, "aimStrength", "inf").aimStrength, defaults.aimStrength, 1e-6);
+}
+
+TEST(an_integer_too_big_for_its_type_is_clamped_not_wrapped) {
+    const Settings loaded = SettingsStore::parse("boxThickness=4294967297\nlanguage=4294967298\ntouchBackend=-4294967297\n");
+    CHECK(loaded.boxThickness == 6);   // not 1
+    CHECK(loaded.language == 2);       // not 2 by luck of the wrap: the largest value
+    CHECK(loaded.touchBackend == 0);   // not 2147483647 wrapped back to a valid one
+}
+
 TEST(settings_tolerate_damaged_lines) {
     const Settings loaded = SettingsStore::parse("\n=5\nnonsense\r\nconfidence=0.7\r\n  \n");
     CHECK_NEAR(loaded.confidence, 0.7, 1e-6);
