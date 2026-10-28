@@ -18,7 +18,7 @@ The capture hands each frame to the detector through a mailbox that keeps only t
 
 ## CPU or GPU
 
-When the assist starts, the model is timed on the CPU and on the GPU (Vulkan), three warm-up runs and twelve timed ones each, and the median counts. The GPU is used only if it takes less than 80% of the CPU's time, because the game needs the GPU too. A phone without a working Vulkan driver uses the CPU.
+When the assist starts, the model is timed on the CPU and on the GPU (Vulkan), three warm-up runs and twelve timed ones each, and the median counts. The GPU is used only if it takes less than 80% of the CPU's time, because the game needs the GPU too. The GPU must also give the CPU's answer to a test picture (the values of the two outputs, sorted, within 5% of the CPU's range at 64 ranks, and none that is not a number), or the CPU is used; the log says `The GPU's answer matches the CPU's` or `does not match`. A phone without a working Vulkan driver uses the CPU.
 
 On the CPU the model runs on at most three of the fast cores, and the little cores stay free for the game and the system. Idle worker threads sleep after one millisecond instead of spinning, which keeps the phone cooler between frames.
 
