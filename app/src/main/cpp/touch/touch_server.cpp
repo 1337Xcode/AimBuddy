@@ -560,6 +560,9 @@ void TouchServer::drainTouchscreen(TouchMux* target) {
         }
         if (target->needsResync()) {
             catchUp(target);
+            if (stopping_) {
+                return;   // a failed catch up gives the screen back, which frees `target` when it is the merged screen
+            }
         }
         if (count < kEventsPerRead) {
             return;
