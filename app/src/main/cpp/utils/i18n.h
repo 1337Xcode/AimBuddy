@@ -121,6 +121,19 @@ enum class Key : int {
     ZoneEditorHint,
     Done,
 
+    // Colour detection
+    DetectColour,
+    ColourNotLearned,
+    ColourLearned,
+    LearnColour,
+    LearnColourHint,
+    PickTheColour,
+    Cancel,
+    LearnFound,
+    LearnNotFound,
+    ColourTolerance,
+    ColourMinHeight,
+
     // Info tab
     InfoTitle,
     InfoVersion,
@@ -212,6 +225,20 @@ inline const char* kTranslations[static_cast<int>(Key::Count)][static_cast<int>(
                                 "拖动圆圈来移动，拖动圆点来调整大小。",
                                 "Перетащите круг, чтобы переместить. Перетащите точку, чтобы изменить размер."},
     /* Done */                 {"Done", "完成", "Готово"},
+
+    /* DetectColour */         {"Colour detection", "颜色检测", "Поиск по цвету"},
+    /* ColourNotLearned */     {"No colour learned yet", "尚未学习颜色", "Цвет ещё не выбран"},
+    /* ColourLearned */        {"Colour learned", "已学习颜色", "Цвет выбран"},
+    /* LearnColour */          {"Learn colour", "学习颜色", "Запомнить цвет"},
+    /* LearnColourHint */      {"Press the button, then tap the colour you want inside the blue square, such as an enemy's outline. The menu closes while you pick.",
+                                "点击按钮后，在蓝色方框内点按想要的颜色，例如敌人的轮廓。选取时菜单会关闭。",
+                                "Нажмите кнопку, затем коснитесь нужного цвета внутри синего квадрата, например контура противника. Меню закроется на время выбора."},
+    /* PickTheColour */        {"Tap the colour inside the blue square", "在蓝色方框内点按该颜色", "Коснитесь цвета внутри синего квадрата"},
+    /* Cancel */               {"Cancel", "取消", "Отмена"},
+    /* LearnFound */           {"Colour learned", "已学习颜色", "Цвет запомнен"},
+    /* LearnNotFound */        {"No vivid colour there", "那里没有鲜艳的颜色", "Там нет яркого цвета"},
+    /* ColourTolerance */      {"Colour tolerance", "颜色容差", "Допуск цвета"},
+    /* ColourMinHeight */      {"Smallest target", "最小目标", "Наименьшая цель"},
 
     /* InfoTitle */            {"AimBuddy (open source)", "AimBuddy(开源)", "AimBuddy (открытый код)"},
     /* InfoVersion */          {"Version: " AIMBUDDY_VERSION, "版本：" AIMBUDDY_VERSION, "Версия: " AIMBUDDY_VERSION},

@@ -68,6 +68,7 @@ int g_windowHeight = 0;
 
 std::atomic<bool> g_menuVisible{false};
 std::atomic<bool> g_zoneEditing{false};   ///< The touch area editor is open. Like the menu, it makes the window take touches.
+std::atomic<bool> g_picking{false};       ///< The player is being asked to tap a colour. The window takes the touches for that.
 std::atomic<uint64_t> g_frameCount{0};
 
 // Where the overlay window's top-left corner sits on the display. Game space drawing (targets, the
@@ -293,6 +294,75 @@ ImU32 clearOfTarget(ImU32 colour, const Settings& settings) {
     return ImGui::ColorConvertFloat4ToU32(rgba);
 }
 
+/// Learning a colour: the player is asked to tap it, the pipeline reads it from the next frame, and the answer is shown.
+enum class LearnStage { kIdle, kPicking, kWaiting, kResult };
+LearnStage g_learnStage = LearnStage::kIdle;   ///< GL thread only, except that the touch handler ends kPicking (see pickColourAt).
+double g_learnStageEnds = 0.0;                 ///< ImGui's clock when the stage is over.
+bool g_learnFound = false;
+float g_pickCancelRect[4] = {0.0f, 0.0f, 0.0f, 0.0f};   ///< The Cancel button as drawn last: left, top, right, bottom.
+
+constexpr double kLearnWaitS = 3.0;
+constexpr double kLearnResultS = 2.0;
+
+/// Draws what the player is asked to do, or the answer, in a label at the top of the screen, and moves the learning on. The menu comes back after the answer.
+void drawColourLearning(ImDrawList* list, const ImVec2& windowSize) {
+    if (g_learnStage == LearnStage::kIdle) {
+        return;
+    }
+    const double now = ImGui::GetTime();
+    char text[96] = "";
+    bool withCancel = false;
+    switch (g_learnStage) {
+        case LearnStage::kPicking:
+            std::snprintf(text, sizeof(text), "%s", T(Key::PickTheColour));
+            withCancel = true;
+            break;
+        case LearnStage::kWaiting: {
+            const aimbuddy::DetectionPipeline::ColourLearning answer = aimbuddy::pipeline().colourLearning();
+            if (answer != aimbuddy::DetectionPipeline::ColourLearning::kNone || now >= g_learnStageEnds) {
+                g_learnFound = answer == aimbuddy::DetectionPipeline::ColourLearning::kLearned;
+                g_learnStage = LearnStage::kResult;
+                g_learnStageEnds = now + kLearnResultS;
+            }
+            break;
+        }
+        case LearnStage::kResult:
+            if (now >= g_learnStageEnds) {
+                g_learnStage = LearnStage::kIdle;
+                g_menuVisible.store(true, std::memory_order_relaxed);   // the menu shows what was learned
+                return;
+            }
+            std::snprintf(text, sizeof(text), "%s", T(g_learnFound ? Key::LearnFound : Key::LearnNotFound));
+            break;
+        case LearnStage::kIdle:
+            return;
+    }
+    if (text[0] == '\0') {
+        return;
+    }
+    ImFont* font = ImGui::GetFont();
+    const float size = ImGui::GetFontSize() * 1.2f;
+    const float padding = 0.5f * size;
+    const ImVec2 textSize = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+    const float cancelWidth = withCancel ? font->CalcTextSizeA(size, FLT_MAX, 0.0f, T(Key::Cancel)).x + 2.0f * padding : 0.0f;
+    const float labelWidth = textSize.x + 2.0f * padding;
+    const float gap = withCancel ? padding : 0.0f;
+    const float left = (windowSize.x - labelWidth - gap - cancelWidth) * 0.5f;
+    const ImVec2 corner(left, 2.0f * size);
+    const float height = textSize.y + 2.0f * padding;
+    list->AddRectFilled(corner, ImVec2(corner.x + labelWidth, corner.y + height), IM_COL32(0, 0, 0, 190), 0.4f * size);
+    list->AddText(font, size, ImVec2(corner.x + padding, corner.y + padding), IM_COL32(255, 255, 255, 240), text);
+    if (withCancel) {
+        const float buttonLeft = corner.x + labelWidth + gap;
+        list->AddRectFilled(ImVec2(buttonLeft, corner.y), ImVec2(buttonLeft + cancelWidth, corner.y + height), IM_COL32(60, 60, 70, 230), 0.4f * size);
+        list->AddText(font, size, ImVec2(buttonLeft + padding, corner.y + padding), IM_COL32(255, 255, 255, 240), T(Key::Cancel));
+        g_pickCancelRect[0] = buttonLeft;
+        g_pickCancelRect[1] = corner.y;
+        g_pickCancelRect[2] = buttonLeft + cancelWidth;
+        g_pickCancelRect[3] = corner.y + height;
+    }
+}
+
 /// Draws a line, a box or a marker for every target, and the zones the detector and the assist work in.
 void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCountOut) {
     ImDrawList* list = ImGui::GetBackgroundDrawList();
@@ -308,7 +378,8 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
     // The guides (crosshair, detection square, reach circle) are for setting up. While playing they
     // would sit on top of the game and inside the picture the detector reads, so they only show while
     // the menu or the touch area editor is open.
-    const bool showGuides = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed);
+    const bool showGuides = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed) ||
+                            g_picking.load(std::memory_order_relaxed);
     if (showGuides) {
         const float arm = 11.5f;
         const ImU32 crossColor = clearOfTarget(IM_COL32(58, 156, 255, 240), settings);
@@ -404,6 +475,7 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
     if (settings.showPerformance) {
         drawPerformanceReadout(list, windowSize);
     }
+    drawColourLearning(list, windowSize);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -578,6 +650,42 @@ void openZoneEditor() {
     resetTouch();
 }
 
+/// Closes the menu and asks the player to tap the colour to look for, inside the area the detector reads.
+void startColourPicking() {
+    g_menuVisible.store(false, std::memory_order_relaxed);
+    g_grab = Grab::kNone;
+    resetTouch();
+    g_learnStage = LearnStage::kPicking;
+    g_picking.store(true, std::memory_order_relaxed);
+}
+
+/// Handles a touch while the player is asked to tap a colour: Cancel gives up, a tap inside the detector's area picks the colour there.
+bool handlePickTouch(int action, float x, float y, const ImVec2& origin) {
+    if (action == 0) {
+        if (insideRect(g_pickCancelRect, x, y)) {
+            g_picking.store(false, std::memory_order_relaxed);
+            g_learnStage = LearnStage::kIdle;
+            g_menuVisible.store(true, std::memory_order_relaxed);
+        }
+        return true;
+    }
+    if (action != 1) {
+        return true;   // a finger moving or lost is not a tap
+    }
+    float left, top, right, bottom;
+    const float screenX = x + origin.x;
+    const float screenY = y + origin.y;
+    if (insideRect(g_pickCancelRect, x, y) || !GetDetectionZoneScreenRect(&left, &top, &right, &bottom) || screenX < left ||
+        screenX > right || screenY < top || screenY > bottom) {
+        return true;   // outside the area the detector reads: the prompt stays
+    }
+    aimbuddy::pipeline().requestColourPick(screenX, screenY);
+    g_picking.store(false, std::memory_order_relaxed);
+    g_learnStage = LearnStage::kWaiting;
+    g_learnStageEnds = ImGui::GetTime() + kLearnWaitS;
+    return true;
+}
+
 /// Draws the area, the dot that resizes it, and the small panel with Done and Reset.
 void drawZoneEditor(const Settings& settings, const ImVec2& origin) {
     ImDrawList* list = ImGui::GetBackgroundDrawList();
@@ -715,6 +823,30 @@ const char* helperStatusText(const aimbuddy::AimLoop::Stats& stats) {
     }
 }
 
+/// What is looked for when targets are found by colour: the colour, the button that learns it, and how strictly it is matched.
+bool drawColourSection(Settings& s) {
+    bool changed = false;
+    ImGui::SeparatorText(T(Key::DetectColour));
+    if (s.colourLearned) {
+        float red, green, blue;
+        ImGui::ColorConvertHSVtoRGB(s.colourHue / 360.0f, std::min(1.0f, s.colourSaturation + 0.3f), 1.0f, red, green, blue);
+        ImGui::ColorButton("##LearnedColour", ImVec4(red, green, blue, 1.0f),
+                           ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoDragDrop,
+                           ImVec2(dp(26.0f), dp(26.0f)));
+        ImGui::SameLine();
+        ImGui::TextUnformatted(T(Key::ColourLearned));
+    } else {
+        ImGui::TextUnformatted(T(Key::ColourNotLearned));
+    }
+    if (ImGui::Button(T(Key::LearnColour))) {
+        startColourPicking();
+    }
+    ImGui::TextWrapped("%s", T(Key::LearnColourHint));
+    changed |= ImGui::SliderFloat(T(Key::ColourTolerance), &s.colourTolerance, 4.0f, 40.0f, "%.0f deg");
+    changed |= ImGui::SliderFloat(T(Key::ColourMinHeight), &s.colourMinHeight, 10.0f, 300.0f, "%.0f px");
+    return changed;
+}
+
 bool drawVisualsTab(Settings& s) {
     bool changed = false;
     changed |= ImGui::Checkbox(T(Key::ShowLabels), &s.showLabels);
@@ -730,7 +862,11 @@ bool drawVisualsTab(Settings& s) {
     changed |= ImGui::SliderInt(T(Key::BoxThickness), &s.boxThickness, 1, 6);
     ImGui::Separator();
 
-    changed |= ImGui::SliderFloat(T(Key::Confidence), &s.confidence, 0.1f, 0.95f, "%.2f");
+    if (aimbuddy::pipeline().detectsByColour()) {
+        changed |= drawColourSection(s);
+    } else {
+        changed |= ImGui::SliderFloat(T(Key::Confidence), &s.confidence, 0.1f, 0.95f, "%.2f");
+    }
     changed |= ImGui::SliderFloat(T(Key::DetectionZone), &s.detectionZoneRadius, 100.0f, 650.0f, "%.0f px");
     ImGui::Separator();
 
@@ -1020,7 +1156,8 @@ Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */)
         int bodyCount = 0;
         // Streamer mode draws nothing over the game, so a recording, and AimBuddy's own capture, see it
         // as it is. The menu and the touch area editor still show what is behind them.
-        const bool controlsOpen = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed);
+        const bool controlsOpen = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed) ||
+                                  g_picking.load(std::memory_order_relaxed);
         if (!settings.streamerMode || controlsOpen) {
             drawGameOverlay(settings, origin, &bodyCount);
         }
@@ -1070,6 +1207,11 @@ Java_com_aimbuddy_OverlayNative_touch(JNIEnv* /* env */, jclass /* clazz */, jin
     if (!g_imguiReady.load(std::memory_order_acquire)) {
         return JNI_FALSE;
     }
+    if (g_picking.load(std::memory_order_relaxed)) {
+        const ImVec2 origin(static_cast<float>(g_overlayOriginX.load(std::memory_order_relaxed)),
+                            static_cast<float>(g_overlayOriginY.load(std::memory_order_relaxed)));
+        return handlePickTouch(action, x, y, origin) ? JNI_TRUE : JNI_FALSE;
+    }
     if (g_zoneEditing.load(std::memory_order_relaxed)) {
         return handleZoneTouch(action, x, y) ? JNI_TRUE : JNI_FALSE;
     }
@@ -1097,7 +1239,8 @@ Java_com_aimbuddy_OverlayNative_touch(JNIEnv* /* env */, jclass /* clazz */, jin
 /// Whether the overlay window should be touchable: only while the menu is open.
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_aimbuddy_OverlayNative_wantsTouches(JNIEnv* /* env */, jclass /* clazz */) {
-    const bool wanted = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed);
+    const bool wanted = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed) ||
+                        g_picking.load(std::memory_order_relaxed);
     return wanted ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -1107,6 +1250,7 @@ Java_com_aimbuddy_OverlayNative_showMenu(JNIEnv* /* env */, jclass /* clazz */, 
     g_menuVisible.store(visible == JNI_TRUE, std::memory_order_relaxed);
     if (visible != JNI_TRUE) {
         g_zoneEditing.store(false, std::memory_order_relaxed);
+        g_picking.store(false, std::memory_order_relaxed);
     }
 }
 
@@ -1135,6 +1279,8 @@ Java_com_aimbuddy_OverlayNative_detach(JNIEnv* /* env */, jclass /* clazz */) {
     g_imguiReady.store(false, std::memory_order_release);
     g_menuVisible.store(false, std::memory_order_relaxed);
     g_zoneEditing.store(false, std::memory_order_relaxed);
+    g_picking.store(false, std::memory_order_relaxed);
+    g_learnStage = LearnStage::kIdle;
     resetTouch();
     if (g_backendReady) {
         ImGui_ImplOpenGL3_Shutdown();
