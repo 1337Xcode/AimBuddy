@@ -107,6 +107,16 @@ public:
     bool isAimDown() const { return contacts_[aimSlot()].active; }
     int realContactCount() const;
 
+    /// A finger the player has on the screen, as the real touchscreen last reported it.
+    struct RealContact {
+        int32_t trackingId = -1;
+        int32_t x = 0;   ///< Raw units of the touchscreen.
+        int32_t y = 0;
+    };
+
+    /// Copies the player's fingers that are down and whose position is known, up to `capacity` of them. Returns how many.
+    int copyRealContacts(RealContact* out, int capacity) const;
+
 private:
     struct Contact {
         bool active = false;

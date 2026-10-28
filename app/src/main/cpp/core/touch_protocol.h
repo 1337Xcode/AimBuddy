@@ -39,6 +39,8 @@ enum class Request : uint8_t {
 enum class Report : uint8_t {
     kReady = 1,   ///< The touchscreen was found. a: slot count, b: raw x maximum, c: raw y maximum.
     kStatus = 2,  ///< state and reason describe where things stand.
+    kPlayer = 3,  ///< What the player's own fingers are doing, while the helper holds the screen. a: how many are down,
+                  ///< b and c: the speed of the quickest on the left and on the right half of the display, in pixels a second.
 };
 
 /// Where the helper stands.
@@ -119,6 +121,15 @@ inline ReportPacket makeStatus(State state, Reason reason = Reason::kNone) {
     packet.type = static_cast<uint8_t>(Report::kStatus);
     packet.state = static_cast<uint8_t>(state);
     packet.reason = static_cast<uint16_t>(reason);
+    return packet;
+}
+
+inline ReportPacket makePlayer(int fingersDown, int leftPxS, int rightPxS) {
+    ReportPacket packet;
+    packet.type = static_cast<uint8_t>(Report::kPlayer);
+    packet.a = fingersDown;
+    packet.b = leftPxS;
+    packet.c = rightPxS;
     return packet;
 }
 

@@ -264,6 +264,32 @@ TEST(mux_keeps_two_real_fingers_apart) {
     CHECK(rig.reader.problems().empty());
 }
 
+TEST(mux_lists_the_fingers_the_player_has_down_and_never_the_extra_one) {
+    Rig rig;
+    TouchMux::RealContact fingers[kRealSlots];
+    CHECK(rig.mux.copyRealContacts(fingers, kRealSlots) == 0);
+
+    rig.screen.down(0, 4, 1000, 2000);
+    rig.screen.down(3, 9, 7000, 15000);
+    rig.mux.aimDown(6000, 9000);
+    int count = rig.mux.copyRealContacts(fingers, kRealSlots);
+    CHECK(count == 2);   // the extra finger is not the player's
+    if (count == 2) {
+        CHECK(fingers[0].trackingId == 4 && fingers[0].x == 1000 && fingers[0].y == 2000);
+        CHECK(fingers[1].trackingId == 9 && fingers[1].x == 7000 && fingers[1].y == 15000);
+    }
+
+    rig.screen.move(0, 1100, 2300);
+    rig.screen.up(3);
+    count = rig.mux.copyRealContacts(fingers, kRealSlots);
+    CHECK(count == 1);
+    if (count == 1) {
+        CHECK(fingers[0].trackingId == 4 && fingers[0].x == 1100 && fingers[0].y == 2300);
+    }
+
+    CHECK(rig.mux.copyRealContacts(fingers, 0) == 0);   // no room, none copied
+}
+
 TEST(mux_adds_the_extra_finger_in_its_own_slot) {
     Rig rig;
     rig.screen.down(0, 5, 1000, 2000);

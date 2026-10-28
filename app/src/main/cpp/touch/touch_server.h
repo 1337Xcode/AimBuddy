@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include "core/player_fingers.h"
 #include "core/screen_mapping.h"
 #include "core/touch_protocol.h"
 #include "evdev_device.h"
@@ -101,6 +102,7 @@ private:
     void resetObserver();
     void readKeys(int fd);
     void checkVirtualDevice();
+    void reportPlayerFingers(int64_t now);
 
     // Taking the screen over and giving it back.
     void engage();
@@ -133,6 +135,9 @@ private:
     VirtualTouchscreen virtual_;
     std::unique_ptr<TouchMux> observer_;   ///< Follows the real screen's fingers while it is not taken over.
     std::unique_ptr<TouchMux> mux_;        ///< Merges the screen and the extra finger while it is.
+
+    PlayerFingers player_;                 ///< How fast the player's own fingers move, for the app to hear of.
+    bool playerWasDown_ = false;           ///< A finger was down at the last report, so one more is owed when the last lifts.
 
     std::vector<int> keyFds_;
     bool volumeUpHeld_ = false;

@@ -83,6 +83,40 @@ TEST(mapping_treats_odd_rotation_numbers_as_turns) {
     CHECK(c.x == d.x && c.y == d.y);
 }
 
+TEST(mapping_runs_backwards_to_the_place_a_touch_started_from) {
+    // A position sent to the panel and read back is where it began, to within a raw unit, for every turn.
+    for (int rotation = 0; rotation < 4; ++rotation) {
+        const bool sideways = rotation % 2 == 1;
+        const int width = sideways ? kLongEdge : kShortEdge;
+        const int height = sideways ? kShortEdge : kLongEdge;
+        for (const float shareX : {0.0f, 0.2f, 0.5f, 0.93f, 1.0f}) {
+            for (const float shareY : {0.0f, 0.31f, 0.5f, 0.77f, 1.0f}) {
+                const float x = shareX * static_cast<float>(width);
+                const float y = shareY * static_cast<float>(height);
+                const RawPoint raw = displayToRaw(x, y, width, height, rotation, kPanel);
+                const DisplayPoint back = rawToDisplay(raw.x, raw.y, width, height, rotation, kPanel);
+                CHECK_NEAR(back.x, x, 0.3);
+                CHECK_NEAR(back.y, y, 0.3);
+            }
+        }
+    }
+}
+
+TEST(mapping_reads_a_raw_corner_as_the_display_corner_it_is) {
+    // Rotation 1: the panel's top edge is on the player's left, so its top right corner is the display's top left.
+    const DisplayPoint topLeft = rawToDisplay(kPanel.maxX, 0, kLongEdge, kShortEdge, 1, kPanel);
+    CHECK_NEAR(topLeft.x, 0.0, 1e-3);
+    CHECK_NEAR(topLeft.y, 0.0, 1e-3);
+    // Rotation 3: the panel's top edge is on the player's right, so its top left corner is the display's top right.
+    const DisplayPoint topRight = rawToDisplay(0, 0, kLongEdge, kShortEdge, 3, kPanel);
+    CHECK_NEAR(topRight.x, kLongEdge, 1e-3);
+    CHECK_NEAR(topRight.y, 0.0, 1e-3);
+    // Raw units outside the panel's range are brought onto it.
+    const DisplayPoint far = rawToDisplay(-500, 99999, kShortEdge, kLongEdge, 0, kPanel);
+    CHECK_NEAR(far.x, 0.0, 1e-3);
+    CHECK_NEAR(far.y, kLongEdge, 1e-3);
+}
+
 TEST(protocol_packets_keep_their_size_and_floats) {
     using namespace aimbuddy::touch::protocol;
     CHECK(sizeof(RequestPacket) == 16);
@@ -96,4 +130,7 @@ TEST(protocol_packets_keep_their_size_and_floats) {
     CHECK(status.state == static_cast<uint8_t>(State::kMerging));
     const ReportPacket ready = makeReady(10, 8639, 19199);
     CHECK(ready.a == 10 && ready.b == 8639 && ready.c == 19199);
+    const ReportPacket player = makePlayer(2, 120, 640);
+    CHECK(player.type == static_cast<uint8_t>(Report::kPlayer));
+    CHECK(player.a == 2 && player.b == 120 && player.c == 640);
 }

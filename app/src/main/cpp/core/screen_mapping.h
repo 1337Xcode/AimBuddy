@@ -64,6 +64,42 @@ inline RawPoint displayToRaw(float x, float y, int displayWidth, int displayHeig
     return point;
 }
 
+/// A position on the display, in pixels.
+struct DisplayPoint {
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+/// The way back from displayToRaw: where on the display a touch the screen reported in raw units is.
+inline DisplayPoint rawToDisplay(int32_t rawX, int32_t rawY, int displayWidth, int displayHeight, int rotation,
+                                 const RawRange& range) {
+    const float spanX = static_cast<float>(std::max(range.maxX - range.minX, 1));
+    const float spanY = static_cast<float>(std::max(range.maxY - range.minY, 1));
+    const float a = std::clamp(static_cast<float>(rawX - range.minX) / spanX, 0.0f, 1.0f);
+    const float b = std::clamp(static_cast<float>(rawY - range.minY) / spanY, 0.0f, 1.0f);
+
+    // Position as a fraction along the display's own width (u) and height (v): displayToRaw's turn, undone.
+    float u = a;
+    float v = b;
+    switch (((rotation % 4) + 4) % 4) {
+        case 1:
+            u = b;
+            v = 1.0f - a;
+            break;
+        case 2:
+            u = 1.0f - a;
+            v = 1.0f - b;
+            break;
+        case 3:
+            u = 1.0f - b;
+            v = a;
+            break;
+        default:
+            break;
+    }
+    return {u * static_cast<float>(displayWidth), v * static_cast<float>(displayHeight)};
+}
+
 }  // namespace aimbuddy::touch
 
 #endif  // AIMBUDDY_CORE_SCREEN_MAPPING_H

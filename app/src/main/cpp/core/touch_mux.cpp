@@ -200,6 +200,19 @@ int TouchMux::realContactCount() const {
     return count;
 }
 
+int TouchMux::copyRealContacts(RealContact* out, int capacity) const {
+    const int xIndex = axisIndex(kAbsMtPositionX);
+    const int yIndex = axisIndex(kAbsMtPositionY);
+    int count = 0;
+    for (int slot = 0; slot < info_.slotCount && count < capacity; ++slot) {
+        const Contact& contact = contacts_[slot];
+        if (contact.active && contact.known[xIndex] && contact.known[yIndex]) {
+            out[count++] = {contact.trackingId, contact.values[xIndex], contact.values[yIndex]};
+        }
+    }
+    return count;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The extra finger
 // ---------------------------------------------------------------------------------------------

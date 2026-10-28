@@ -330,6 +330,30 @@ void TouchServer::tick() {
     } else {
         keysHeldSinceNs_ = 0;
     }
+
+    reportPlayerFingers(now);
+}
+
+/// Tells the app how fast the player's fingers move: each tick while one is down, and once more when the last lifts.
+void TouchServer::reportPlayerFingers(int64_t now) {
+    if (phase_ != Phase::kMerging || !mux_ || !display_.isKnown()) {
+        return;
+    }
+    TouchMux::RealContact contacts[kMaxRealSlots];
+    const int count = mux_->copyRealContacts(contacts, kMaxRealSlots);
+    if (count == 0 && !playerWasDown_) {
+        return;   // nothing is down and nothing was: nothing to say
+    }
+    PlayerFingers::Finger fingers[kMaxRealSlots];
+    for (int i = 0; i < count; ++i) {
+        const DisplayPoint at =
+            rawToDisplay(contacts[i].x, contacts[i].y, display_.width, display_.height, display_.rotation, rawRange_);
+        fingers[i] = {contacts[i].trackingId, at.x, at.y};
+    }
+    player_.update(now, fingers, count, static_cast<float>(display_.width));
+    playerWasDown_ = count > 0;
+    const PlayerFingers::Activity& activity = player_.activity();
+    send(makePlayer(activity.fingersDown, static_cast<int>(activity.leftPxS), static_cast<int>(activity.rightPxS)));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -624,6 +648,8 @@ void TouchServer::grabNow() {
         return;
     }
     mux_ = std::make_unique<TouchMux>(screenInfo_.device, &virtual_);
+    player_.reset();
+    playerWasDown_ = false;
     phase_ = Phase::kMerging;
     SAY_VERBOSE("touchscreen taken over");
     sendStatus(State::kMerging);
@@ -642,6 +668,8 @@ void TouchServer::disengage(Reason reason) {
         }
     }
     phase_ = Phase::kReleased;
+    player_.reset();
+    playerWasDown_ = false;
     if (wasActive) {
         SAY_VERBOSE("touchscreen given back (reason %d)", static_cast<int>(reason));
         sendStatus(State::kReleased, reason);

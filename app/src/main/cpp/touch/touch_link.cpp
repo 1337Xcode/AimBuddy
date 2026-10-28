@@ -9,6 +9,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 
@@ -166,6 +167,8 @@ void TouchLink::closeLocked() {
     connected_.store(false, std::memory_order_release);
     ready_.store(false, std::memory_order_release);
     state_.store(static_cast<uint8_t>(State::kStopped), std::memory_order_release);
+    std::lock_guard<std::mutex> lock(playerMutex_);
+    player_ = PlayerReport();   // what a helper that is gone said about the player's fingers is no longer news
 }
 
 bool TouchLink::sendLocked(const RequestPacket& packet) {
@@ -246,7 +249,18 @@ void TouchLink::handleReport(const ReportPacket& report) {
     } else if (report.type == static_cast<uint8_t>(Report::kStatus)) {
         state_.store(report.state, std::memory_order_release);
         reason_.store(report.reason, std::memory_order_release);
+    } else if (report.type == static_cast<uint8_t>(Report::kPlayer)) {
+        std::lock_guard<std::mutex> lock(playerMutex_);
+        player_.activity.fingersDown = std::max(report.a, 0);
+        player_.activity.leftPxS = static_cast<float>(std::max(report.b, 0));
+        player_.activity.rightPxS = static_cast<float>(std::max(report.c, 0));
+        player_.atNs = steadyNowNs();
     }
+}
+
+TouchLink::PlayerReport TouchLink::playerReport() const {
+    std::lock_guard<std::mutex> lock(playerMutex_);
+    return player_;
 }
 
 }  // namespace aimbuddy::touch

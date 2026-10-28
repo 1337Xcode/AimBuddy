@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <mutex>
 
+#include "core/player_fingers.h"
 #include "core/touch_protocol.h"
 
 namespace aimbuddy::touch {
@@ -62,6 +63,13 @@ public:
     /// When the last request was sent (steady clock), so a caller can keep the heartbeat going.
     int64_t lastSendNs() const { return lastSendNs_.load(std::memory_order_acquire); }
 
+    /// What the helper last said about the player's own fingers, and when it arrived (steady clock; 0 when nothing has).
+    struct PlayerReport {
+        PlayerFingers::Activity activity;
+        int64_t atNs = 0;
+    };
+    PlayerReport playerReport() const;
+
 private:
     bool sendLocked(const protocol::RequestPacket& packet);
     void handleReport(const protocol::ReportPacket& report);
@@ -78,6 +86,9 @@ private:
     std::atomic<uint8_t> state_{static_cast<uint8_t>(protocol::State::kStopped)};
     std::atomic<uint16_t> reason_{0};
     std::atomic<int64_t> lastSendNs_{0};
+
+    mutable std::mutex playerMutex_;   ///< Guards the report below, which the aim loop reads while the poll writes it.
+    PlayerReport player_;
 };
 
 }  // namespace aimbuddy::touch

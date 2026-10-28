@@ -232,6 +232,7 @@ add_executable(aimtouch
     touch/aimtouch_main.cpp
     touch/touch_server.cpp
     touch/evdev_device.cpp
+    core/player_fingers.cpp
     core/touch_mux.cpp
 )
 target_include_directories(aimtouch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
