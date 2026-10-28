@@ -483,11 +483,12 @@ void DetectionPipeline::run() {
             continue;
         }
 
-        tracker_.update(batch.detections, batch.count, batch.captureNs, &batch.scanned);
+        const int64_t arrivedNs = steadyNowNs();
+        tracker_.update(batch.detections, batch.count, batch.captureNs, &batch.scanned, arrivedNs);
         if (observer_) {
             observer_(batch);
         }
-        recordStats(batch, steadyNowNs());
+        recordStats(batch, arrivedNs);
     }
     LOGI("Detection pipeline stopped");
 }
