@@ -825,27 +825,70 @@ const char* helperStatusText(const aimbuddy::AimLoop::Stats& stats) {
     }
 }
 
-/// What is looked for when targets are found by colour: the colour, the button that learns it, and how strictly it is matched.
+/// How the colour looked for is shown, in font heights: the round dot with the colour in it, and the button that learns another.
+constexpr float kColourDotEm = 2.4f;
+constexpr float kLearnButtonEm = 2.1f;
+constexpr float kColourGapEm = 0.7f;      ///< Between the dot and the words beside it.
+constexpr float kLearnPaddingEm = 0.9f;   ///< Between the learn button's ends and its label.
+
+/// Draws the colour looked for as a round dot, or as an empty ring while none is learned. `topLeft` is the corner of the dot's square.
+void drawColourDot(const ImVec2& topLeft, float diameter, const Settings& s) {
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    const ImVec2 centre(topLeft.x + 0.5f * diameter, topLeft.y + 0.5f * diameter);
+    if (!s.colourLearned) {
+        list->AddCircle(centre, 0.5f * diameter - 1.0f, ImGui::GetColorU32(ImGuiCol_TextDisabled), 0, 2.0f);
+        return;
+    }
+    float red, green, blue;
+    ImGui::ColorConvertHSVtoRGB(s.colourHue / 360.0f, std::min(1.0f, s.colourSaturation + 0.3f), 1.0f, red, green, blue);
+    list->AddCircleFilled(centre, 0.5f * diameter, ImGui::GetColorU32(ImVec4(red, green, blue, 1.0f)));
+    list->AddCircle(centre, 0.5f * diameter, IM_COL32(255, 255, 255, 70), 0, 1.5f);   // keeps a dark colour in view on the dark card
+}
+
+/**
+ * Draws the dot, what is known of the colour, and the button that learns it. They share a line when the card is wide
+ * enough; when it is not, the button gets a line of its own across the card. Returns true when the button was tapped.
+ */
+bool drawColourRow(const Settings& s) {
+    const float font = ImGui::GetFontSize();
+    const float dot = kColourDotEm * font;
+    const float gap = kColourGapEm * font;
+    const float rowWidth = menu::ContentWidth();
+    const char* status = s.colourLearned ? T(Key::ColourLearned) : T(Key::ColourNotLearned);
+    const char* learn = T(Key::LearnColour);
+    const float buttonHeight = kLearnButtonEm * font;
+    const float buttonWidth = ImGui::CalcTextSize(learn).x + 2.0f * kLearnPaddingEm * font;
+    const bool sideBySide = dot + gap + ImGui::CalcTextSize(status).x + gap + buttonWidth <= rowWidth;
+    const menu::PillStyle style = s.colourLearned ? menu::PillStyle::kTinted : menu::PillStyle::kPrimary;   // with nothing learned, learning is the next step
+
+    const ImVec2 row = ImGui::GetCursorScreenPos();
+    drawColourDot(row, dot, s);
+    ImGui::SetCursorScreenPos(ImVec2(row.x + dot + gap, row.y + 0.5f * (dot - ImGui::GetTextLineHeight())));
+    ImGui::TextUnformatted(status);
+    if (sideBySide) {
+        ImGui::SetCursorScreenPos(ImVec2(row.x + rowWidth - buttonWidth, row.y + 0.5f * (dot - buttonHeight)));
+        const bool tapped = menu::PillButton(learn, ImVec2(buttonWidth, buttonHeight), style);
+        ImGui::SetCursorScreenPos(ImVec2(row.x, row.y + dot));   // the next control starts under the dot
+        ImGui::Dummy(ImVec2(rowWidth, 0.0f));
+        return tapped;
+    }
+    ImGui::SetCursorScreenPos(ImVec2(row.x, row.y + dot + ImGui::GetStyle().ItemSpacing.y));
+    return menu::PillButton(learn, ImVec2(rowWidth, buttonHeight), style);
+}
+
+/// What is looked for when targets are found by colour: the colour and the button that learns it, how strictly it is matched, and how to learn it.
 bool drawColourSection(Settings& s) {
     bool changed = false;
     ImGui::SeparatorText(T(Key::DetectColour));
-    if (s.colourLearned) {
-        float red, green, blue;
-        ImGui::ColorConvertHSVtoRGB(s.colourHue / 360.0f, std::min(1.0f, s.colourSaturation + 0.3f), 1.0f, red, green, blue);
-        ImGui::ColorButton("##LearnedColour", ImVec4(red, green, blue, 1.0f),
-                           ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoDragDrop,
-                           ImVec2(dp(26.0f), dp(26.0f)));
-        ImGui::SameLine();
-        ImGui::TextUnformatted(T(Key::ColourLearned));
-    } else {
-        ImGui::TextUnformatted(T(Key::ColourNotLearned));
-    }
-    if (ImGui::Button(T(Key::LearnColour))) {
+    menu::BeginCard();
+    if (drawColourRow(s)) {
         startColourPicking();
     }
-    ImGui::TextWrapped("%s", T(Key::LearnColourHint));
+    menu::Divider();
     changed |= menu::Slider(T(Key::ColourTolerance), &s.colourTolerance, 4.0f, 40.0f, "%.0f deg");
     changed |= menu::Slider(T(Key::ColourMinHeight), &s.colourMinHeight, 10.0f, 300.0f, "%.0f px");
+    menu::EndCard();
+    menu::Footnote(T(Key::LearnColourHint));
     return changed;
 }
 

@@ -18,6 +18,10 @@ constexpr ImVec4 kDangerText(1.0f, 0.42f, 0.39f, 1.0f);
 constexpr float kDangerFillAlpha = 0.18f;
 constexpr float kDangerFillPressedAlpha = 0.34f;
 
+/// The accent as a faint fill, resting and pressed.
+constexpr float kTintedFillAlpha = 0.22f;
+constexpr float kTintedFillPressedAlpha = 0.38f;
+
 /// How far the label may shrink to fit a narrow button before it is cut off instead.
 constexpr float kLeastLabelScale = 0.75f;
 
@@ -32,6 +36,25 @@ constexpr float kNameGapEm = 0.12f;      ///< Between the line with the name and
 constexpr float kValueGapEm = 0.8f;      ///< The least between a long name and the value.
 constexpr float kHaloScale = 1.9f;       ///< The glow round the thumb while a finger holds it, against the thumb's size.
 constexpr float kHaloAlpha = 0.22f;
+
+// How a card and what goes with it are laid out, in font heights.
+constexpr float kCardPaddingEm = 0.8f;
+constexpr float kCardRoundingEm = 0.9f;
+constexpr float kDividerRiseEm = 0.1f;   ///< How far under the row above the line is drawn.
+constexpr float kDividerRoomEm = 0.2f;   ///< The room the line takes between two rows, besides the usual space.
+constexpr float kFootnoteScale = 0.86f;
+constexpr float kFootnoteGapEm = 0.1f;   ///< Between a card and the note under it.
+
+/// The card being drawn, if any: where it starts and how wide it is. Cards do not nest, so one is enough.
+struct Card {
+    bool open = false;
+    ImDrawListSplitter splitter;   ///< Puts the panel behind what is drawn in it, though it is only known how tall it is at the end.
+    ImVec2 topLeft;
+    float width = 0.0f;
+    float padding = 0.0f;
+};
+Card g_card;
+
 
 ImVec4 scaled(const ImVec4& colour, float factor) {
     return ImVec4(std::min(1.0f, colour.x * factor), std::min(1.0f, colour.y * factor), std::min(1.0f, colour.z * factor), colour.w);
@@ -120,6 +143,10 @@ bool PillButton(const char* label, const ImVec2& size, PillStyle style) {
         fillPressed = scaled(fill, 0.8f);
         text = theme.Colors[ImGuiCol_WindowBg];     // the dark of the window reads on the accent
         text.w = 1.0f;
+    } else if (style == PillStyle::kTinted) {
+        text = theme.Colors[ImGuiCol_SliderGrab];
+        fill = ImVec4(text.x, text.y, text.z, kTintedFillAlpha);
+        fillPressed = ImVec4(text.x, text.y, text.z, kTintedFillPressedAlpha);
     } else {
         fill = ImVec4(kDangerText.x, kDangerText.y, kDangerText.z, kDangerFillAlpha);
         fillPressed = ImVec4(kDangerText.x, kDangerText.y, kDangerText.z, kDangerFillPressedAlpha);
@@ -145,7 +172,7 @@ bool PillButton(const char* label, const ImVec2& size, PillStyle style) {
 }
 
 bool Slider(const char* label, float* value, float min, float max, const char* valueFormat) {
-    const float width = ImGui::GetContentRegionAvail().x;
+    const float width = ContentWidth();
     const ImVec2 line = reserveNameLine(width);
     float ratio = max > min ? std::clamp((*value - min) / (max - min), 0.0f, 1.0f) : 0.0f;
     ImGui::PushID(label);
@@ -165,7 +192,7 @@ bool Slider(const char* label, float* value, float min, float max, const char* v
 }
 
 bool SliderInt(const char* label, int* value, int min, int max, const char* valueFormat) {
-    const float width = ImGui::GetContentRegionAvail().x;
+    const float width = ContentWidth();
     const ImVec2 line = reserveNameLine(width);
     float ratio = max > min ? std::clamp(static_cast<float>(*value - min) / static_cast<float>(max - min), 0.0f, 1.0f) : 0.0f;
     ImGui::PushID(label);
@@ -187,11 +214,72 @@ bool SliderInt(const char* label, int* value, int min, int max, const char* valu
 bool Choice(const char* label, int* selected, const char* const* options, int count) {
     ImGui::TextUnformatted(label);
     tuckUnderName();
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    ImGui::SetNextItemWidth(ContentWidth());
     ImGui::PushID(label);
     const bool changed = ImGui::Combo("##choice", selected, options, count);
     ImGui::PopID();
     return changed;
+}
+
+float ContentWidth() {
+    if (!g_card.open) {
+        return ImGui::GetContentRegionAvail().x;
+    }
+    return g_card.topLeft.x + g_card.width - g_card.padding - ImGui::GetCursorScreenPos().x;
+}
+
+void BeginCard() {
+    const float font = ImGui::GetFontSize();
+    g_card.padding = kCardPaddingEm * font;
+    g_card.topLeft = ImGui::GetCursorScreenPos();
+    g_card.width = ImGui::GetContentRegionAvail().x;
+    g_card.open = true;
+
+    // What goes in the card is drawn on channel 1, in front of the panel, which is drawn last on channel 0.
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    g_card.splitter.Split(list, 2);
+    g_card.splitter.SetCurrentChannel(list, 1);
+    ImGui::SetCursorScreenPos(ImVec2(g_card.topLeft.x + g_card.padding, g_card.topLeft.y + g_card.padding));
+    ImGui::BeginGroup();
+}
+
+void EndCard() {
+    ImGui::EndGroup();
+    const float bottom = ImGui::GetItemRectMax().y + g_card.padding;
+
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    g_card.splitter.SetCurrentChannel(list, 0);
+    list->AddRectFilled(g_card.topLeft, ImVec2(g_card.topLeft.x + g_card.width, bottom), ImGui::GetColorU32(ImGuiCol_PopupBg),
+                        kCardRoundingEm * ImGui::GetFontSize());
+    g_card.splitter.Merge(list);
+    g_card.open = false;
+
+    // Tells the layout where the card ends; the next control comes the usual space under it.
+    ImGui::SetCursorScreenPos(ImVec2(g_card.topLeft.x, bottom));
+    ImGui::Dummy(ImVec2(g_card.width, 0.0f));
+}
+
+void Divider() {
+    const float font = ImGui::GetFontSize();
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    const float right = g_card.open ? g_card.topLeft.x + g_card.width : at.x + ImGui::GetContentRegionAvail().x;
+    const float y = at.y + kDividerRiseEm * font;
+    ImGui::GetWindowDrawList()->AddLine(ImVec2(at.x, y), ImVec2(right, y), ImGui::GetColorU32(ImGuiCol_Separator));
+    ImGui::Dummy(ImVec2(0.0f, kDividerRoomEm * font));
+}
+
+void Footnote(const char* text) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float indent = kCardPaddingEm * ImGui::GetFontSize();
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - style.ItemSpacing.y + kFootnoteGapEm * ImGui::GetFontSize());
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
+    ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+    ImGui::PushFont(nullptr, style.FontSizeBase * kFootnoteScale);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ContentWidth() - indent);
+    ImGui::TextUnformatted(text);
+    ImGui::PopTextWrapPos();
+    ImGui::PopFont();
+    ImGui::PopStyleColor();
 }
 
 }  // namespace aimbuddy::menu

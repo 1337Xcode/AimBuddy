@@ -15,6 +15,7 @@ namespace aimbuddy::menu {
 /// How a pill button is coloured.
 enum class PillStyle {
     kPrimary,   ///< Filled with the accent colour: the main action of a row of buttons.
+    kTinted,    ///< The accent colour on a faint fill of its own: an action in the middle of a page.
     kDanger,    ///< Tinted red: an action that stops something.
 };
 
@@ -33,6 +34,22 @@ bool SliderInt(const char* label, int* value, int min, int max, const char* valu
 
 /// A drop down list with its name above it, over the full width. Returns true when another option was chosen.
 bool Choice(const char* label, int* selected, const char* const* options, int count);
+
+/**
+ * Starts a rounded panel around the controls drawn until EndCard(). The sliders and lists in it stop short of the
+ * panel's edge. Cards do not nest.
+ */
+void BeginCard();
+void EndCard();
+
+/// How wide the controls drawn next may be: the rest of the page's width, or of the open card's.
+float ContentWidth();
+
+/// A thin line between two rows of a card, from the card's text edge to its right edge.
+void Divider();
+
+/// A small dimmed paragraph, for what a card does not say itself. It wraps at the edge of the page.
+void Footnote(const char* text);
 
 }  // namespace aimbuddy::menu
 
