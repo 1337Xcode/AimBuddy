@@ -10,9 +10,13 @@ import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
-/** Installing a model from the store: the bytes that arrive, and a download that arrives damaged. */
+/** Installing a model from the store: the bytes that arrive, a download that is cancelled, and one that arrives damaged. */
 class ModelStoreInstallTest {
 
     @get:Rule
@@ -64,6 +68,60 @@ class ModelStoreInstallTest {
         assertTrue(seen.all { it.second == total })
         assertEquals(seen.map { it.first }.sorted(), seen.map { it.first })   // never goes back
         assertEquals(total, seen.last().first)
+    }
+
+    @Test
+    fun aCancelledDownloadLeavesNothingBehindAndTheOldModelAsItWas() {
+        val target = File(folder.root, "models/test")
+        target.mkdirs()
+        File(target, "model.param").writeText("the old model")
+        var asked = 0
+
+        try {
+            serving().install(model, target, isCancelled = { ++asked > 3 }) { _, _ -> }
+            fail("the install should have been cancelled")
+        } catch (expected: DownloadCancelledException) {
+            // the way a stop is told
+        }
+
+        assertEquals("the old model", File(target, "model.param").readText())
+        assertFalse(File(folder.root, "models/test$DOWNLOAD_SUFFIX").exists())
+    }
+
+    @Test
+    fun aReadThatIsWaitingOnAQuietConnectionIsEndedWhenTheDownloadIsAborted() {
+        val target = File(folder.root, "models/test")
+        val reading = CountDownLatch(1)
+        val stalled = object : InputStream() {
+            private val closed = CountDownLatch(1)
+            override fun read(): Int = throw UnsupportedOperationException()
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                reading.countDown()
+                closed.await()   // nothing arrives, for as long as the connection is open
+                throw IOException("Socket closed")
+            }
+            override fun close() = closed.countDown()
+        }
+        val repository = ModelStoreRepository(baseUrl, folder.newFolder("cache"), { stalled }) { error("no index") }
+        var cancelled = false
+        var outcome: Throwable? = null
+        val install = thread {
+            outcome = try {
+                repository.install(model, target, isCancelled = { cancelled }) { _, _ -> }
+                null
+            } catch (e: Throwable) {
+                e
+            }
+        }
+
+        assertTrue(reading.await(5, TimeUnit.SECONDS))
+        cancelled = true
+        repository.abort()
+        install.join(5_000)
+
+        assertFalse("the install should have ended", install.isAlive)
+        assertTrue("it ended with $outcome", outcome is DownloadCancelledException)
+        assertFalse(target.exists())
     }
 
     @Test

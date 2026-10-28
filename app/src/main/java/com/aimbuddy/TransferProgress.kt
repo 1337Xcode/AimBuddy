@@ -1,5 +1,7 @@
 package com.aimbuddy
 
+import java.io.IOException
+
 /** How far a download has got: what has arrived, what there will be in all, and how fast it is coming. */
 data class TransferProgress(val bytesDone: Long = 0, val bytesTotal: Long = 0, val bytesPerSecond: Long = 0) {
 
@@ -45,3 +47,6 @@ class TransferMeter(private val windowMs: Long = WINDOW_MS) {
         const val LEAST_SPAN_MS = 600L
     }
 }
+
+/** The player asked for a download to stop. Not a failure: nothing is said about it. */
+class DownloadCancelledException : IOException("The download was cancelled")

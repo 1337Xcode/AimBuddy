@@ -18,6 +18,7 @@ import com.aimbuddy.NativeBridge
 import com.aimbuddy.Project
 import com.aimbuddy.R
 import com.aimbuddy.StoreModelDefinition
+import com.aimbuddy.DownloadCancelledException
 import com.aimbuddy.TransferMeter
 import com.aimbuddy.TransferProgress
 import com.aimbuddy.ui.theme.Accent
@@ -44,6 +45,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** A short message for the player, shown once. */
 data class UiMessage(@StringRes val resId: Int, val args: List<Any> = emptyList())
@@ -59,8 +61,8 @@ sealed interface StoreState {
     data object Failed : StoreState
 }
 
-/** The download under way: which model, and how far it has got. */
-data class Transfer(val modelId: String, val progress: TransferProgress = TransferProgress())
+/** The download under way: which model, how far it has got, and whether the player has asked for it to stop. */
+data class Transfer(val modelId: String, val progress: TransferProgress = TransferProgress(), val cancelling: Boolean = false)
 
 /** What the models screens show. `transfer` is the model being downloaded, if any. */
 data class ModelsState(
@@ -134,6 +136,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val installRequests: SharedFlow<UpdateStatus.ReadyToInstall> = _installRequests.asSharedFlow()
 
     private var saveJob: Job? = null
+    private val cancelRequested = AtomicBoolean(false)
     private var pendingParam: Uri? = null
     private var pendingName = "model"
 
@@ -364,6 +367,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Asked for by the player: the download under way stops at its next read and leaves nothing behind. */
+    fun cancelDownload() {
+        if (_models.value.transfer == null) {
+            return
+        }
+        cancelRequested.set(true)
+        _models.update { state -> state.copy(transfer = state.transfer?.copy(cancelling = true)) }
+        work.launch(Dispatchers.IO) { storeRepository.abort() }   // closing a socket is not done on the main thread
+    }
+
     /** Downloads a model from the store, or the newer version of one that is installed, and makes it the one in use. */
     fun downloadModel(model: StoreModelDefinition) {
         if (_models.value.transfer != null) {
@@ -372,6 +385,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val wasInUse = _models.value.activeId == model.id
         val isNew = _models.value.installedVersion(model.id) == null
         val isFirstModel = _models.value.installed.isEmpty()
+        cancelRequested.set(false)
         _models.update { it.copy(transfer = Transfer(model.id, TransferProgress(bytesTotal = model.totalSizeBytes))) }
         work.launch {
             val meter = TransferMeter()
@@ -379,7 +393,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val installed = withContext(Dispatchers.IO) {
                 runCatching {
                     val id = catalog.sanitizeModelId(model.id)
-                    val files = storeRepository.install(model, File(context.filesDir, "models/$id")) { done, total ->
+                    val files = storeRepository.install(model, File(context.filesDir, "models/$id"), { cancelRequested.get() }) { done, total ->
                         // The screen is told a few times a second, not at every read of the network.
                         val nowMs = SystemClock.elapsedRealtime()
                         if (done == total || nowMs - shownAtMs >= PROGRESS_INTERVAL_MS) {
@@ -407,9 +421,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 if (!isFirstModel) {
                     _messages.tryEmit(UiMessage(R.string.models_next_start))
                 }
-            }.onFailure {
-                Log.w(TAG, "Download failed: ${it.message}")
-                _messages.tryEmit(UiMessage(R.string.models_download_failed))
+            }.onFailure { error ->
+                if (error is DownloadCancelledException) {
+                    Log.i(TAG, "Download cancelled")
+                } else {
+                    Log.w(TAG, "Download failed: ${error.message}")
+                    _messages.tryEmit(UiMessage(R.string.models_download_failed))
+                }
             }
             _models.update { it.copy(transfer = null) }
             refreshModels()

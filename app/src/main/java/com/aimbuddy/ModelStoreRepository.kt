@@ -72,6 +72,22 @@ class ModelStoreRepository(
     private val readText: (String) -> String = { Http.getText(it) },
 ) {
 
+    /** The stream a download is reading, so that [abort] can end a read that is waiting for a connection that has gone quiet. */
+    @Volatile
+    private var reading: InputStream? = null
+
+    /**
+     * Ends the read a download is waiting in, for the player who has asked it to stop: a read on a stalled connection
+     * would else go on for as long as the connection's timeout. The install ends with a [DownloadCancelledException].
+     */
+    fun abort() {
+        try {
+            reading?.close()
+        } catch (e: IOException) {
+            Log.w(TAG, "Could not close the download: ${e.message}")
+        }
+    }
+
     /** Fetches the list of models. Without a connection the copy saved by the last success is used. */
     fun fetchModels(): List<StoreModelDefinition> {
         val cache = File(cacheDir, INDEX_FILE)
@@ -107,11 +123,13 @@ class ModelStoreRepository(
      * Downloads a model into [targetDir], replacing what is there. The files go into a folder beside
      * it first and are checked one by one, so a broken or altered download never replaces a model
      * that works. [onProgress] gets the bytes that have arrived in all and the bytes there will be, each
-     * time more arrive.
+     * time more arrive. Between two reads of the network [isCancelled] is asked: when it says true the
+     * install ends with a [DownloadCancelledException] and leaves nothing behind.
      */
     fun install(
         model: StoreModelDefinition,
         targetDir: File,
+        isCancelled: () -> Boolean = { false },
         onProgress: (bytesDone: Long, bytesTotal: Long) -> Unit,
     ): InstalledFiles {
         val parent = targetDir.parentFile ?: throw IOException("There is no place to put the model")
@@ -126,7 +144,7 @@ class ModelStoreRepository(
             var doneBytes = 0L
             val steps = listOf(model.param to PARAM_FILE, model.bin to BIN_FILE, model.profile to PROFILE_FILE)
             for ((file, name) in steps) {
-                download(file, File(work, name)) { read -> onProgress(doneBytes + read, total) }
+                download(file, File(work, name), isCancelled) { read -> onProgress(doneBytes + read, total) }
                 doneBytes += file.sizeBytes
             }
             swapIn(work, targetDir)
@@ -153,7 +171,7 @@ class ModelStoreRepository(
         val temporary = File(file.path + ".part")
         return try {
             file.parentFile?.mkdirs()
-            download(icon, temporary) { }
+            download(icon, temporary, { false }) { }
             if (temporary.renameTo(file)) file else null
         } catch (e: IOException) {
             Log.w(TAG, "The icon of ${model.id} could not be fetched: ${e.message}")
@@ -163,26 +181,39 @@ class ModelStoreRepository(
     }
 
     /** Downloads one file to [destination] and checks it against the size and SHA-256 the index gave. */
-    private fun download(file: StoreFile, destination: File, onBytes: (Long) -> Unit) {
+    private fun download(file: StoreFile, destination: File, isCancelled: () -> Boolean, onBytes: (Long) -> Unit) {
         val digest = MessageDigest.getInstance("SHA-256")
         var received = 0L
-        openFile(file.url).use { input ->
-            destination.outputStream().use { output ->
-                val buffer = ByteArray(BUFFER_BYTES)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) {
-                        break
+        try {
+            openFile(file.url).use { input ->
+                reading = input
+                destination.outputStream().use { output ->
+                    val buffer = ByteArray(BUFFER_BYTES)
+                    while (true) {
+                        if (isCancelled()) {
+                            throw DownloadCancelledException()
+                        }
+                        val count = try {
+                            input.read(buffer)
+                        } catch (e: IOException) {
+                            // A read that abort() ended is the player's stop, not a broken connection.
+                            throw if (isCancelled()) DownloadCancelledException() else e
+                        }
+                        if (count < 0) {
+                            break
+                        }
+                        received += count
+                        if (received > file.sizeBytes) {
+                            throw IOException("${destination.name} is larger than the store says")
+                        }
+                        digest.update(buffer, 0, count)
+                        output.write(buffer, 0, count)
+                        onBytes(received)
                     }
-                    received += count
-                    if (received > file.sizeBytes) {
-                        throw IOException("${destination.name} is larger than the store says")
-                    }
-                    digest.update(buffer, 0, count)
-                    output.write(buffer, 0, count)
-                    onBytes(received)
                 }
             }
+        } finally {
+            reading = null
         }
         if (received != file.sizeBytes || toHex(digest.digest()) != file.sha256) {
             throw IOException("${destination.name} does not match the store's checksum")

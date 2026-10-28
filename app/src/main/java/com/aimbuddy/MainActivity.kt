@@ -287,6 +287,7 @@ class MainActivity : AppCompatActivity() {
                         onUse = viewModel::useModel,
                         onDelete = viewModel::deleteModel,
                         onGet = viewModel::downloadModel,
+                        onCancel = viewModel::cancelDownload,
                         onLoadStore = viewModel::loadStore,
                     )
                     Screen.SETTINGS -> SettingsScreen(

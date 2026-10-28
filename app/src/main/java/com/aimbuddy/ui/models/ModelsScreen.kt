@@ -76,6 +76,7 @@ fun ModelsScreen(
     onUse: (String) -> Unit,
     onDelete: (String) -> Unit,
     onGet: (StoreModelDefinition) -> Unit,
+    onCancel: () -> Unit,
     onLoadStore: () -> Unit,
 ) {
     // With no model yet, the store is the tab with something to do.
@@ -120,7 +121,7 @@ fun ModelsScreen(
         if (tab == 0) {
             installedTab(state, running, onUse, onRequestDelete = { deleting = it })
         } else {
-            storeTab(state, onGet, onLoadStore)
+            storeTab(state, onGet, onCancel, onLoadStore)
         }
     }
 
@@ -250,6 +251,7 @@ private fun InstalledRow(model: InstalledModel, active: Boolean, onUse: (String)
 private fun LazyStaggeredGridScope.storeTab(
     state: ModelsState,
     onGet: (StoreModelDefinition) -> Unit,
+    onCancel: () -> Unit,
     onRetry: () -> Unit,
 ) {
     when (val store = state.store) {
@@ -283,6 +285,7 @@ private fun LazyStaggeredGridScope.storeTab(
                                     anotherDownloadIsRunning = state.transfer != null && state.transfer.modelId != model.id,
                                     picturePath = store.icons[model.id],
                                     onGet = onGet,
+                                    onCancel = onCancel,
                                 )
                             }
                         }
@@ -296,7 +299,7 @@ private fun LazyStaggeredGridScope.storeTab(
 /**
  * One model in the store: its tile, its name, what it is for, who made it and how big it is, and a
  * way to get it, update it to a newer version, or see that it is already on the phone. While it is
- * being downloaded the row shows how far it has got.
+ * being downloaded the row shows how far it has got and a way to stop.
  */
 @Composable
 private fun StoreRow(
@@ -306,6 +309,7 @@ private fun StoreRow(
     anotherDownloadIsRunning: Boolean,
     picturePath: String?,
     onGet: (StoreModelDefinition) -> Unit,
+    onCancel: () -> Unit,
 ) {
     val details = listOfNotNull(
         model.author.takeIf { it.isNotBlank() },
@@ -324,12 +328,12 @@ private fun StoreRow(
         },
     ) {
         when {
-            transfer != null -> CircularProgressIndicator(
-                progress = { transfer.progress.fraction },
-                color = AppTheme.palette.accent,
-                strokeWidth = 3.dp,
-                modifier = Modifier.size(MarkSize),
+            transfer != null && transfer.cancelling -> Text(
+                text = stringResource(R.string.models_cancelling),
+                style = MaterialTheme.typography.labelLarge,
+                color = AppTheme.palette.textDim,
             )
+            transfer != null -> SmallPill(text = stringResource(R.string.dialog_cancel), onClick = onCancel)
             anotherDownloadIsRunning -> Unit   // one at a time: the others wait for their turn
             installedVersion == null -> SmallPill(text = stringResource(R.string.models_get), onClick = { onGet(model) })
             model.version > installedVersion -> SmallPill(text = stringResource(R.string.models_update), onClick = { onGet(model) })
