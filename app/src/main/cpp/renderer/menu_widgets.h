@@ -12,6 +12,10 @@
 
 namespace aimbuddy::menu {
 
+/// The green and the red of the app's good and bad news, for a dot or a text.
+constexpr ImVec4 kSuccessColour(0.19f, 0.82f, 0.35f, 1.0f);
+constexpr ImVec4 kDangerColour(1.0f, 0.42f, 0.39f, 1.0f);
+
 /// How a pill button is coloured.
 enum class PillStyle {
     kPrimary,   ///< Filled with the accent colour: the main action of a row of buttons.

@@ -310,6 +310,7 @@ float g_pickCancelRect[4] = {0.0f, 0.0f, 0.0f, 0.0f};   ///< The Cancel button a
 
 constexpr double kLearnWaitS = 3.0;
 constexpr double kLearnResultS = 2.0;
+constexpr float kPromptScale = 1.1f;   ///< The prompt's text is this much bigger than the menu's, to be read at a glance.
 
 /// Draws what the player is asked to do, or the answer, in a label at the top of the screen, and moves the learning on. The menu comes back after the answer.
 void drawColourLearning(ImDrawList* list, const ImVec2& windowSize) {
@@ -319,6 +320,7 @@ void drawColourLearning(ImDrawList* list, const ImVec2& windowSize) {
     const double now = ImGui::GetTime();
     char text[96] = "";
     bool withCancel = false;
+    const bool hasAnswer = g_learnStage == LearnStage::kResult;
     switch (g_learnStage) {
         case LearnStage::kPicking:
             std::snprintf(text, sizeof(text), "%s", T(Key::PickTheColour));
@@ -347,26 +349,46 @@ void drawColourLearning(ImDrawList* list, const ImVec2& windowSize) {
     if (text[0] == '\0') {
         return;
     }
+    // One rounded bar in the menu's own colours: a dot that says how the learning went, the words, and a Cancel pill
+    // while a colour is asked for.
     ImFont* font = ImGui::GetFont();
-    const float size = ImGui::GetFontSize() * 1.2f;
-    const float padding = 0.5f * size;
-    const ImVec2 textSize = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
-    const float cancelWidth = withCancel ? font->CalcTextSizeA(size, FLT_MAX, 0.0f, T(Key::Cancel)).x + 2.0f * padding : 0.0f;
-    const float labelWidth = textSize.x + 2.0f * padding;
-    const float gap = withCancel ? padding : 0.0f;
-    const float left = (windowSize.x - labelWidth - gap - cancelWidth) * 0.5f;
-    const ImVec2 corner(left, 2.0f * size);
-    const float height = textSize.y + 2.0f * padding;
-    list->AddRectFilled(corner, ImVec2(corner.x + labelWidth, corner.y + height), IM_COL32(0, 0, 0, 190), 0.4f * size);
-    list->AddText(font, size, ImVec2(corner.x + padding, corner.y + padding), IM_COL32(255, 255, 255, 240), text);
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float size = ImGui::GetFontSize() * kPromptScale;
+    const float height = 2.5f * size;
+    const float inset = 0.4f * size;               // between the bar's edge and the Cancel pill
+    const float edge = 0.9f * size;                // between the bar's left edge and what is in it
+    const float gap = 0.6f * size;
+    const float dot = hasAnswer ? 0.8f * size : 0.0f;
+    const float textWidth = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text).x;
+    const float cancelWidth = font->CalcTextSizeA(size, FLT_MAX, 0.0f, T(Key::Cancel)).x;
+    const float pillWidth = withCancel ? cancelWidth + 1.6f * size : 0.0f;
+    const float width = edge + (hasAnswer ? dot + gap : 0.0f) + textWidth + (withCancel ? gap + pillWidth + inset : edge);
+    const ImVec2 corner(0.5f * (windowSize.x - width), 2.0f * size);
+    const float middle = corner.y + 0.5f * height;
+
+    ImVec4 background = style.Colors[ImGuiCol_WindowBg];
+    background.w = 0.96f;
+    list->AddRectFilled(corner, ImVec2(corner.x + width, corner.y + height), ImGui::GetColorU32(background), 0.5f * height);
+    list->AddRect(corner, ImVec2(corner.x + width, corner.y + height), ImGui::GetColorU32(ImGuiCol_Border), 0.5f * height, 0, 1.0f);
+
+    float cursor = corner.x + edge;
+    if (hasAnswer) {
+        const ImVec4& colour = g_learnFound ? menu::kSuccessColour : menu::kDangerColour;
+        list->AddCircleFilled(ImVec2(cursor + 0.5f * dot, middle), 0.5f * dot, ImGui::GetColorU32(colour));
+        cursor += dot + gap;
+    }
+    list->AddText(font, size, ImVec2(cursor, middle - 0.5f * size), ImGui::GetColorU32(ImGuiCol_Text), text);
     if (withCancel) {
-        const float buttonLeft = corner.x + labelWidth + gap;
-        list->AddRectFilled(ImVec2(buttonLeft, corner.y), ImVec2(buttonLeft + cancelWidth, corner.y + height), IM_COL32(60, 60, 70, 230), 0.4f * size);
-        list->AddText(font, size, ImVec2(buttonLeft + padding, corner.y + padding), IM_COL32(255, 255, 255, 240), T(Key::Cancel));
-        g_pickCancelRect[0] = buttonLeft;
-        g_pickCancelRect[1] = corner.y;
-        g_pickCancelRect[2] = buttonLeft + cancelWidth;
-        g_pickCancelRect[3] = corner.y + height;
+        const float pillLeft = corner.x + width - inset - pillWidth;
+        const float pillHeight = height - 2.0f * inset;
+        list->AddRectFilled(ImVec2(pillLeft, corner.y + inset), ImVec2(pillLeft + pillWidth, corner.y + inset + pillHeight),
+                            ImGui::GetColorU32(ImGuiCol_FrameBgHovered), 0.5f * pillHeight);
+        list->AddText(font, size, ImVec2(pillLeft + 0.5f * (pillWidth - cancelWidth), middle - 0.5f * size),
+                      ImGui::GetColorU32(ImGuiCol_Text), T(Key::Cancel));
+        g_pickCancelRect[0] = pillLeft;
+        g_pickCancelRect[1] = corner.y + inset;
+        g_pickCancelRect[2] = pillLeft + pillWidth;
+        g_pickCancelRect[3] = corner.y + inset + pillHeight;
     }
 }
 

@@ -13,8 +13,7 @@ namespace aimbuddy::menu {
 
 namespace {
 
-/// The red of the app's destructive actions, as a text colour and, much fainter, as a fill.
-constexpr ImVec4 kDangerText(1.0f, 0.42f, 0.39f, 1.0f);
+/// The red of the app's destructive actions is also the fill of their pill, much fainter.
 constexpr float kDangerFillAlpha = 0.18f;
 constexpr float kDangerFillPressedAlpha = 0.34f;
 
@@ -148,9 +147,9 @@ bool PillButton(const char* label, const ImVec2& size, PillStyle style) {
         fill = ImVec4(text.x, text.y, text.z, kTintedFillAlpha);
         fillPressed = ImVec4(text.x, text.y, text.z, kTintedFillPressedAlpha);
     } else {
-        fill = ImVec4(kDangerText.x, kDangerText.y, kDangerText.z, kDangerFillAlpha);
-        fillPressed = ImVec4(kDangerText.x, kDangerText.y, kDangerText.z, kDangerFillPressedAlpha);
-        text = kDangerText;
+        fill = ImVec4(kDangerColour.x, kDangerColour.y, kDangerColour.z, kDangerFillAlpha);
+        fillPressed = ImVec4(kDangerColour.x, kDangerColour.y, kDangerColour.z, kDangerFillPressedAlpha);
+        text = kDangerColour;
     }
 
     // A label that is too long for the button is drawn smaller rather than cut off.
