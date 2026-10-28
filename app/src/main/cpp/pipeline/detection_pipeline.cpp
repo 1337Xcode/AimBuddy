@@ -165,6 +165,7 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
     if (lastFrameNs_ > 0 && frame.captureTimeNs > lastFrameNs_ && frame.captureTimeNs - lastFrameNs_ < intervalNs) {
         return;
     }
+    const int64_t lookStartNs = steadyNowNs();
 
     // Where the targets are in this frame, in pixels of the region the odometry is given.
     MovingBox movers[kMaxTracks];
@@ -203,6 +204,9 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
 #endif
         slideSum_ += std::hypot(shift.dx, shift.dy) * scale;
         qualitySum_ += shift.quality;
+        const float lookMs = static_cast<float>(steadyNowNs() - lookStartNs) * 1e-6f;
+        lookMsSum_ += lookMs;
+        lookMsMax_ = std::max(lookMsMax_, lookMs);
         ++slideFrames_;
     }
     lastFrameNs_ = frame.captureTimeNs;
@@ -423,20 +427,27 @@ void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishe
         if (cameraMotion_ != nullptr) {
             float slidePx = 0.0f;
             float quality = 0.0f;
+            float lookMs = 0.0f;
+            float worstLookMs = 0.0f;
             int frames = 0;
             {
                 std::lock_guard<std::mutex> lock(motionMutex_);
                 frames = slideFrames_;
                 slidePx = frames > 0 ? slideSum_ / static_cast<float>(frames) : 0.0f;
                 quality = frames > 0 ? qualitySum_ / static_cast<float>(frames) : 0.0f;
+                lookMs = frames > 0 ? lookMsSum_ / static_cast<float>(frames) : 0.0f;
+                worstLookMs = lookMsMax_;
                 slideSum_ = 0.0f;
                 qualitySum_ = 0.0f;
+                lookMsSum_ = 0.0f;
+                lookMsMax_ = 0.0f;
                 slideFrames_ = 0;
             }
             if (frames > 0) {
                 const CameraResponse response = cameraMotion_->response();
-                LOGI("Camera: scene slid %.1f px a look on average (measurement quality %.2f, %d looks); response gain %.2f/%.2f, delay %.0f ms, confidence %.2f",
-                     slidePx, quality, frames, response.gainX, response.gainY, response.delayS * 1000.0f, cameraMotion_->confidence());
+                LOGI("Camera: scene slid %.1f px a look on average (measurement quality %.2f, %d looks, %.1f ms each, %.1f ms at most); response gain %.2f/%.2f, delay %.0f ms, confidence %.2f",
+                     slidePx, quality, frames, lookMs, worstLookMs, response.gainX, response.gainY, response.delayS * 1000.0f,
+                     cameraMotion_->confidence());
             }
         }
         lastLogNs_ = finishedNs;
