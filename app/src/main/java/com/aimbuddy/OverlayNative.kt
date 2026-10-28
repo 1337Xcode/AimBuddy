@@ -45,6 +45,13 @@ object OverlayNative {
     @JvmStatic
     external fun showMenu(visible: Boolean)
 
+    /**
+     * Where the menu is, or would open if it opened now, in the overlay window's pixels: left, top,
+     * right, bottom. Streamer mode puts a secure window over it.
+     */
+    @JvmStatic
+    external fun menuBounds(): IntArray
+
     /** How many frames have been drawn, to tell a stuck renderer from a working one. */
     @JvmStatic
     external fun framesDrawn(): Long

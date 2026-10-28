@@ -86,6 +86,10 @@ std::atomic<float> g_iconY{200.0f};
 // Only the GL thread reads or writes it.
 float g_menuRect[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
+// Where the menu is, or would be if it opened now, in overlay window pixels: left, top, right, bottom. The GL thread
+// keeps it current once a frame and Kotlin reads it, to put a secure window over the menu in streamer mode.
+std::atomic<int> g_menuBounds[4];
+
 ImVec2 g_menuSize = ImVec2(0.0f, 0.0f);
 bool g_menuWasVisible = false;
 bool g_streamerModeApplied = false;
@@ -1055,24 +1059,54 @@ bool drawScrollingPage(const char* id, DrawPage&& drawPage) {
     return changed;
 }
 
+/// How big the menu opens: most of the window's height, and a share of its width that is never narrower than a phone's short side allows.
+ImVec2 defaultMenuSize(const ImVec2& windowSize) {
+    return ImVec2(std::max(dp(300.0f), std::min(windowSize.x * 0.46f, dp(440.0f))),
+                  std::max(dp(280.0f), std::min(windowSize.y * 0.90f, dp(560.0f))));
+}
+
+/// Where a menu of this size goes: beside the floating icon, on the side that has the room, and inside the window.
+ImVec2 menuPositionFor(const ImVec2& size, const ImVec2& windowSize) {
+    const float iconX = g_iconX.load(std::memory_order_relaxed);
+    const float iconY = g_iconY.load(std::memory_order_relaxed);
+    float x = iconX + iconHalf() + dp(14.0f);
+    float y = iconY - size.y * 0.5f;
+    if (x + size.x > windowSize.x) {
+        x = iconX - iconHalf() - dp(14.0f) - size.x;
+    }
+    x = std::max(4.0f, std::min(x, windowSize.x - size.x - 4.0f));
+    y = std::max(4.0f, std::min(y, windowSize.y - size.y - 4.0f));
+    return ImVec2(x, y);
+}
+
+/// Tells Kotlin where the menu is, or where it would open. Called once a frame from the GL thread.
+void publishMenuBounds(const ImVec2& windowSize) {
+    float rect[4];
+    if (g_menuVisible.load(std::memory_order_relaxed) && g_menuRect[2] > g_menuRect[0]) {
+        std::copy(std::begin(g_menuRect), std::end(g_menuRect), rect);
+    } else {
+        const ImVec2 size = defaultMenuSize(windowSize);
+        const ImVec2 position = menuPositionFor(size, windowSize);
+        rect[0] = position.x;
+        rect[1] = position.y;
+        rect[2] = position.x + size.x;
+        rect[3] = position.y + size.y;
+    }
+    // Rounded outwards, so that the pixels the menu covers are all inside what is reported.
+    g_menuBounds[0].store(static_cast<int>(std::floor(rect[0])), std::memory_order_relaxed);
+    g_menuBounds[1].store(static_cast<int>(std::floor(rect[1])), std::memory_order_relaxed);
+    g_menuBounds[2].store(static_cast<int>(std::ceil(rect[2])), std::memory_order_relaxed);
+    g_menuBounds[3].store(static_cast<int>(std::ceil(rect[3])), std::memory_order_relaxed);
+}
+
 /// Draws the menu beside the floating icon. Returns true if a setting changed.
 bool drawMenu(Settings& settings, int bodyCount) {
     const ImVec2 windowSize = ImGui::GetIO().DisplaySize;
     if (!g_menuWasVisible || g_menuSize.x <= 0.0f || g_menuSize.y <= 0.0f) {
-        g_menuSize = ImVec2(std::max(dp(300.0f), std::min(windowSize.x * 0.46f, dp(440.0f))),
-                            std::max(dp(280.0f), std::min(windowSize.y * 0.90f, dp(560.0f))));
+        g_menuSize = defaultMenuSize(windowSize);
     }
-    const float iconX = g_iconX.load(std::memory_order_relaxed);
-    const float iconY = g_iconY.load(std::memory_order_relaxed);
-    float x = iconX + iconHalf() + dp(14.0f);
-    float y = iconY - g_menuSize.y * 0.5f;
-    if (x + g_menuSize.x > windowSize.x) {
-        x = iconX - iconHalf() - dp(14.0f) - g_menuSize.x;
-    }
-    x = std::max(4.0f, std::min(x, windowSize.x - g_menuSize.x - 4.0f));
-    y = std::max(4.0f, std::min(y, windowSize.y - g_menuSize.y - 4.0f));
 
-    ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(menuPositionFor(g_menuSize, windowSize), ImGuiCond_Always);
     ImGui::SetNextWindowSize(g_menuSize, ImGuiCond_Appearing);
     ImGui::SetNextWindowSizeConstraints(ImVec2(dp(280.0f), dp(240.0f)), ImVec2(windowSize.x - dp(4.0f), windowSize.y - dp(4.0f)));
 
@@ -1260,6 +1294,7 @@ Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */)
             resetTouch();
         }
         saveSettingsWhenDue();
+        publishMenuBounds(ImGui::GetIO().DisplaySize);
 
         if (settings.streamerMode != g_streamerModeApplied) {
             g_streamerModeApplied = settings.streamerMode;
@@ -1325,6 +1360,18 @@ Java_com_aimbuddy_OverlayNative_wantsTouches(JNIEnv* /* env */, jclass /* clazz 
     const bool wanted = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed) ||
                         g_picking.load(std::memory_order_relaxed);
     return wanted ? JNI_TRUE : JNI_FALSE;
+}
+
+/// Where the menu is, or would open if it opened now, in overlay window pixels: left, top, right, bottom.
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_aimbuddy_OverlayNative_menuBounds(JNIEnv* env, jclass /* clazz */) {
+    const jint bounds[4] = {g_menuBounds[0].load(std::memory_order_relaxed), g_menuBounds[1].load(std::memory_order_relaxed),
+                            g_menuBounds[2].load(std::memory_order_relaxed), g_menuBounds[3].load(std::memory_order_relaxed)};
+    jintArray result = env->NewIntArray(4);
+    if (result != nullptr) {
+        env->SetIntArrayRegion(result, 0, 4, bounds);
+    }
+    return result;
 }
 
 /// Opens the menu, or closes everything that takes touches (the menu and the touch area editor).
