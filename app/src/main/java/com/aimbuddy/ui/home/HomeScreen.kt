@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.aimbuddy.AssistState
 import com.aimbuddy.R
+import com.aimbuddy.ShizukuStatus
 import com.aimbuddy.TouchHelper
 import com.aimbuddy.ui.TouchAccess
 import com.aimbuddy.ui.components.Chevron
@@ -252,12 +253,12 @@ private fun HomeList(
 ) {
     val palette = AppTheme.palette
     val route = (snapshot.touch as? AssistState.Touch.Connected)?.route
-    val ready = route != null || touchAccess.shizuku || touchAccess.root
+    val ready = route != null || touchAccess.ready
     val touchValue = when {
         route == TouchHelper.Route.ROOT -> stringResource(R.string.touch_root)
         route == TouchHelper.Route.SHIZUKU -> stringResource(R.string.touch_shizuku)
-        touchAccess.shizuku -> stringResource(R.string.touch_shizuku)
-        touchAccess.root -> stringResource(R.string.touch_root)
+        touchAccess.shizuku == ShizukuStatus.READY -> stringResource(R.string.touch_shizuku)
+        touchAccess.rootAllowed -> stringResource(R.string.touch_root)
         else -> stringResource(R.string.touch_not_set_up)
     }
     Column(verticalArrangement = Arrangement.spacedBy(Space.l)) {

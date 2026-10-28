@@ -457,12 +457,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshTouchAccess() {
-        val shizuku = try {
-            Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-        } catch (_: Throwable) {
-            false
-        }
-        viewModel.updateTouchAccess(shizuku = shizuku, root = RootShell.isGranted())
+        viewModel.updateTouchAccess(shizuku = probeShizuku(packageManager), rootAllowed = RootShell.isGranted())
     }
 
     // ---------------------------------------------------------------------------------------
@@ -525,7 +520,6 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         const val TAG = "MainActivity"
         const val REQUEST_SHIZUKU_PERMISSION = 2001
-        const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
         const val PREFS_NAME = "aimbuddy_prefs"
         const val PREF_NOTICE_SHOWN = "oss_notice_shown"
         const val PREF_MODEL_GUIDE_SHOWN = "model_guide_shown"

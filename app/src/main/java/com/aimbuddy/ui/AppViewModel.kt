@@ -17,6 +17,7 @@ import com.aimbuddy.ModelStoreRepository
 import com.aimbuddy.NativeBridge
 import com.aimbuddy.Project
 import com.aimbuddy.R
+import com.aimbuddy.ShizukuStatus
 import com.aimbuddy.StoreModelDefinition
 import com.aimbuddy.DownloadCancelledException
 import com.aimbuddy.TransferFailure
@@ -107,8 +108,14 @@ class SettingsView(private val values: Map<String, String> = emptyMap()) {
     }
 }
 
-/** Which ways of reaching the touchscreen are ready right now. */
-data class TouchAccess(val shizuku: Boolean = false, val root: Boolean = false)
+/**
+ * Where the two ways of reaching the touchscreen stand. Root can only be known once it has been asked for, by
+ * pressing Start or by the touch test, so `rootAllowed` is false until then.
+ */
+data class TouchAccess(val shizuku: ShizukuStatus = ShizukuStatus.NOT_INSTALLED, val rootAllowed: Boolean = false) {
+    /** Whether a route is ready to carry the touch helper. */
+    val ready: Boolean get() = shizuku == ShizukuStatus.READY || rootAllowed
+}
 
 /**
  * Everything the screens show that is not about the running assist: the models, the settings and the
@@ -325,8 +332,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // Touch access
     // ---------------------------------------------------------------------------------------
 
-    fun updateTouchAccess(shizuku: Boolean, root: Boolean) {
-        _touchAccess.value = TouchAccess(shizuku, root)
+    fun updateTouchAccess(shizuku: ShizukuStatus, rootAllowed: Boolean) {
+        _touchAccess.value = TouchAccess(shizuku, rootAllowed)
     }
 
     // ---------------------------------------------------------------------------------------
