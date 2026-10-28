@@ -6,6 +6,9 @@ Dates are in ISO-8601 (YYYY-MM-DD).
 
 ## [Unreleased]
 
+### Fixed
+- Pressing Stop within a few seconds of Start crashed the app when Shizuku was running: Stop interrupts the thread that waits for Shizuku to start the touch helper, and nothing caught the interruption. The wait now gives up quietly and the stop finishes. Found in 0.3.5-beta.1.
+
 ## [0.3.5-beta.1] - 2026-10-28
 
 A rebuilt app with a model store and updates from inside the app. The APK no longer carries a model, and a debug build is published beside the release one.

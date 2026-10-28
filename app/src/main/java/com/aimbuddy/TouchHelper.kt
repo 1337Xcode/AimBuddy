@@ -91,6 +91,11 @@ class TouchHelper(private val context: Context) {
         }
         var failure: Outcome.Failed = Outcome.Failed(Reason.NO_PRIVILEGE, Reason.describe(Reason.NO_PRIVILEGE))
         for (route in routes) {
+            // The service interrupts this thread when the assist is stopped: no other route is worth trying then.
+            if (Thread.currentThread().isInterrupted) {
+                Log.i(TAG, "Starting the touch helper was cancelled")
+                return Outcome.Failed(Reason.UNREACHABLE, "Starting the touch helper was cancelled.")
+            }
             val available = when (route) {
                 Route.SHIZUKU -> isShizukuReady()
                 Route.ROOT -> RootShell.requestRoot(ROOT_PROMPT_SECONDS)
@@ -195,8 +200,9 @@ class TouchHelper(private val context: Context) {
         }
         hostArgs = args
         hostConnection = connection
-        if (!latch.await(SHIZUKU_BIND_SECONDS, TimeUnit.SECONDS)) {
-            Log.w(TAG, "Shizuku did not start the helper service in time")
+        if (!awaitUnlessInterrupted(latch, SHIZUKU_BIND_SECONDS)) {
+            val why = if (Thread.currentThread().isInterrupted) "the assist was stopped first" else "it took too long"
+            Log.w(TAG, "Shizuku did not start the helper service: $why")
             return 0
         }
         val service = connected ?: return 0
@@ -248,3 +254,18 @@ class TouchHelper(private val context: Context) {
         const val HELPER_START_MS = 5000
     }
 }
+
+/**
+ * Waits up to [timeoutSeconds] for [latch] to open and says whether it did. A thread that is
+ * interrupted while it waits is being told to stop (the service does that when the assist ends), so
+ * the answer is false and the interrupt stays set for the caller to see: an exception thrown here
+ * would end a background thread, and with it the whole app.
+ */
+internal fun awaitUnlessInterrupted(latch: CountDownLatch, timeoutSeconds: Long): Boolean =
+    try {
+        latch.await(timeoutSeconds, TimeUnit.SECONDS)
+    } catch (_: InterruptedException) {
+        // Throwing the exception cleared the interrupt; set it again so the caller can see it.
+        Thread.currentThread().interrupt()
+        false
+    }
