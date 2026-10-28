@@ -115,11 +115,14 @@ class SettingsView(private val values: Map<String, String> = emptyMap()) {
 
 /**
  * Where the two ways of reaching the touchscreen stand. Root can only be known once it has been asked for, by
- * pressing Start or by the touch test, so `rootAllowed` is false until then.
+ * pressing Start or by the touch test, so it is not asked until then.
  */
-data class TouchAccess(val shizuku: ShizukuStatus = ShizukuStatus.NOT_INSTALLED, val rootAllowed: Boolean = false) {
+data class TouchAccess(
+    val shizuku: ShizukuStatus = ShizukuStatus.NOT_INSTALLED,
+    val root: RootShell.Status = RootShell.Status.NOT_ASKED,
+) {
     /** Whether a route is ready to carry the touch helper. */
-    val ready: Boolean get() = shizuku == ShizukuStatus.READY || rootAllowed
+    val ready: Boolean get() = shizuku == ShizukuStatus.READY || root == RootShell.Status.ALLOWED
 }
 
 /**
@@ -344,8 +347,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // Touch access
     // ---------------------------------------------------------------------------------------
 
-    fun updateTouchAccess(shizuku: ShizukuStatus, rootAllowed: Boolean) {
-        _touchAccess.value = TouchAccess(shizuku, rootAllowed)
+    fun updateTouchAccess(shizuku: ShizukuStatus, root: RootShell.Status) {
+        _touchAccess.value = TouchAccess(shizuku, root)
     }
 
     /**
@@ -367,7 +370,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val helper = TouchHelper(context)
             _touchTest.value = runTouchTest(NativeBridge.touchBackend(), helper::start, helper::stop)
             // Root is known to be allowed, or not, only once it has been asked for.
-            _touchAccess.update { it.copy(rootAllowed = RootShell.isGranted()) }
+            _touchAccess.update { it.copy(root = RootShell.status()) }
         }
     }
 

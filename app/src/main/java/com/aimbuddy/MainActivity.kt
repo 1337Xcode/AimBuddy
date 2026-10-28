@@ -58,6 +58,8 @@ import com.aimbuddy.ui.home.HomeScreen
 import com.aimbuddy.ui.models.ModelsScreen
 import com.aimbuddy.ui.settings.SettingsActions
 import com.aimbuddy.ui.settings.SettingsScreen
+import com.aimbuddy.ui.touch.TouchAccessActions
+import com.aimbuddy.ui.touch.TouchAccessScreen
 import com.aimbuddy.ui.theme.AimBuddyTheme
 import com.aimbuddy.ui.theme.AppTheme
 import com.aimbuddy.update.UpdateProblem
@@ -66,7 +68,7 @@ import com.aimbuddy.update.UpdateStatus
 import rikka.shizuku.Shizuku
 
 /** The screens the app moves between. */
-private enum class Screen { HOME, MODELS, SETTINGS }
+private enum class Screen { HOME, MODELS, SETTINGS, TOUCH }
 
 /**
  * The app's window: it shows the screens and walks the player through the permission dialogs that
@@ -85,13 +87,12 @@ class MainActivity : AppCompatActivity() {
 
     // Dialogs that belong to the start flow.
     private var showOverlayDialog by mutableStateOf(false)
-    private var showTouchDialog by mutableStateOf(false)
     private var showNotice by mutableStateOf(false)
 
     private val shizukuBinderReceivedListener = Shizuku.OnBinderReceivedListener { runOnUiThread { refreshTouchAccess() } }
     private val shizukuBinderDeadListener = Shizuku.OnBinderDeadListener { runOnUiThread { refreshTouchAccess() } }
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
-        if (requestCode != REQUEST_SHIZUKU_PERMISSION) {
+        if (requestCode != REQUEST_SHIZUKU_PERMISSION && requestCode != REQUEST_SHIZUKU_PERMISSION_FROM_SCREEN) {
             return@OnRequestPermissionResultListener
         }
         runOnUiThread {
@@ -99,7 +100,10 @@ class MainActivity : AppCompatActivity() {
             if (grantResult != PackageManager.PERMISSION_GRANTED) {
                 viewModel.post(UiMessage(R.string.shizuku_denied))
             }
-            requestScreenCapture()
+            // The question asked by Start is followed by the next step of Start; the one asked on the touch access screen is not.
+            if (requestCode == REQUEST_SHIZUKU_PERMISSION) {
+                requestScreenCapture()
+            }
         }
     }
 
@@ -214,6 +218,8 @@ class MainActivity : AppCompatActivity() {
         // on the models screen once, where the guide says how to get one.
         val opensOnModels = remember { models.installed.isEmpty() && !modelGuideShown() }
         var screen by rememberSaveable { mutableStateOf(if (opensOnModels) Screen.MODELS else Screen.HOME) }
+        // The touch access screen opens from Home and from Settings, and goes back to the one it came from.
+        var touchReturn by rememberSaveable { mutableStateOf(Screen.HOME) }
         LaunchedEffect(Unit) {
             if (opensOnModels) {
                 markModelGuideShown()
@@ -224,6 +230,7 @@ class MainActivity : AppCompatActivity() {
         val detectsByColour = settings.int("detector", 0) == 1
         val appearance by viewModel.appearance.collectAsStateWithLifecycle()
         val touchAccess by viewModel.touchAccess.collectAsStateWithLifecycle()
+        val touchTest by viewModel.touchTest.collectAsStateWithLifecycle()
         val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
         val autoUpdateCheck by viewModel.autoUpdateCheck.collectAsStateWithLifecycle()
         val snackbar = remember { SnackbarHostState() }
@@ -243,7 +250,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        BackHandler(enabled = screen != Screen.HOME) { screen = Screen.HOME }
+        BackHandler(enabled = screen != Screen.HOME) { screen = if (screen == Screen.TOUCH) touchReturn else Screen.HOME }
 
         Box(modifier = Modifier.fillMaxSize()) {
             AnimatedContent(
@@ -275,7 +282,10 @@ class MainActivity : AppCompatActivity() {
                         onStop = { AssistService.stop(this@MainActivity) },
                         onOpenModels = { screen = Screen.MODELS },
                         onOpenSettings = { screen = Screen.SETTINGS },
-                        onTouchAccess = { showTouchDialog = true },
+                        onTouchAccess = {
+                            touchReturn = Screen.HOME
+                            screen = Screen.TOUCH
+                        },
                         onOpenProject = { openUrl(Project.URL) },
                         onUpdate = { updateAction() },
                     )
@@ -305,8 +315,26 @@ class MainActivity : AppCompatActivity() {
                             openUrl = { url -> openUrl(url) },
                             updateAction = { updateAction() },
                             setAutoUpdateCheck = viewModel::setAutoUpdateCheck,
+                            openTouchAccess = {
+                                touchReturn = Screen.SETTINGS
+                                screen = Screen.TOUCH
+                            },
                         ),
                         onBack = { screen = Screen.HOME },
+                    )
+                    Screen.TOUCH -> TouchAccessScreen(
+                        settings = settings,
+                        access = touchAccess,
+                        test = touchTest,
+                        assistRunning = snapshot.phase != AssistState.Phase.IDLE,
+                        actions = TouchAccessActions(
+                            setRoute = { viewModel.setSetting("touchBackend", it) },
+                            allowShizuku = { allowShizuku() },
+                            openShizuku = { openShizuku() },
+                            openShizukuGuide = { openUrl(Project.SHIZUKU_GUIDE_URL) },
+                            runTest = viewModel::testTouchAccess,
+                        ),
+                        onBack = { screen = touchReturn },
                     )
                 }
             }
@@ -334,27 +362,6 @@ class MainActivity : AppCompatActivity() {
                 },
                 dismissButton = {
                     TextButton(onClick = { showOverlayDialog = false }) { Text(stringResource(R.string.dialog_cancel)) }
-                },
-                containerColor = palette.surface,
-                shape = MaterialTheme.shapes.medium,
-            )
-        }
-        if (showTouchDialog) {
-            val shizukuInstalled = packageManager.getLaunchIntentForPackage(SHIZUKU_PACKAGE) != null
-            AlertDialog(
-                onDismissRequest = { showTouchDialog = false },
-                title = { Text(stringResource(R.string.touch_dialog_title)) },
-                text = { Text(stringResource(R.string.touch_dialog_message)) },
-                confirmButton = {
-                    if (shizukuInstalled) {
-                        TextButton(onClick = {
-                            showTouchDialog = false
-                            packageManager.getLaunchIntentForPackage(SHIZUKU_PACKAGE)?.let { startActivity(it) }
-                        }) { Text(stringResource(R.string.touch_dialog_open_shizuku)) }
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showTouchDialog = false }) { Text(stringResource(R.string.dialog_close)) }
                 },
                 containerColor = palette.surface,
                 shape = MaterialTheme.shapes.medium,
@@ -461,8 +468,40 @@ class MainActivity : AppCompatActivity() {
         screenCaptureLauncher.launch(intent)
     }
 
+    /** Asks Shizuku to allow AimBuddy; when Shizuku will not ask again, takes the player to its own list of apps. */
+    private fun allowShizuku() {
+        val canAsk = try {
+            !Shizuku.isPreV11() && !Shizuku.shouldShowRequestPermissionRationale()
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Shizuku could not say whether it can be asked: ${e.message}")
+            false
+        }
+        if (!canAsk) {
+            viewModel.post(UiMessage(R.string.touch_allow_in_shizuku))
+            openShizuku()
+            return
+        }
+        try {
+            Shizuku.requestPermission(REQUEST_SHIZUKU_PERMISSION_FROM_SCREEN)
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Shizuku permission request failed: ${e.message}")
+            viewModel.post(UiMessage(R.string.touch_allow_in_shizuku))
+            openShizuku()
+        }
+    }
+
+    /** Opens the Shizuku app, where it is started and where the apps it serves are listed. */
+    private fun openShizuku() {
+        val launch = packageManager.getLaunchIntentForPackage(SHIZUKU_PACKAGE)
+        if (launch == null) {
+            openUrl(Project.SHIZUKU_GUIDE_URL)
+            return
+        }
+        startActivity(launch)
+    }
+
     private fun refreshTouchAccess() {
-        viewModel.updateTouchAccess(shizuku = probeShizuku(packageManager), rootAllowed = RootShell.isGranted())
+        viewModel.updateTouchAccess(shizuku = probeShizuku(packageManager), root = RootShell.status())
     }
 
     // ---------------------------------------------------------------------------------------
@@ -525,6 +564,7 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         const val TAG = "MainActivity"
         const val REQUEST_SHIZUKU_PERMISSION = 2001
+        const val REQUEST_SHIZUKU_PERMISSION_FROM_SCREEN = 2002
         const val PREFS_NAME = "aimbuddy_prefs"
         const val PREF_NOTICE_SHOWN = "oss_notice_shown"
         const val PREF_MODEL_GUIDE_SHOWN = "model_guide_shown"

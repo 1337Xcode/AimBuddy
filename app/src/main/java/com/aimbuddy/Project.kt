@@ -9,6 +9,9 @@ object Project {
     const val URL = "https://github.com/$OWNER/$REPOSITORY"
     const val LICENSE_URL = "$URL/blob/$BRANCH/LICENSE"
 
+    /** The guide to getting Shizuku running, for a phone that does not have it yet. */
+    const val SHIZUKU_GUIDE_URL = "$URL/blob/$BRANCH/docs/ShizukuSetup.md"
+
     /** The project's published releases, which the app reads to see whether there is a newer version. */
     const val RELEASES_URL = "https://api.github.com/repos/$OWNER/$REPOSITORY/releases?per_page=10"
 

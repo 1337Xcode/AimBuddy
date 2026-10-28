@@ -30,9 +30,29 @@
     <string name="touch_not_set_up">Not set up</string>
     <string name="touch_test_stop_first">Stop the assist first: it is using the touchscreen.</string>
     <string name="touch_test_wait">The touch test is still running. Try again in a moment.</string>
-    <string name="touch_dialog_title">Aim assist needs more access</string>
-    <string name="touch_dialog_message">AimBuddy highlights targets on its own. To move your aim it adds a second finger to the touchscreen, and that needs Shizuku or root.</string>
-    <string name="touch_dialog_open_shizuku">Open Shizuku</string>
+    <string name="touch_reach_with">Reach the touchscreen with</string>
+    <string name="touch_route_footer">To move your aim, AimBuddy adds a second finger to the touchscreen. That needs Shizuku or root. Without either it only outlines people. Automatic tries Shizuku first, then root. The choice is used when you press Start.</string>
+    <string name="touch_phone_group">On this phone</string>
+    <string name="touch_phone_footer">Root is asked for when you press Start or Test, so it shows as not asked until then.</string>
+    <string name="touch_shizuku_ready">Ready</string>
+    <string name="touch_shizuku_allow">Tap to allow</string>
+    <string name="touch_shizuku_not_running">Not running</string>
+    <string name="touch_shizuku_not_installed">Not installed</string>
+    <string name="touch_root_allowed">Allowed</string>
+    <string name="touch_root_unknown">Not asked yet</string>
+    <string name="touch_root_unavailable">Not available</string>
+    <string name="touch_test_button">Test touch access</string>
+    <string name="touch_test_footer">Starts the touch helper the way Start does and stops it again. Nothing is left running.</string>
+    <string name="touch_test_works_shizuku">Works through Shizuku. AimBuddy can move your aim.</string>
+    <string name="touch_test_works_root">Works through root. AimBuddy can move your aim.</string>
+    <string name="touch_fail_no_route">No route was available. Shizuku has to be running and allow AimBuddy, or root has to be granted. Then test again.</string>
+    <string name="touch_fail_no_shizuku">Shizuku is not available. It has to be running and allow AimBuddy. Then test again.</string>
+    <string name="touch_fail_no_root">Root was not granted. Allow AimBuddy in your root manager, then test again.</string>
+    <string name="touch_fail_no_touchscreen">No touchscreen was found.</string>
+    <string name="touch_fail_denied">This phone does not let the touch helper use the touchscreen.</string>
+    <string name="touch_fail_busy">Another program is holding the touchscreen.</string>
+    <string name="touch_fail_unreachable">The touch helper could not be started.</string>
+    <string name="touch_allow_in_shizuku">Open Shizuku and allow AimBuddy in its list of apps.</string>
     <string name="open_source">Free and open source</string>
 
     <!-- Updates -->
@@ -161,7 +181,6 @@
     <string name="s_auto_calibrate">Calibrate automatically</string>
     <string name="s_auto_calibrate_hint">Measures how the game reacts while you play.</string>
     <string name="s_calibration_footer">These match how your game reacts to a finger. Automatic calibration measures them while you play; turn it off to keep your own values.</string>
-    <string name="s_access">Touch access</string>
     <string name="s_automatic">Automatic</string>
     <string name="s_touch_area_footer">The touch area is where the assist\'s finger rests. Move and resize it from the in-game menu while AimBuddy is running.</string>
     <string name="s_language">Language</string>

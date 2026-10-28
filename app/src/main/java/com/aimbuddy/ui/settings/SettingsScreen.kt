@@ -87,6 +87,7 @@ class SettingsActions(
     val openUrl: (String) -> Unit,
     val updateAction: () -> Unit,
     val setAutoUpdateCheck: (Boolean) -> Unit,
+    val openTouchAccess: () -> Unit,
 )
 
 /**
@@ -358,16 +359,23 @@ private fun CameraGroup(settings: SettingsView, actions: SettingsActions) {
     }
 }
 
-/** Which way the assist reaches the touchscreen. */
+/** Which way the assist reaches the touchscreen: the choice is made, and tested, on a screen of its own. */
 @Composable
 private fun TouchGroup(settings: SettingsView, actions: SettingsActions) {
+    val route = when (settings.int("touchBackend", 0)) {
+        1 -> stringResource(R.string.touch_shizuku)
+        2 -> stringResource(R.string.touch_root)
+        else -> stringResource(R.string.s_automatic)
+    }
     Group(title = stringResource(R.string.settings_touch), footer = stringResource(R.string.s_touch_area_footer)) {
         row {
-            SegmentedRow(
-                title = stringResource(R.string.s_access),
-                options = listOf(stringResource(R.string.s_automatic), stringResource(R.string.touch_shizuku), stringResource(R.string.touch_root)),
-                selected = settings.int("touchBackend", 0).coerceIn(0, 2),
-                onSelect = { actions.set("touchBackend", it.toString()) },
+            ListRow(
+                title = stringResource(R.string.row_touch_access),
+                trailing = {
+                    RowValue(route)
+                    Chevron()
+                },
+                onClick = actions.openTouchAccess,
             )
         }
     }

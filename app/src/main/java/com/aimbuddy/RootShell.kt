@@ -12,17 +12,20 @@ import java.util.concurrent.TimeUnit
 object RootShell {
     private const val TAG = "RootShell"
 
+    /** What is known of root for this app. It is only learned by asking, and asking may show the player a prompt. */
+    enum class Status { NOT_ASKED, ALLOWED, UNAVAILABLE }
+
     /** The two ways a superuser binary takes a command: `su -c "cmd"` (Magisk, SuperSU) and `su 0 sh -c "cmd"` (the Android source tree). */
     private enum class Style { COMMAND_FLAG, USER_FIRST }
 
     @Volatile
-    private var granted = false
+    private var status = Status.NOT_ASKED
 
     @Volatile
     private var style = Style.COMMAND_FLAG
 
-    /** True once the player has granted root to this app in this run. */
-    fun isGranted(): Boolean = granted
+    /** What the last request for root found, in this run. */
+    fun status(): Status = status
 
     /** The words that run `script` as root in the given style. */
     private fun suCommand(style: Style, script: String): List<String> = when (style) {
@@ -35,22 +38,24 @@ object RootShell {
      * show the player a permission prompt, so it waits up to `timeoutSeconds` for an answer.
      */
     fun requestRoot(timeoutSeconds: Long): Boolean {
-        if (granted) {
+        if (status == Status.ALLOWED) {
             return true
         }
         for (candidate in Style.entries) {
             val answer = tryRoot(candidate, timeoutSeconds)
             if (answer == Answer.GRANTED) {
                 style = candidate
-                granted = true
+                status = Status.ALLOWED
                 Log.i(TAG, "Root granted ($candidate)")
                 return true
             }
             if (answer == Answer.TIMED_OUT) {
+                status = Status.UNAVAILABLE
                 return false   // waiting for the player's answer in a prompt: do not ask again
             }
         }
         Log.i(TAG, "Root refused or not available")
+        status = Status.UNAVAILABLE
         return false
     }
 

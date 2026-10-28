@@ -30,9 +30,29 @@
     <string name="touch_not_set_up">Не настроено</string>
     <string name="touch_test_stop_first">Сначала остановите помощника: он использует сенсорный экран.</string>
     <string name="touch_test_wait">Проверка касаний ещё идёт. Повторите через мгновение.</string>
-    <string name="touch_dialog_title">Нужно больше доступа</string>
-    <string name="touch_dialog_message">AimBuddy подсвечивает цели сам. Чтобы двигать прицел, он добавляет второй палец на сенсорный экран, а для этого нужен Shizuku или root.</string>
-    <string name="touch_dialog_open_shizuku">Открыть Shizuku</string>
+    <string name="touch_reach_with">Доступ к сенсорному экрану через</string>
+    <string name="touch_route_footer">Чтобы двигать прицел, AimBuddy добавляет второй палец на сенсорный экран. Для этого нужен Shizuku или root. Без них он только обводит людей. «Автоматически» сначала пробует Shizuku, затем root. Выбор применяется, когда вы нажимаете «Старт».</string>
+    <string name="touch_phone_group">На этом телефоне</string>
+    <string name="touch_phone_footer">Root запрашивается, когда вы нажимаете «Старт» или «Проверить», поэтому до этого он показан как не запрошенный.</string>
+    <string name="touch_shizuku_ready">Готов</string>
+    <string name="touch_shizuku_allow">Нажмите, чтобы разрешить</string>
+    <string name="touch_shizuku_not_running">Не запущен</string>
+    <string name="touch_shizuku_not_installed">Не установлен</string>
+    <string name="touch_root_allowed">Разрешён</string>
+    <string name="touch_root_unknown">Ещё не запрашивался</string>
+    <string name="touch_root_unavailable">Недоступен</string>
+    <string name="touch_test_button">Проверить доступ к касаниям</string>
+    <string name="touch_test_footer">Запускает помощник касаний так же, как «Старт», и снова останавливает его. Ничего не остаётся работать.</string>
+    <string name="touch_test_works_shizuku">Работает через Shizuku. AimBuddy может двигать ваш прицел.</string>
+    <string name="touch_test_works_root">Работает через root. AimBuddy может двигать ваш прицел.</string>
+    <string name="touch_fail_no_route">Ни один способ недоступен. Shizuku должен работать и разрешить AimBuddy, либо нужно выдать root. Затем повторите проверку.</string>
+    <string name="touch_fail_no_shizuku">Shizuku недоступен. Он должен работать и разрешить AimBuddy. Затем повторите проверку.</string>
+    <string name="touch_fail_no_root">Root не выдан. Разрешите AimBuddy в менеджере root, затем повторите проверку.</string>
+    <string name="touch_fail_no_touchscreen">Сенсорный экран не найден.</string>
+    <string name="touch_fail_denied">Этот телефон не даёт помощнику касаний использовать сенсорный экран.</string>
+    <string name="touch_fail_busy">Сенсорный экран занят другой программой.</string>
+    <string name="touch_fail_unreachable">Помощник касаний не запустился.</string>
+    <string name="touch_allow_in_shizuku">Откройте Shizuku и разрешите AimBuddy в его списке приложений.</string>
     <string name="open_source">Бесплатно и с открытым кодом</string>
 
     <!-- Обновления -->
@@ -159,7 +179,6 @@
     <string name="s_auto_calibrate">Калибровать автоматически</string>
     <string name="s_auto_calibrate_hint">Измеряет, как игра реагирует, пока вы играете.</string>
     <string name="s_calibration_footer">Эти значения описывают, как игра реагирует на палец. Автокалибровка измеряет их во время игры; отключите её, чтобы оставить свои значения.</string>
-    <string name="s_access">Доступ к касаниям</string>
     <string name="s_automatic">Автоматически</string>
     <string name="s_touch_area_footer">Зона касания: место, где находится палец помощника. Её можно двигать и менять в размере в меню в игре, пока AimBuddy работает.</string>
     <string name="s_language">Язык</string>

@@ -30,9 +30,29 @@
     <string name="touch_not_set_up">未设置</string>
     <string name="touch_test_stop_first">请先停止辅助：它正在使用触摸屏。</string>
     <string name="touch_test_wait">触控测试仍在进行。请稍后再试。</string>
-    <string name="touch_dialog_title">瞄准辅助需要更多权限</string>
-    <string name="touch_dialog_message">AimBuddy 可以独自高亮目标。要移动你的准星，它会在触摸屏上加一根手指，这需要 Shizuku 或 root。</string>
-    <string name="touch_dialog_open_shizuku">打开 Shizuku</string>
+    <string name="touch_reach_with">触摸屏接入方式</string>
+    <string name="touch_route_footer">要移动你的准星，AimBuddy 会在触摸屏上额外加一根手指，这需要 Shizuku 或 root。两者都没有时，它只会框出人物。“自动”先尝试 Shizuku，再尝试 root。点按“开始”时采用此选择。</string>
+    <string name="touch_phone_group">此手机</string>
+    <string name="touch_phone_footer">root 在你点按“开始”或“测试”时才会被请求，在此之前显示为尚未请求。</string>
+    <string name="touch_shizuku_ready">就绪</string>
+    <string name="touch_shizuku_allow">点按以允许</string>
+    <string name="touch_shizuku_not_running">未运行</string>
+    <string name="touch_shizuku_not_installed">未安装</string>
+    <string name="touch_root_allowed">已允许</string>
+    <string name="touch_root_unknown">尚未请求</string>
+    <string name="touch_root_unavailable">不可用</string>
+    <string name="touch_test_button">测试触控方式</string>
+    <string name="touch_test_footer">像“开始”那样启动触控助手，然后再停止它。不会留下任何运行中的程序。</string>
+    <string name="touch_test_works_shizuku">可通过 Shizuku 使用。AimBuddy 可以移动你的准星。</string>
+    <string name="touch_test_works_root">可通过 root 使用。AimBuddy 可以移动你的准星。</string>
+    <string name="touch_fail_no_route">没有可用的方式。Shizuku 需要在运行并允许 AimBuddy，或者需要授予 root。然后再测试。</string>
+    <string name="touch_fail_no_shizuku">Shizuku 不可用。它需要在运行并允许 AimBuddy。然后再测试。</string>
+    <string name="touch_fail_no_root">未授予 root。请在你的 root 管理器中允许 AimBuddy，然后再测试。</string>
+    <string name="touch_fail_no_touchscreen">未找到触摸屏。</string>
+    <string name="touch_fail_denied">此手机不允许触控助手使用触摸屏。</string>
+    <string name="touch_fail_busy">另一个程序正在占用触摸屏。</string>
+    <string name="touch_fail_unreachable">无法启动触控助手。</string>
+    <string name="touch_allow_in_shizuku">请打开 Shizuku，并在其应用列表中允许 AimBuddy。</string>
     <string name="open_source">免费开源</string>
 
     <!-- 更新 -->
@@ -159,7 +179,6 @@
     <string name="s_auto_calibrate">自动校准</string>
     <string name="s_auto_calibrate_hint">在游玩时测量游戏对手指的反应。</string>
     <string name="s_calibration_footer">这些数值对应游戏对手指的反应。自动校准会在游玩时测量它们；关闭后则使用你自己设定的值。</string>
-    <string name="s_access">触控方式</string>
     <string name="s_automatic">自动</string>
     <string name="s_touch_area_footer">触控区域是辅助手指停放的位置。AimBuddy 运行时，可在游戏内菜单中移动和调整它的大小。</string>
     <string name="s_language">语言</string>

@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.aimbuddy.AssistState
 import com.aimbuddy.R
+import com.aimbuddy.RootShell
 import com.aimbuddy.ShizukuStatus
 import com.aimbuddy.TouchHelper
 import com.aimbuddy.ui.TouchAccess
@@ -258,7 +259,7 @@ private fun HomeList(
         route == TouchHelper.Route.ROOT -> stringResource(R.string.touch_root)
         route == TouchHelper.Route.SHIZUKU -> stringResource(R.string.touch_shizuku)
         touchAccess.shizuku == ShizukuStatus.READY -> stringResource(R.string.touch_shizuku)
-        touchAccess.rootAllowed -> stringResource(R.string.touch_root)
+        touchAccess.root == RootShell.Status.ALLOWED -> stringResource(R.string.touch_root)
         else -> stringResource(R.string.touch_not_set_up)
     }
     Column(verticalArrangement = Arrangement.spacedBy(Space.l)) {
