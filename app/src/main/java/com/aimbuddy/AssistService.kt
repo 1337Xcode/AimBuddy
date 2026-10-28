@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Display
@@ -52,6 +53,18 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
 
     /** Whether streamer mode is on, which decides what the notification's icon shows. */
     private var streamerMode = false
+
+    /** Asks now and then whether the touch helper is still there once it has connected. */
+    private val touchWatch = object : Runnable {
+        override fun run() {
+            if (!running) {
+                return
+            }
+            checkTouchHelper()
+            mainHandler.postDelayed(this, TOUCH_WATCH_MS)
+        }
+    }
+    private val helperRestarts = RestartBudget(MAX_HELPER_RESTARTS, HELPER_RESTART_WINDOW_MS)
 
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) {}
@@ -203,13 +216,37 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
 
         AssistState.set(AssistState.Phase.RUNNING)
         startTouchHelper()
+        mainHandler.postDelayed(touchWatch, TOUCH_WATCH_MS)
+    }
+
+    /**
+     * Notices that the helper went away after it had connected: the system stopped it, the touchscreen's
+     * device vanished, or the player took the screen back with the volume keys. Without this the Home
+     * screen would go on saying the aim is assisted. Unless it was the player, the helper is started
+     * again, a few times; then the screen says why it is not there.
+     */
+    private fun checkTouchHelper() {
+        if (AssistState.state.value.touch !is AssistState.Touch.Connected) {
+            return
+        }
+        val status = decodeLinkStatus(NativeBridge.touchStatus())
+        if (status.connected) {
+            return
+        }
+        // A helper that died without a word leaves no reason behind: it could not be reached.
+        val reason = status.reason.takeIf { it != TouchHelper.Reason.NONE } ?: TouchHelper.Reason.UNREACHABLE
+        Log.w(TAG, "The touch helper went away (reason $reason)")
+        if (isWorthRestarting(reason) && helperRestarts.tryUse(SystemClock.elapsedRealtime())) {
+            startTouchHelper()
+        } else {
+            AssistState.setTouch(AssistState.Touch.Unavailable(reason, TouchHelper.Reason.describe(reason)))
+        }
     }
 
     /** Starts the touch helper in the background; the assist runs without it, drawing targets only. */
     private fun startTouchHelper() {
         AssistState.setTouch(AssistState.Touch.Starting)
-        val helper = TouchHelper(this)
-        touchHelper = helper
+        val helper = touchHelper ?: TouchHelper(this).also { touchHelper = it }
         worker.execute {
             val outcome = try {
                 helper.start(NativeBridge.touchBackend())
@@ -286,6 +323,7 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
             return
         }
         running = false
+        mainHandler.removeCallbacks(touchWatch)
         AssistState.set(AssistState.Phase.STOPPING)
 
         guarded("native stop") { NativeBridge.stop() }
@@ -388,6 +426,11 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         private const val CHANNEL_ID = "aimbuddy_assist"
         private const val NOTIFICATION_ID = 12345
         private const val SETTINGS_FILE = "settings.cfg"
+
+        /** How often the touch helper is asked for, and how many times it is started again before the player is told. */
+        private const val TOUCH_WATCH_MS = 500L
+        private const val MAX_HELPER_RESTARTS = 3
+        private const val HELPER_RESTART_WINDOW_MS = 60_000L
 
         const val ACTION_START = "com.aimbuddy.action.START"
         const val ACTION_STOP = "com.aimbuddy.action.STOP"

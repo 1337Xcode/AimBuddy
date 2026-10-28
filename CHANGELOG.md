@@ -13,6 +13,7 @@ Dates are in ISO-8601 (YYYY-MM-DD).
 - The model store showed an older list, or said it could not be read, when the list had been fetched fine but the copy kept for offline use could not be written (a full phone). The fresh list is used and only the copy is skipped.
 - A download and an import that finished at the same moment could leave one of the two models off the list, though its files were there. Changes to the list are made one at a time now; a test that adds 300 models from two threads loses some without it.
 - Starting the touch helper through Shizuku again soon after it had been stopped could hang for the whole 10 second wait and fail (the second of two restarts 12 seconds apart did, on an emulator). Shizuku keeps one record for each service, and the new start joined the one that was still being taken down. Each start asks for a service of its own now.
+- The Home screen went on saying the aim was assisted after the touch helper had gone away (the system stopped it, the touchscreen's device vanished, or the player held both volume keys). The app now notices within half a second, starts the helper again up to three times a minute (not after the volume keys, which the player pressed on purpose), and then says why the aim is not assisted. Killing the helper on an emulator three times in 40 seconds brought it back each time in about three seconds.
 
 ## [0.3.5-beta.1] - 2026-10-28
 
