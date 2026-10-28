@@ -9,6 +9,7 @@ Dates are in ISO-8601 (YYYY-MM-DD).
 ### Fixed
 - Pressing Stop within a few seconds of Start crashed the app when Shizuku was running: Stop interrupts the thread that waits for Shizuku to start the touch helper, and nothing caught the interruption. The wait now gives up quietly and the stop finishes. Found in 0.3.5-beta.1.
 - Start did nothing for a player who had said no to the notification permission twice: the app asked again as fast as the system answered (50 times in 4 seconds on an emulator) and never reached the screen capture step. It asks once for each press of Start now.
+- A model whose description file was unreadable or gave a network input of an absurd size could take the app down while it started. A size outside 32 to 2048 pixels is now left for the detector to work out, an unreadable description is ignored, and a failure while the model or the touch helper starts ends in a message instead of a crash.
 
 ## [0.3.5-beta.1] - 2026-10-28
 

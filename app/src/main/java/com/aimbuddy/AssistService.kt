@@ -120,7 +120,13 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
 
         // Loading the model takes a moment, so it happens off the main thread.
         worker.execute {
-            val loaded = loadSettingsAndModel()
+            val loaded = try {
+                loadSettingsAndModel()
+            } catch (e: Exception) {
+                // An unreadable file or a damaged list has to end this start with a message, not the whole app.
+                Log.e(TAG, "The model could not be set up: ${e.message}", e)
+                false
+            }
             mainHandler.post {
                 if (!running) {
                     return@post
@@ -205,7 +211,13 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         val helper = TouchHelper(this)
         touchHelper = helper
         worker.execute {
-            val outcome = helper.start(NativeBridge.touchBackend())
+            val outcome = try {
+                helper.start(NativeBridge.touchBackend())
+            } catch (e: Exception) {
+                // Whatever went wrong while starting the helper, the assist goes on without it: it draws targets only.
+                Log.e(TAG, "The touch helper could not be started: ${e.message}", e)
+                TouchHelper.Outcome.Failed(TouchHelper.Reason.UNREACHABLE, e.message ?: e.javaClass.simpleName)
+            }
             mainHandler.post {
                 if (!running) {
                     helper.stop()

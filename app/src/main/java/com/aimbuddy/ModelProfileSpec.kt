@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 
 /**
  * What a model says about itself, read from a small JSON file saved next to it.
@@ -19,7 +20,7 @@ import java.io.File
  * - `roles` lists what each class is, in class order: "body" (an enemy), "head" (an enemy's head)
  *   or "ignore" (anything that must not be highlighted, such as teammates).
  * - `endToEnd` is true for exports that already remove duplicate boxes (shape N x 6).
- * - `inputSize` is the network input size in pixels; leave it out to have it detected.
+ * - `inputSize` is the network input size in pixels, 32 to 2048; leave it out to have it detected.
  *
  * Without a file, one class means "body" and two classes mean "body" then "head".
  */
@@ -30,6 +31,10 @@ data class ModelProfileSpec(
 ) {
     companion object {
         private const val TAG = "ModelProfileSpec"
+
+        /** The smallest and the largest network input, in pixels, that a description may state. */
+        private const val MIN_INPUT_SIZE = 32
+        private const val MAX_INPUT_SIZE = 2048
 
         /** Used when a model comes without a description. */
         val UNKNOWN = ModelProfileSpec(roles = null, endToEnd = false, inputSize = 0)
@@ -51,6 +56,9 @@ data class ModelProfileSpec(
             } catch (e: JSONException) {
                 Log.w(TAG, "Ignoring unreadable model description ${file.name}: ${e.message}")
                 UNKNOWN
+            } catch (e: IOException) {
+                Log.w(TAG, "Could not read the model description ${file.name}: ${e.message}")
+                UNKNOWN
             }
         }
 
@@ -65,7 +73,8 @@ data class ModelProfileSpec(
             return ModelProfileSpec(
                 roles = roles?.takeIf { it.isNotBlank() },
                 endToEnd = root.optBoolean("endToEnd", false),
-                inputSize = root.optInt("inputSize", 0).coerceAtLeast(0)
+                // A number no network input has is not a size: the detector works it out instead of allocating it.
+                inputSize = root.optInt("inputSize", 0).takeIf { it in MIN_INPUT_SIZE..MAX_INPUT_SIZE } ?: 0
             )
         }
     }
