@@ -8,6 +8,7 @@
 #include <iterator>
 #include <vector>
 
+#include "../core/output_agreement.h"
 #include "../settings.h"
 #include "../utils/logger.h"
 
@@ -256,10 +257,45 @@ void YoloDetector::chooseBackend(const std::function<bool()>& shouldStop) {
         return;
     }
 
-    const bool useGpu = gpuLoaded_ && cpuMs > 0.0f && gpuMs < cpuMs * kGpuMustBeFasterBy;
+    bool useGpu = gpuLoaded_ && cpuMs > 0.0f && gpuMs < cpuMs * kGpuMustBeFasterBy;
+    if (useGpu && !gpuAnswersLikeCpu()) {
+        // Fast and wrong is no use: the detector would see nobody, with nothing to say why.
+        useGpu = false;
+        gpuNet_.clear();
+        gpuLoaded_ = false;
+    }
     useBackend(useGpu ? Backend::kVulkan : Backend::kCpu);
     LOGI("Backend: %s (CPU %.1f ms with %d threads, GPU %.1f ms)", backendName(), cpuMs,
          cpuNet_.opt.num_threads, gpuMs);
+}
+
+bool YoloDetector::gpuAnswersLikeCpu() {
+    ncnn::Mat input(inputSize_, inputSize_, 3);
+    for (int channel = 0; channel < 3; ++channel) {
+        float* plane = input.channel(channel);
+        for (int y = 0; y < inputSize_; ++y) {
+            for (int x = 0; x < inputSize_; ++x) {
+                plane[y * inputSize_ + x] = agreementPictureValue(x, y, channel);
+            }
+        }
+    }
+    ncnn::Mat cpuOutput;
+    ncnn::Mat gpuOutput;
+    if (!runOnce(cpuNet_, input, cpuOutput) || !runOnce(gpuNet_, input, gpuOutput)) {
+        LOGW("The picture that checks the GPU against the CPU could not be run on both: the CPU is used");
+        return false;
+    }
+    // The CPU's answer was held to this shape when the model was loaded (probeOutput); the GPU's has to match it.
+    if (cpuOutput.empty() || gpuOutput.empty() || gpuOutput.c != 1 || gpuOutput.elempack != 1 ||
+        gpuOutput.elemsize != sizeof(float) || gpuOutput.w != cpuOutput.w || gpuOutput.h != cpuOutput.h) {
+        LOGW("The GPU's answer has another shape than the CPU's: the CPU is used");
+        return false;
+    }
+    float error = 0.0f;
+    const bool agree = outputsAgree(tensorData(cpuOutput), tensorData(gpuOutput), cpuOutput.w * cpuOutput.h, &error);
+    LOGI("The GPU's answer %s the CPU's (largest difference %.1f%% of the range)", agree ? "matches" : "does not match",
+         100.0f * error);
+    return agree;
 }
 
 bool YoloDetector::detect(const RoiFrame& frame, DetectionBatch& batch) {

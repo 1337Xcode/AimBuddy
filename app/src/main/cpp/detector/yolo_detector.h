@@ -25,7 +25,8 @@ namespace aimbuddy {
  *
  * Phones differ a lot, so the detector loads the model for both the CPU and (if present) the
  * GPU and, on the inference thread, times both and keeps the faster. The GPU is shared with the
- * game, so it must be clearly faster to be chosen.
+ * game, so it must be clearly faster to be chosen, and it must give the CPU's answer to a test
+ * picture: a driver that is fast and wrong is not used.
  *
  * All methods except setMinScore() must be called from a single thread at a time.
  */
@@ -91,6 +92,8 @@ private:
     bool runOnce(ncnn::Net& net, const ncnn::Mat& input, ncnn::Mat& output) const;
     bool probeOutput(ncnn::Net& net);
     float medianLatencyMs(ncnn::Net& net, const std::function<bool()>& shouldStop);
+    /// Runs one picture through both networks and says whether the GPU gave the CPU's answer (see outputsAgree).
+    bool gpuAnswersLikeCpu();
 
     ncnn::Net cpuNet_;
     ncnn::Net gpuNet_;
