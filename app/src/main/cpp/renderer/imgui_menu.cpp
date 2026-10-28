@@ -1291,8 +1291,8 @@ Java_com_aimbuddy_OverlayNative_touch(JNIEnv* /* env */, jclass /* clazz */, jin
         return JNI_FALSE;
     }
     switch (action) {
-        case 0:   // finger down: outside the menu it closes it
-            if (!insideRect(g_menuRect, x, y)) {
+        case 0:   // finger down: outside the menu it closes it, unless a list is open, which may reach out past the menu's edge
+            if (!insideRect(g_menuRect, x, y) && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopup)) {
                 g_menuVisible.store(false, std::memory_order_relaxed);
                 return JNI_TRUE;
             }
