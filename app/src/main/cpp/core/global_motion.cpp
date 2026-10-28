@@ -354,12 +354,29 @@ float GlobalMotionEstimator::refineShift(float* shiftX, float* shiftY, int steps
                 }
                 const float px = static_cast<float>(x) - *shiftX;
                 const float py = static_cast<float>(y) - *shiftY;
-                float centre, right, left, down, up;
-                if (!sampleAt(previousGrey_, px, py, &centre) || !sampleAt(previousGrey_, px + 1.0f, py, &right) ||
-                    !sampleAt(previousGrey_, px - 1.0f, py, &left) || !sampleAt(previousGrey_, px, py + 1.0f, &down) ||
-                    !sampleAt(previousGrey_, px, py - 1.0f, &up)) {
+                // All five points read here must lie inside the picture: the centre and its four neighbours, a pixel away.
+                if (px < 1.0f || py < 1.0f || px > static_cast<float>(kGrid - 2) - 1e-3f || py > static_cast<float>(kGrid - 2) - 1e-3f) {
                     continue;
                 }
+                // They are a pixel apart, so they share the same fractions and the same few pixels serve all five.
+                const int x0 = static_cast<int>(px);
+                const int y0 = static_cast<int>(py);
+                const float fx = px - static_cast<float>(x0);
+                const float fy = py - static_cast<float>(y0);
+                const float* above = previousGrey_.data() + (y0 - 1) * kGrid + x0;
+                const float* row0 = above + kGrid;
+                const float* row1 = row0 + kGrid;
+                const float* row2 = row1 + kGrid;
+                const auto across = [fx](const float* row, int offset) { return row[offset] * (1.0f - fx) + row[offset + 1] * fx; };
+                const float aboveAcross = across(above, 0);
+                const float centreAcross0 = across(row0, 0);
+                const float centreAcross1 = across(row1, 0);
+                const float belowAcross = across(row2, 0);
+                const float up = aboveAcross * (1.0f - fy) + centreAcross0 * fy;
+                const float centre = centreAcross0 * (1.0f - fy) + centreAcross1 * fy;
+                const float down = centreAcross1 * (1.0f - fy) + belowAcross * fy;
+                const float left = across(row0, -1) * (1.0f - fy) + across(row1, -1) * fy;
+                const float right = across(row0, 1) * (1.0f - fy) + across(row1, 1) * fy;
                 const float gx = 0.5f * (right - left);
                 const float gy = 0.5f * (down - up);
                 const float difference = grey_[i] - centre;
