@@ -31,6 +31,9 @@ bool Slider(const char* label, float* value, float min, float max, const char* v
 /// The same for a whole number; `valueFormat` takes an int, such as "%d".
 bool SliderInt(const char* label, int* value, int min, int max, const char* valueFormat);
 
+/// A drop down list with its name above it, over the full width. Returns true when another option was chosen.
+bool Choice(const char* label, int* selected, const char* const* options, int count);
+
 }  // namespace aimbuddy::menu
 
 #endif  // AIMBUDDY_RENDERER_MENU_WIDGETS_H

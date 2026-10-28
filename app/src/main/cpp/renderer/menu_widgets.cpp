@@ -56,12 +56,16 @@ void drawNameAndValue(const ImVec2& at, float width, const char* name, const cha
     list->AddText(font, size, at, ImGui::GetColorU32(ImGuiCol_Text), name, nullptr, 0.0f, &clip);
 }
 
+/// Moves the cursor up from the usual space under a line of text to the smaller gap between a name and the control it belongs to.
+void tuckUnderName() {
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetStyle().ItemSpacing.y + kNameGapEm * ImGui::GetFontSize());
+}
+
 /// Leaves room for the line with a slider's name and value and puts the cursor where the strip under it starts. Returns where the line is.
 ImVec2 reserveNameLine(float width) {
     const ImVec2 at = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2(width, ImGui::GetTextLineHeight()));
-    // The Dummy leaves the usual space after it; the strip sits closer to the name it belongs to.
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetStyle().ItemSpacing.y + kNameGapEm * ImGui::GetFontSize());
+    tuckUnderName();
     return at;
 }
 
@@ -177,6 +181,16 @@ bool SliderInt(const char* label, int* value, int min, int max, const char* valu
     char text[32];
     std::snprintf(text, sizeof(text), valueFormat, *value);
     drawNameAndValue(line, width, label, text);
+    return changed;
+}
+
+bool Choice(const char* label, int* selected, const char* const* options, int count) {
+    ImGui::TextUnformatted(label);
+    tuckUnderName();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    ImGui::PushID(label);
+    const bool changed = ImGui::Combo("##choice", selected, options, count);
+    ImGui::PopID();
     return changed;
 }
 

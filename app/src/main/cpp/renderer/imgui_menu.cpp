@@ -881,7 +881,7 @@ bool drawVisualsTab(Settings& s) {
     changed |= ImGui::Checkbox(T(Key::StreamerMode), &s.streamerMode);
     const char* languages[] = {aimbuddy::i18n::LanguageName(0), aimbuddy::i18n::LanguageName(1),
                                aimbuddy::i18n::LanguageName(2)};
-    if (ImGui::Combo(T(Key::Language), &s.language, languages, 3)) {
+    if (menu::Choice(T(Key::Language), &s.language, languages, 3)) {
         aimbuddy::i18n::SetLanguage(s.language);
         changed = true;
     }
@@ -897,18 +897,18 @@ bool drawAimTab(Settings& s) {
     ImGui::Separator();
 
     const char* access[] = {T(Key::AccessAutomatic), T(Key::AccessShizuku), T(Key::AccessRoot)};
-    changed |= ImGui::Combo(T(Key::TouchAccess), &s.touchBackend, access, 3);
+    changed |= menu::Choice(T(Key::TouchAccess), &s.touchBackend, access, 3);
 
     const char* zones[] = {T(Key::ZoneHead), T(Key::ZoneChest), T(Key::ZoneCentre)};
-    changed |= ImGui::Combo(T(Key::AimZone), &s.aimZone, zones, 3);
+    changed |= menu::Choice(T(Key::AimZone), &s.aimZone, zones, 3);
     changed |= menu::Slider(T(Key::AimStrength), &s.aimStrength, 0.0f, 1.0f, "%.2f");
     changed |= menu::Slider(T(Key::AimRadius), &s.aimFovRadius, 50.0f, 650.0f, "%.0f px");
     const char* priorities[] = {T(Key::PriorityNearest), T(Key::PriorityLargest), T(Key::PriorityCertain)};
-    changed |= ImGui::Combo(T(Key::AimPriority), &s.aimPriority, priorities, 3);
+    changed |= menu::Choice(T(Key::AimPriority), &s.aimPriority, priorities, 3);
     const char* afterLanding[] = {T(Key::AfterKeepFollowing), T(Key::AfterOneCorrection)};
-    changed |= ImGui::Combo(T(Key::AimAfterLanding), &s.aimAfterLanding, afterLanding, 2);
+    changed |= menu::Choice(T(Key::AimAfterLanding), &s.aimAfterLanding, afterLanding, 2);
     const char* switching[] = {T(Key::SwitchSticky), T(Key::SwitchBalanced), T(Key::SwitchQuick)};
-    changed |= ImGui::Combo(T(Key::AimSwitching), &s.aimSwitching, switching, 3);
+    changed |= menu::Choice(T(Key::AimSwitching), &s.aimSwitching, switching, 3);
 
     ImGui::SeparatorText(T(Key::CalibrationTitle));
     ImGui::TextWrapped("%s", T(Key::CalibrationHint));
