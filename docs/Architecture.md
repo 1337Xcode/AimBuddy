@@ -110,7 +110,7 @@ The `update` package keeps the app current. `ReleaseFeed` reads GitHub's list of
 
 ## Settings
 
-`SettingsStore` in the native library is the one place the settings live. The file, `settings.cfg` in the app's private storage, has one `name=value` line per setting. Readers ignore names they do not know and keep the default for names that are missing, so a file written by another version still loads. The Compose screens read and write it through `NativeBridge`, and the ImGui menu in the game reads and writes the same store, so a change in either shows in both. Values are clamped when they are stored, so no other code checks ranges.
+`SettingsStore` in the native library is the one place the settings live. The file, `settings.cfg` in the app's private storage, has one `name=value` line per setting. Readers ignore names they do not know and keep the default for names that are missing, so a file written by another version still loads. The Compose screens read and write it through `NativeBridge`, and the ImGui menu in the game reads and writes the same store, so a change in either shows in both. Values are clamped when they are stored, so no other code checks ranges. A thread changes the settings with `update()`, which runs its change under the lock, or with `applyEdit()`, which writes only what an edit of a copy changed, and never by handing a whole copy back, so two threads that change different settings at once cannot undo one another. A change made before the file has been read is made again on top of what the file says.
 
 ## Threads
 

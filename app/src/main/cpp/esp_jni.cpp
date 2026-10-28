@@ -127,12 +127,12 @@ void keepLearnedColour(bool found, const aimbuddy::ColourRange& range) {
     if (!found) {
         return;
     }
-    Settings settings = g_settingsStore.get();
-    settings.colourLearned = true;
-    settings.colourHue = range.hueDegrees;
-    settings.colourSaturation = range.minSaturation;
-    settings.colourValue = range.minValue;
-    g_settingsStore.set(settings);
+    g_settingsStore.update([&range](Settings& settings) {
+        settings.colourLearned = true;
+        settings.colourHue = range.hueDegrees;
+        settings.colourSaturation = range.minSaturation;
+        settings.colourValue = range.minValue;
+    });
 }
 
 /// Keeps what the aim loop measured about the game's camera, so the next run starts close to right.
@@ -144,11 +144,12 @@ void keepLearnedCamera(const aimbuddy::CameraResponse& response, float confidenc
     if (unchanged) {
         return;
     }
-    settings.learnedGainX = response.gainX;
-    settings.learnedGainY = response.gainY;
-    settings.learnedDelayMs = response.delayS * 1000.0f;
-    settings.learnedConfidence = confidence;
-    g_settingsStore.set(settings);
+    g_settingsStore.update([&response, confidence](Settings& current) {
+        current.learnedGainX = response.gainX;
+        current.learnedGainY = response.gainY;
+        current.learnedDelayMs = response.delayS * 1000.0f;
+        current.learnedConfidence = confidence;
+    });
 }
 
 }  // namespace
@@ -293,8 +294,11 @@ JNIEXPORT jstring JNICALL Java_com_aimbuddy_NativeBridge_settingsSnapshot(JNIEnv
 
 /// Changes one setting by name. Unknown names and unreadable numbers change nothing; values are kept in range.
 JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_setSetting(JNIEnv* env, jclass /* clazz */, jstring name, jstring value) {
-    g_settingsStore.set(
-        aimbuddy::SettingsStore::withValue(g_settingsStore.get(), toStdString(env, name), toStdString(env, value)));
+    const std::string settingName = toStdString(env, name);
+    const std::string settingValue = toStdString(env, value);
+    g_settingsStore.update([&](Settings& settings) {
+        settings = aimbuddy::SettingsStore::withValue(settings, settingName, settingValue);
+    });
 }
 
 /// Writes the settings to their file now, if anything changed. The overlay saves them while it runs; this is for edits made in the app while it does not.
@@ -311,7 +315,7 @@ JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_setDetectionRateLimit(JNIE
 
 /// Puts every setting back to how a fresh install starts, keeping the language.
 JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_resetSettings(JNIEnv* /* env */, jclass /* clazz */) {
-    g_settingsStore.set(g_settingsStore.get().resetKeepingLanguage());
+    g_settingsStore.update([](Settings& settings) { settings = settings.resetKeepingLanguage(); });
 }
 
 /**
@@ -388,8 +392,7 @@ JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_start(JNIEnv* /* env *
         return JNI_FALSE;
     }
     // The assist starts off on every run. It moves the aim by itself, so the player turns it on in the game.
-    settings.assistEnabled = false;
-    g_settingsStore.set(settings);
+    g_settingsStore.update([](Settings& current) { current.assistEnabled = false; });
     g_cameraMotion.clear();
     g_pipeline.setColourSink(keepLearnedColour);
     g_pipeline.start();
@@ -461,9 +464,7 @@ JNIEXPORT jboolean JNICALL Java_com_aimbuddy_DebugHooks_knowsDisplaySize(JNIEnv*
 
 /** @brief Switches the aim assist on or off, as the overlay menu does. */
 JNIEXPORT void JNICALL Java_com_aimbuddy_DebugHooks_enableAssist(JNIEnv* /* env */, jclass /* clazz */, jboolean on) {
-    Settings settings = g_settingsStore.get();
-    settings.assistEnabled = on == JNI_TRUE;
-    g_settingsStore.set(settings);
+    g_settingsStore.update([on](Settings& settings) { settings.assistEnabled = on == JNI_TRUE; });
 }
 #endif  // AIMBUDDY_DEBUG_HOOKS
 

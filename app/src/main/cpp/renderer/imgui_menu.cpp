@@ -815,7 +815,7 @@ void drawZoneEditor(const Settings& settings, const ImVec2& origin) {
         if (ImGui::Button(T(Key::ResetTouchArea))) {
             Settings edited = settings;
             resetZone(edited);
-            aimbuddy::settingsStore().set(edited);
+            aimbuddy::settingsStore().applyEdit(settings, edited);
         }
         const ImVec2 position = ImGui::GetWindowPos();
         const ImVec2 extent = ImGui::GetWindowSize();
@@ -830,20 +830,22 @@ void drawZoneEditor(const Settings& settings, const ImVec2& origin) {
 /// Moves the area so that its centre keeps the same distance from the finger.
 void moveZoneTo(const ImVec2& finger, const ImVec2& origin) {
     const ImVec2 extent = displayExtent();
-    Settings settings = aimbuddy::settingsStore().get();
-    settings.anchorX = (finger.x + g_grabOffset.x + origin.x) / extent.x;
-    settings.anchorY = (finger.y + g_grabOffset.y + origin.y) / extent.y;
-    aimbuddy::settingsStore().set(settings);   // keeps the area inside its allowed range
+    const float anchorX = (finger.x + g_grabOffset.x + origin.x) / extent.x;
+    const float anchorY = (finger.y + g_grabOffset.y + origin.y) / extent.y;
+    aimbuddy::settingsStore().update([anchorX, anchorY](Settings& settings) {   // the store keeps the area inside its allowed range
+        settings.anchorX = anchorX;
+        settings.anchorY = anchorY;
+    });
 }
 
 /// Sets the radius to the distance from the area's centre to the finger.
 void resizeZoneTo(const ImVec2& finger, const ImVec2& origin) {
-    Settings settings = aimbuddy::settingsStore().get();
-    const ZoneGeometry zone = zoneGeometry(settings, origin);
-    settings.anchorRadius = distanceBetween(finger, zone.centre);
     const ImVec2 extent = displayExtent();
-    settings.anchorRadius = settings.touchAreaOn(extent.x, extent.y).radiusPx;   // the area stops at the edge of the screen
-    aimbuddy::settingsStore().set(settings);
+    aimbuddy::settingsStore().update([&](Settings& settings) {
+        const ZoneGeometry zone = zoneGeometry(settings, origin);
+        settings.anchorRadius = distanceBetween(finger, zone.centre);
+        settings.anchorRadius = settings.touchAreaOn(extent.x, extent.y).radiusPx;   // the area stops at the edge of the screen
+    });
 }
 
 /// Handles a touch while the editor is open: the panel's buttons go to ImGui, the rest moves or resizes the area.
@@ -1402,7 +1404,7 @@ Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */)
         } else if (g_menuVisible.load(std::memory_order_relaxed)) {
             Settings edited = settings;
             if (drawMenu(edited, bodyCount)) {
-                aimbuddy::settingsStore().set(edited);
+                aimbuddy::settingsStore().applyEdit(settings, edited);
             }
             g_menuWasVisible = true;
         } else {
