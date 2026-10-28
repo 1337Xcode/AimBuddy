@@ -206,6 +206,7 @@ private:
     AimOutput putFingerDown(int64_t nowNs, const Pursuit& pursuit);
     bool fingerSeemsDead(int64_t nowNs);
     void endRun();
+    void forgetFinger();
     FingerStep planFingerStep(int64_t nowNs, const CameraResponse& response, const Pursuit& pursuit,
                               const PlayerInput& player, float dt) const;
     AimOutput moveFinger(int64_t nowNs, float dt, const Pursuit& pursuit, FingerStep step);

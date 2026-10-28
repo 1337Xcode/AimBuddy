@@ -165,7 +165,7 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
     if (releaseRequested_) {
         releaseRequested_ = false;
         forgetTarget();
-        endRun();
+        forgetFinger();
         return lift();
     }
 
@@ -244,6 +244,14 @@ bool AimController::fingerSeemsDead(int64_t nowNs) {
 void AimController::endRun() {
     runStartNs_ = 0;
     ignoredSinceNs_ = 0;
+}
+
+/// Forgets everything held against the game for ignoring the finger, for a fresh start of the assist: it was
+/// switched off, or the screen turned, and what the game did before says nothing about what it will do now.
+void AimController::forgetFinger() {
+    endRun();
+    deadStreak_ = 0;
+    mayTouchAfterNs_ = 0;
 }
 
 /// Copies the finger's state into the telemetry at the end of a step.

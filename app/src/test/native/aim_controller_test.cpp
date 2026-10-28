@@ -371,6 +371,37 @@ TEST(aim_does_not_touch_again_and_again_when_an_ignored_finger_keeps_reaching_th
     CHECK(touchesInSecondHalf * 3 <= touchesInFirstHalf * 2);   // the waits grow, so the touches thin out
 }
 
+TEST(aim_starts_over_without_a_wait_when_it_is_released) {
+    // After a few ignored fingers the wait before the next touch is seconds long. Switching the assist off
+    // and on again, or the screen turning, is a new start, and a new start does not wait for what a game
+    // did before it.
+    SimulatedGame::Truth truth;
+    truth.gain = 3.0f;
+    truth.ignoredTouches = 100000;
+    AimSettings settings = baseSettings();
+    settings.anchorRadiusPx = 900.0f;
+    SimulatedGame game(truth, settings, stationary(260.0f, 80.0f));
+    float fourthLiftAtS = -1.0f;
+    float releasedAtS = -1.0f;
+    int touchesAtRelease = 0;
+    int touchesSoonAfter = -1;
+    game.run(12.0f, [&](float seconds, float, float) {
+        if (fourthLiftAtS < 0.0f && game.controller().telemetry().deadFingers == 4) {
+            fourthLiftAtS = seconds;   // the wait that follows is two seconds
+        }
+        if (fourthLiftAtS >= 0.0f && releasedAtS < 0.0f && seconds >= fourthLiftAtS + 0.3f) {
+            releasedAtS = seconds;
+            touchesAtRelease = game.touchCount();
+            game.controller().release();
+        }
+        if (releasedAtS >= 0.0f && touchesSoonAfter < 0 && seconds >= releasedAtS + 0.2f) {
+            touchesSoonAfter = game.touchCount();
+        }
+    });
+    CHECK(fourthLiftAtS >= 0.0f);
+    CHECK(touchesSoonAfter > touchesAtRelease);
+}
+
 TEST(aim_does_not_run_away_when_a_saved_camera_figure_is_far_wrong) {
     // An earlier run left the belief that the scene slides 0.9 px per finger pixel, with high
     // confidence; this game really slides it 6 px. The figures are only trusted as a guess, so the
