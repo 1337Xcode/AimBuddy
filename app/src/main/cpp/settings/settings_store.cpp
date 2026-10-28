@@ -9,6 +9,7 @@
 #include <limits>
 #include <map>
 #include <sstream>
+#include <utility>
 
 namespace aimbuddy {
 
@@ -157,6 +158,25 @@ struct Setter {
 
 float clampTo(float value, float low, float high) { return std::clamp(value, low, high); }
 
+/// The `name=value` lines of a file as name and text. A line with no name or no equals sign says nothing.
+std::map<std::string, std::string> readLines(const std::string& text) {
+    std::map<std::string, std::string> values;
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        const size_t equals = line.find('=');
+        if (equals == std::string::npos || equals == 0) {
+            continue;
+        }
+        std::string value = line.substr(equals + 1);
+        while (!value.empty() && (value.back() == '\r' || value.back() == ' ')) {
+            value.pop_back();
+        }
+        values[line.substr(0, equals)] = value;
+    }
+    return values;
+}
+
 }  // namespace
 
 void Settings::clamp() {
@@ -230,20 +250,7 @@ std::string SettingsStore::serialize(const Settings& settings) {
 }
 
 Settings SettingsStore::parse(const std::string& text) {
-    std::map<std::string, std::string> values;
-    std::istringstream in(text);
-    std::string line;
-    while (std::getline(in, line)) {
-        const size_t equals = line.find('=');
-        if (equals == std::string::npos || equals == 0) {
-            continue;
-        }
-        std::string value = line.substr(equals + 1);
-        while (!value.empty() && (value.back() == '\r' || value.back() == ' ')) {
-            value.pop_back();
-        }
-        values[line.substr(0, equals)] = value;
-    }
+    const std::map<std::string, std::string> values = readLines(text);
     Settings settings;
     visitFields(settings, Reader{&values});
     settings.clamp();
@@ -255,27 +262,68 @@ Settings SettingsStore::get() const {
     return settings_;
 }
 
-void SettingsStore::set(const Settings& settings) {
-    Settings clamped = settings;
-    clamped.clamp();
+void SettingsStore::apply(const std::function<void(Settings&)>& change) {
     std::lock_guard<std::mutex> lock(mutex_);
-    settings_ = clamped;
+    change(settings_);
+    settings_.clamp();
     dirty_ = true;
     changedAtNs_ = steadyNowNs();
+    if (!loaded_) {
+        beforeLoad_.push_back(change);
+    }
+}
+
+void SettingsStore::set(const Settings& settings) {
+    apply([settings](Settings& current) { current = settings; });
+}
+
+void SettingsStore::update(const std::function<void(Settings&)>& change) { apply(change); }
+
+void SettingsStore::applyEdit(const Settings& before, const Settings& after) {
+    // What the edit changed is told by the text of each setting, as it would be written to the file.
+    const std::map<std::string, std::string> was = readLines(serialize(before));
+    const std::map<std::string, std::string> now = readLines(serialize(after));
+    const bool assistChanged = before.assistEnabled != after.assistEnabled;   // the one setting that is never written
+    const bool assistEnabled = after.assistEnabled;
+    apply([was, now, assistChanged, assistEnabled](Settings& current) {
+        for (const auto& [name, value] : now) {
+            const auto earlier = was.find(name);
+            if (earlier == was.end() || earlier->second != value) {
+                current = withValue(current, name, value);
+            }
+        }
+        if (assistChanged) {
+            current.assistEnabled = assistEnabled;
+        }
+    });
 }
 
 bool SettingsStore::load(const std::string& path) {
-    std::ifstream file(path);
-    if (!file) {
-        return false;
+    Settings loaded;
+    bool read = false;
+    {
+        std::ifstream file(path);
+        if (file) {
+            std::stringstream text;
+            text << file.rdbuf();
+            loaded = parse(text.str());
+            read = true;
+        }
     }
-    std::stringstream text;
-    text << file.rdbuf();
-    const Settings loaded = parse(text.str());
     std::lock_guard<std::mutex> lock(mutex_);
-    settings_ = loaded;
-    dirty_ = false;
-    return true;
+    if (read) {
+        settings_ = loaded;
+        dirty_ = false;
+    }
+    // What was changed before the file was read is made again on top of what it says, so that it is not lost.
+    for (const std::function<void(Settings&)>& change : beforeLoad_) {
+        change(settings_);
+        dirty_ = true;
+    }
+    settings_.clamp();
+    beforeLoad_.clear();
+    loaded_ = true;
+    return read;
 }
 
 bool SettingsStore::hasUnsavedChanges(int64_t* changedAtNs) const {

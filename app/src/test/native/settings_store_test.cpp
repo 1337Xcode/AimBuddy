@@ -224,6 +224,64 @@ TEST(saves_from_several_threads_never_leave_half_a_file) {
     std::remove((path + ".tmp").c_str());
 }
 
+TEST(two_threads_changing_different_settings_never_undo_one_another) {
+    // Each thread counts up one setting a step at a time. Taking a copy and handing it back would lose a step
+    // whenever the other thread's step fell between the two; changed under the lock none is lost.
+    SettingsStore store;
+    constexpr int kSteps = 400;
+    std::thread reach([&] {
+        for (int step = 0; step < kSteps; ++step) {
+            store.update([](Settings& settings) { settings.aimFovRadius += 1.0f; });
+        }
+    });
+    std::thread zone([&] {
+        for (int step = 0; step < kSteps; ++step) {
+            store.update([](Settings& settings) { settings.detectionZoneRadius += 1.0f; });
+        }
+    });
+    reach.join();
+    zone.join();
+    CHECK_NEAR(store.get().aimFovRadius, Settings().aimFovRadius + kSteps, 1e-3);
+    CHECK_NEAR(store.get().detectionZoneRadius, Settings().detectionZoneRadius + kSteps, 1e-3);
+}
+
+TEST(an_edit_writes_only_what_it_changed) {
+    SettingsStore store;
+    const Settings before = store.get();
+    Settings edited = before;
+    edited.aimStrength = 0.3f;
+    edited.assistEnabled = true;   // the one setting that is not in the file, and still part of an edit
+
+    store.update([](Settings& settings) { settings.language = 2; });   // another thread, while the edit was being made
+    store.applyEdit(before, edited);
+
+    CHECK_NEAR(store.get().aimStrength, 0.3, 1e-6);
+    CHECK(store.get().assistEnabled);
+    CHECK(store.get().language == 2);   // not put back to what the copy had
+    CHECK(store.hasUnsavedChanges());
+}
+
+TEST(what_is_changed_before_the_file_is_read_is_made_again_on_top_of_it) {
+    const std::string path = std::string(std::getenv("TMPDIR") ? std::getenv("TMPDIR") : "/tmp") + "/aimbuddy-settings-early.cfg";
+    {
+        std::ofstream file(path, std::ios::trunc);
+        file << "aimStrength=0.9\nlanguage=1\nconfidence=0.8\n";
+    }
+    SettingsStore store;
+    const Settings before = store.get();
+    Settings edited = before;
+    edited.confidence = 0.65f;
+    store.update([](Settings& settings) { settings.aimStrength = 0.2f; });
+    store.applyEdit(before, edited);
+    CHECK(store.load(path));
+
+    CHECK_NEAR(store.get().aimStrength, 0.2, 1e-6);    // changed before the file was read: it wins
+    CHECK_NEAR(store.get().confidence, 0.65, 1e-6);
+    CHECK(store.get().language == 1);                  // never touched: the file's
+    CHECK(store.hasUnsavedChanges());                  // and the changes are still to be saved
+    std::remove(path.c_str());
+}
+
 TEST(a_single_setting_can_be_changed_by_its_file_name) {
     const Settings original;
     Settings changed = SettingsStore::withValue(original, "aimStrength", "0.25");
