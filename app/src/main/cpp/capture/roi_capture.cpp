@@ -92,10 +92,13 @@ bool RoiCapture::ingest(AHardwareBuffer* buffer, int64_t imageTimestampNs) {
     frame.roi = roi;
     frame.geometry = geometry;
     frame.captureTimeNs = timestampUsable ? imageTimestampNs : now;
+    mailbox_.publish();
+    // The detector starts on the frame now, and what the observer does with it (the camera look, which can take
+    // several milliseconds) runs alongside, not in front. The slot is not written again before this thread asks for
+    // the next frame, so the observer can read it while the detector does.
     if (observer_) {
         observer_(frame);
     }
-    mailbox_.publish();
     return true;
 }
 

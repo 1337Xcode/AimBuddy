@@ -32,7 +32,7 @@ struct RoiFrame {
  */
 class RoiCapture {
 public:
-    /// Called on the capture thread with every frame, once it is filled in and before the detector can see it. Must return quickly.
+    /// Called on the capture thread with every frame, once it is filled in and published: the detector is already at work on it. It must only read the frame.
     using FrameObserver = std::function<void(const RoiFrame&)>;
 
     /// Sets the grid sizes. Call before frames arrive (capture stopped).
