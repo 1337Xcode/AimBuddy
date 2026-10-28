@@ -72,6 +72,9 @@ fun SwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Uni
     )
 }
 
+/** The thumb of a slider: a white disc the finger holds. */
+private val SliderThumbSize = Space.xl - Space.xs
+
 /** A row with a title, its value at the end, and a slider under them. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,10 +90,13 @@ fun SliderRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Space.l, vertical = Space.s),
+            .padding(vertical = Space.s),
     ) {
         // The slider below carries the title and the value for a screen reader, so this line is only drawn.
-        Row(modifier = Modifier.fillMaxWidth().clearAndSetSemantics { }, verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Space.l).clearAndSetSemantics { },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
@@ -106,20 +112,24 @@ fun SliderRow(
             activeTickColor = Color.Transparent,
             inactiveTickColor = Color.Transparent,
         )
+        // A slider keeps half a thumb free at each end of its track, so it is given that much more room than
+        // the text above it: the ends of the track then sit under the ends of the text.
         Slider(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.semantics {
-                contentDescription = title
-                stateDescription = valueText
-            },
+            modifier = Modifier
+                .padding(horizontal = Space.l - SliderThumbSize / 2)
+                .semantics {
+                    contentDescription = title
+                    stateDescription = valueText
+                },
             valueRange = range,
             steps = steps,
             colors = colors,
             thumb = {
                 Box(
                     modifier = Modifier
-                        .size(Space.xl - Space.xs)
+                        .size(SliderThumbSize)
                         .shadow(Space.xs, CircleShape)
                         .background(Color.White, CircleShape),
                 )
