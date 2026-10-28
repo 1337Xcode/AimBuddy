@@ -44,6 +44,7 @@ import com.aimbuddy.InstalledModel
 import com.aimbuddy.ModelSource
 import com.aimbuddy.R
 import com.aimbuddy.StoreModelDefinition
+import com.aimbuddy.TransferFailure
 import com.aimbuddy.TransferProgress
 import com.aimbuddy.ui.ModelsState
 import com.aimbuddy.ui.StoreState
@@ -283,6 +284,7 @@ private fun LazyStaggeredGridScope.storeTab(
                                     installedVersion = state.installedVersion(model.id),
                                     transfer = state.transfer?.takeIf { it.modelId == model.id },
                                     anotherDownloadIsRunning = state.transfer != null && state.transfer.modelId != model.id,
+                                    failure = state.failure?.takeIf { state.failedId == model.id },
                                     picturePath = store.icons[model.id],
                                     onGet = onGet,
                                     onCancel = onCancel,
@@ -299,7 +301,8 @@ private fun LazyStaggeredGridScope.storeTab(
 /**
  * One model in the store: its tile, its name, what it is for, who made it and how big it is, and a
  * way to get it, update it to a newer version, or see that it is already on the phone. While it is
- * being downloaded the row shows how far it has got and a way to stop.
+ * being downloaded the row shows how far it has got and a way to stop; when the last try failed it
+ * says why and offers another.
  */
 @Composable
 private fun StoreRow(
@@ -307,6 +310,7 @@ private fun StoreRow(
     installedVersion: Int?,
     transfer: Transfer?,
     anotherDownloadIsRunning: Boolean,
+    failure: TransferFailure?,
     picturePath: String?,
     onGet: (StoreModelDefinition) -> Unit,
     onCancel: () -> Unit,
@@ -322,8 +326,13 @@ private fun StoreRow(
         lines = listOfNotNull(model.description.takeIf { it.isNotBlank() }, details),
         picturePath = picturePath,
         below = {
-            if (transfer != null) {
-                TransferLine(transfer)
+            when {
+                transfer != null -> TransferLine(transfer)
+                failure != null -> Text(
+                    text = stringResource(failureText(failure)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppTheme.palette.danger,
+                )
             }
         },
     ) {
@@ -335,6 +344,7 @@ private fun StoreRow(
             )
             transfer != null -> SmallPill(text = stringResource(R.string.dialog_cancel), onClick = onCancel)
             anotherDownloadIsRunning -> Unit   // one at a time: the others wait for their turn
+            failure != null -> SmallPill(text = stringResource(R.string.models_retry), onClick = { onGet(model) })
             installedVersion == null -> SmallPill(text = stringResource(R.string.models_get), onClick = { onGet(model) })
             model.version > installedVersion -> SmallPill(text = stringResource(R.string.models_update), onClick = { onGet(model) })
             else -> Icon(
@@ -345,6 +355,14 @@ private fun StoreRow(
             )
         }
     }
+}
+
+/** What to tell the player about a download that failed. */
+private fun failureText(failure: TransferFailure): Int = when (failure) {
+    TransferFailure.OFFLINE -> R.string.models_error_offline
+    TransferFailure.DAMAGED -> R.string.models_error_damaged
+    TransferFailure.NO_SPACE -> R.string.models_error_space
+    TransferFailure.OTHER -> R.string.models_download_failed
 }
 
 /** How far a download has got: a bar, and under it what has arrived of the total, how fast, and how long is left. */

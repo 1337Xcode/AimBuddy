@@ -50,3 +50,40 @@ class TransferMeter(private val windowMs: Long = WINDOW_MS) {
 
 /** The player asked for a download to stop. Not a failure: nothing is said about it. */
 class DownloadCancelledException : IOException("The download was cancelled")
+
+/** Why a download did not finish, in the terms a player can do something about. */
+enum class TransferFailure {
+    /** The phone could not reach the store, or the connection broke on the way. */
+    OFFLINE,
+
+    /** What arrived is not what the store listed: the wrong size or the wrong checksum. */
+    DAMAGED,
+
+    /** The phone ran out of room for the files. */
+    NO_SPACE,
+
+    /** Anything else, such as the store answering with an error. */
+    OTHER;
+
+    companion object {
+        /** Tells from the error, and the errors it was caused by, what went wrong. */
+        fun of(error: Throwable): TransferFailure {
+            var current: Throwable? = error
+            var depth = 0
+            while (current != null && depth < MAX_CAUSES) {
+                val message = current.message.orEmpty()
+                when {
+                    current is java.net.UnknownHostException || current is java.net.ConnectException ||
+                        current is java.net.SocketException || current is java.net.SocketTimeoutException -> return OFFLINE
+                    message.contains("ENOSPC") || message.contains("No space left", ignoreCase = true) -> return NO_SPACE
+                    message.contains("checksum", ignoreCase = true) || message.contains("larger than the store says") -> return DAMAGED
+                }
+                current = current.cause
+                depth++
+            }
+            return OTHER
+        }
+
+        private const val MAX_CAUSES = 8
+    }
+}

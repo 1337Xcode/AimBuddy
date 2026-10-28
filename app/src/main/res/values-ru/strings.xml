@@ -85,6 +85,9 @@
     <string name="models_speed">%1$s/с</string>
     <string name="models_left_seconds">осталось %1$d с</string>
     <string name="models_left_minutes">осталось %1$d мин</string>
+    <string name="models_error_offline">Нет соединения. Проверьте интернет и повторите.</string>
+    <string name="models_error_damaged">Загрузка повреждена. Повторите.</string>
+    <string name="models_error_space">На телефоне не хватает места.</string>
     <string name="models_delete_title">Удалить модель?</string>
     <string name="models_delete_message">«%1$s» будет удалена с этого телефона.</string>
     <string name="models_next_start">Будет использована при следующем нажатии «Старт».</string>

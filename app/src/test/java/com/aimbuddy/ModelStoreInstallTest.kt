@@ -133,7 +133,7 @@ class ModelStoreInstallTest {
             damaged.install(model, target) { _, _ -> }
             fail("a damaged download must not be installed")
         } catch (expected: IOException) {
-            // the way a damaged file is refused
+            assertEquals(TransferFailure.DAMAGED, TransferFailure.of(expected))
         }
 
         assertFalse(target.exists())
@@ -149,7 +149,7 @@ class ModelStoreInstallTest {
             tooBig.install(model, target) { _, _ -> }
             fail("a file larger than listed must not be installed")
         } catch (expected: IOException) {
-            // the way a file that is too big is refused
+            assertEquals(TransferFailure.DAMAGED, TransferFailure.of(expected))
         }
 
         assertFalse(target.exists())

@@ -19,6 +19,7 @@ import com.aimbuddy.Project
 import com.aimbuddy.R
 import com.aimbuddy.StoreModelDefinition
 import com.aimbuddy.DownloadCancelledException
+import com.aimbuddy.TransferFailure
 import com.aimbuddy.TransferMeter
 import com.aimbuddy.TransferProgress
 import com.aimbuddy.ui.theme.Accent
@@ -64,11 +65,16 @@ sealed interface StoreState {
 /** The download under way: which model, how far it has got, and whether the player has asked for it to stop. */
 data class Transfer(val modelId: String, val progress: TransferProgress = TransferProgress(), val cancelling: Boolean = false)
 
-/** What the models screens show. `transfer` is the model being downloaded, if any. */
+/**
+ * What the models screens show. `transfer` is the model being downloaded, if any. `failedId` is the model whose last
+ * download failed and `failure` why, until the player tries again.
+ */
 data class ModelsState(
     val installed: List<InstalledModel> = emptyList(),
     val activeId: String? = null,
     val transfer: Transfer? = null,
+    val failedId: String? = null,
+    val failure: TransferFailure? = null,
     val store: StoreState = StoreState.Idle,
 ) {
     /** The version of the model with this id that is on the phone, or null when it is not there. */
@@ -386,7 +392,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val isNew = _models.value.installedVersion(model.id) == null
         val isFirstModel = _models.value.installed.isEmpty()
         cancelRequested.set(false)
-        _models.update { it.copy(transfer = Transfer(model.id, TransferProgress(bytesTotal = model.totalSizeBytes))) }
+        _models.update {
+            it.copy(
+                transfer = Transfer(model.id, TransferProgress(bytesTotal = model.totalSizeBytes)),
+                failedId = null,
+                failure = null,
+            )
+        }
         work.launch {
             val meter = TransferMeter()
             var shownAtMs = 0L
@@ -426,7 +438,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     Log.i(TAG, "Download cancelled")
                 } else {
                     Log.w(TAG, "Download failed: ${error.message}")
-                    _messages.tryEmit(UiMessage(R.string.models_download_failed))
+                    _models.update { it.copy(failedId = model.id, failure = TransferFailure.of(error)) }
                 }
             }
             _models.update { it.copy(transfer = null) }

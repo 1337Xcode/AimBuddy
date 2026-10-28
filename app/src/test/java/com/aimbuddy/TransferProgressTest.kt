@@ -4,8 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
-/** What the models screen says about a download: how far it is, how fast, and how long it will take. */
+/** What the models screen says about a download: how far it is, how fast, how long it will take, and why it failed. */
 class TransferProgressTest {
 
     @Test
@@ -51,5 +55,31 @@ class TransferProgressTest {
             bytes += 100_000
         }
         assertTrue("speed was $speed", speed in 90_000L..110_000L)
+    }
+
+    @Test
+    fun aBrokenConnectionIsOffline() {
+        assertEquals(TransferFailure.OFFLINE, TransferFailure.of(UnknownHostException("raw.githubusercontent.com")))
+        assertEquals(TransferFailure.OFFLINE, TransferFailure.of(ConnectException("Connection refused")))
+        assertEquals(TransferFailure.OFFLINE, TransferFailure.of(SocketTimeoutException("timeout")))
+        assertEquals(TransferFailure.OFFLINE, TransferFailure.of(IOException("The store could not be read", UnknownHostException("host"))))
+    }
+
+    @Test
+    fun aFileThatIsNotWhatTheStoreListedIsDamaged() {
+        assertEquals(TransferFailure.DAMAGED, TransferFailure.of(IOException("model.bin does not match the store's checksum")))
+        assertEquals(TransferFailure.DAMAGED, TransferFailure.of(IOException("model.param is larger than the store says")))
+    }
+
+    @Test
+    fun aFullPhoneIsToldApart() {
+        assertEquals(TransferFailure.NO_SPACE, TransferFailure.of(IOException("write failed: ENOSPC (No space left on device)")))
+        assertEquals(TransferFailure.NO_SPACE, TransferFailure.of(IOException("copy failed", IOException("No space left on device"))))
+    }
+
+    @Test
+    fun anythingElseIsOther() {
+        assertEquals(TransferFailure.OTHER, TransferFailure.of(IOException("HTTP 404 for https://example.invalid/model.bin")))
+        assertEquals(TransferFailure.OTHER, TransferFailure.of(IllegalStateException("something else")))
     }
 }
