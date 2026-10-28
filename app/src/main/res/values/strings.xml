@@ -93,6 +93,8 @@
     <string name="models_guide_import_text">Tap the file icon at the top, then pick the .param and .bin files.</string>
     <string name="models_guide_footer">A model is what finds people in the game picture. The assist cannot start without one.</string>
     <string name="models_needed">Get a model first. AimBuddy General is a small download in the Store tab.</string>
+    <string name="models_ready_title">Ready to go</string>
+    <string name="models_ready_done">Done</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>

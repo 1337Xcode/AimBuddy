@@ -91,6 +91,8 @@
     <string name="models_guide_import_text">Нажмите значок файла вверху, затем выберите файлы .param и .bin.</string>
     <string name="models_guide_footer">Модель находит людей на картинке игры. Без неё помощь не запустится.</string>
     <string name="models_needed">Сначала получите модель. AimBuddy General — небольшая загрузка на вкладке «Магазин».</string>
+    <string name="models_ready_title">Всё готово</string>
+    <string name="models_ready_done">Готово</string>
 
     <!-- Настройки -->
     <string name="settings_title">Настройки</string>

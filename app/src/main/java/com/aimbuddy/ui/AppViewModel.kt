@@ -369,6 +369,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         val wasInUse = _models.value.activeId == model.id
         val isNew = _models.value.installedVersion(model.id) == null
+        val isFirstModel = _models.value.installed.isEmpty()
         _models.update { it.copy(busyId = model.id, progress = 0f) }
         work.launch {
             val installed = withContext(Dispatchers.IO) {
@@ -392,7 +393,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             installed.onSuccess {
                 // A new model becomes the one in use; an update only replaces the one that was in use.
                 catalog.addOrUpdateModel(it, makeActive = isNew || wasInUse)
-                _messages.tryEmit(UiMessage(R.string.models_next_start))
+                // The first model has the screen's own "ready to go" line; a message on top of it would say it twice.
+                if (!isFirstModel) {
+                    _messages.tryEmit(UiMessage(R.string.models_next_start))
+                }
             }.onFailure {
                 Log.w(TAG, "Download failed: ${it.message}")
                 _messages.tryEmit(UiMessage(R.string.models_download_failed))
@@ -432,9 +436,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+            val isFirstModel = _models.value.installed.isEmpty()
             installed.onSuccess {
                 catalog.addOrUpdateModel(it, makeActive = true)
-                _messages.tryEmit(UiMessage(R.string.models_next_start))
+                if (!isFirstModel) {
+                    _messages.tryEmit(UiMessage(R.string.models_next_start))
+                }
             }.onFailure {
                 Log.w(TAG, "Import failed: ${it.message}")
                 _messages.tryEmit(UiMessage(R.string.models_import_failed))

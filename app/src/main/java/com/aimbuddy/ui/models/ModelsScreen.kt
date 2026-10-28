@@ -77,6 +77,9 @@ fun ModelsScreen(
 ) {
     // With no model yet, the store is the tab with something to do.
     var tab by rememberSaveable { mutableIntStateOf(if (state.installed.isEmpty()) 1 else 0) }
+    // A screen opened with no model is the first run's guide: once the first model is in, the guide
+    // gives way to a line that says so, and a way back to Start.
+    val guided = rememberSaveable { state.installed.isEmpty() }
     var deleting by remember { mutableStateOf<InstalledModel?>(null) }
 
     LaunchedEffect(tab, state.store) {
@@ -101,6 +104,8 @@ fun ModelsScreen(
     ) {
         if (state.installed.isEmpty()) {
             guide()
+        } else if (guided) {
+            ready(onDone = onBack)
         }
         item {
             Segmented(
@@ -157,6 +162,22 @@ private fun LazyStaggeredGridScope.guide() {
                     title = stringResource(R.string.models_guide_import_title),
                     subtitle = stringResource(R.string.models_guide_import_text),
                     leading = { IconBadge(Icons.Rounded.FileOpen, Color(0xFF8E5CF7)) },
+                )
+            }
+        }
+    }
+}
+
+/** What the guide turns into once the first model is on the phone: it is ready, so back to Start. */
+private fun LazyStaggeredGridScope.ready(onDone: () -> Unit) {
+    item {
+        Group {
+            row {
+                ListRow(
+                    title = stringResource(R.string.models_ready_title),
+                    subtitle = stringResource(R.string.hint_ready),
+                    leading = { IconBadge(Icons.Rounded.Check, AppTheme.palette.success) },
+                    trailing = { SmallPill(text = stringResource(R.string.models_ready_done), onClick = onDone) },
                 )
             }
         }

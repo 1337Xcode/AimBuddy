@@ -91,6 +91,8 @@
     <string name="models_guide_import_text">点按顶部的文件图标，再选择 .param 和 .bin 文件。</string>
     <string name="models_guide_footer">模型负责在游戏画面中找到人物。没有模型，辅助无法启动。</string>
     <string name="models_needed">请先获取模型。AimBuddy General 是“商店”标签页中的一个小型下载。</string>
+    <string name="models_ready_title">准备就绪</string>
+    <string name="models_ready_done">完成</string>
 
     <!-- 设置 -->
     <string name="settings_title">设置</string>
