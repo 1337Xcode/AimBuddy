@@ -11,6 +11,7 @@ import java.io.File
 import java.security.SecureRandom
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Starts the touch helper, the small program that reads the touchscreen and adds the assist's
@@ -187,8 +188,12 @@ class TouchHelper(private val context: Context) {
                 connected = null
             }
         }
+        // A tag of its own for every start: Shizuku keeps one record for each tag, and binding to the record of a
+        // service that is still being taken down (the one this start follows on a stop, or on a helper that died)
+        // hangs until the bind times out.
         val args = Shizuku.UserServiceArgs(ComponentName(context.packageName, HelperHost::class.java.name))
             .daemon(false)
+            .tag("touch-${serviceStarts.incrementAndGet()}")
             .processNameSuffix("touch")
             .debuggable(BuildConfig.DEBUG)
             .version(BuildConfig.AIMBUDDY_VERSION.hashCode())
@@ -246,6 +251,10 @@ class TouchHelper(private val context: Context) {
 
     private companion object {
         const val TAG = "TouchHelper"
+
+        /** Counts the services started through Shizuku in this process, to give each its own tag. */
+        val serviceStarts = AtomicInteger()
+
         const val HELPER_FILE = "libaimtouch.so"
         const val ROOT_PROMPT_SECONDS = 30L
         const val SHIZUKU_BIND_SECONDS = 10L
