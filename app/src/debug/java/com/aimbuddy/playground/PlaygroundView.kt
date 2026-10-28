@@ -170,6 +170,9 @@ internal class PlaygroundView(
             val y = centerY - (headDirection[1] - pitch) * ppd
             val figure = 103f / character.distance * ppd
             drawFigure(canvas, x, y, figure, character.outfit)
+            if (config.highlight != 0) {
+                drawHighlight(canvas, x, y, figure)
+            }
             boxCount = addTrueBox(boxCount, x + origin[0], y + origin[1], figure)
             val dx = x - centerX
             val dy = y - centerY
@@ -271,6 +274,16 @@ internal class PlaygroundView(
         paint.color = Color.BLACK
         canvas.drawCircle(x - head * 0.35f, y - head * 0.1f, head * 0.1f, paint)
         canvas.drawCircle(x + head * 0.35f, y - head * 0.1f, head * 0.1f, paint)
+    }
+
+    /** An outline round a figure in the colour a game might highlight enemies with, the size of the box a detector would draw. */
+    private fun drawHighlight(canvas: Canvas, x: Float, y: Float, figure: Float) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = (0.02f * figure).coerceAtLeast(3f)
+        paint.color = config.highlight
+        box.set(x - 0.2f * figure, y - 0.065f * figure, x + 0.2f * figure, y + 0.945f * figure)
+        canvas.drawRect(box, paint)
+        paint.style = Paint.Style.FILL
     }
 
     /** The crosshair and the stand-in buttons, which stay where they are while the scene moves. */

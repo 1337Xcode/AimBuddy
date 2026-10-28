@@ -86,6 +86,10 @@ object NativeBridge {
         inputSize: Int,
     ): Boolean
 
+    /** True when the player has chosen to find targets by a colour, which needs no model. */
+    @JvmStatic
+    external fun usesColourDetection(): Boolean
+
     /** Tells native code the display's size and rotation and the size of the capture image. */
     @JvmStatic
     external fun configureDisplay(

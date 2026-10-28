@@ -40,6 +40,8 @@ internal data class PlaygroundConfig(
     val ignoreTouches: Int = 0,
     /** Writes the picture the detector sees to `frame.ppm` this many milliseconds into the run; 0 writes none. */
     val dumpMs: Int = 0,
+    /** Draws an outline of this colour (six hex digits such as `A0FF00`) round every character, as some games highlight enemies; 0 draws none. */
+    val highlight: Int = 0,
 ) {
     companion object {
         fun from(intent: Intent) = PlaygroundConfig(
@@ -58,6 +60,7 @@ internal data class PlaygroundConfig(
             fingerTest = intent.getBooleanExtra("fingerTest", false),
             ignoreTouches = intent.getIntExtra("ignoreTouches", 0),
             dumpMs = intent.getIntExtra("dumpMs", 0),
+            highlight = intent.getStringExtra("highlight")?.let { android.graphics.Color.parseColor("#" + it.removePrefix("#")) } ?: 0,
         )
     }
 }

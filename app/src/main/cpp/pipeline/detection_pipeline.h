@@ -12,6 +12,7 @@
 
 #include "../capture/roi_capture.h"
 #include "../core/camera_motion.h"
+#include "../core/colour_blobs.h"
 #include "../core/detection_batch.h"
 #include "../core/frame_thinner.h"
 #include "../core/global_motion.h"
@@ -52,11 +53,47 @@ public:
     DetectionPipeline(const DetectionPipeline&) = delete;
     DetectionPipeline& operator=(const DetectionPipeline&) = delete;
 
+    /// What the colour detector looks for, as the player has set it.
+    struct ColourTarget {
+        bool learned = false;          ///< A colour has been learned; without one nothing is found.
+        ColourRange range;
+        float minHeightScreenPx = 40.0f;   ///< Patches shorter than this are not targets.
+    };
+
+    /// What came of the latest request to learn the colour under the crosshair.
+    enum class ColourLearning { kNone, kLearned, kNotFound };
+
+    /// Told, on the pipeline thread, what the colour under the crosshair is (or that there was none).
+    using ColourSink = std::function<void(bool found, const ColourRange& range)>;
+
     /// Loads the model. Must not be called while running. Returns false if the model is unusable.
     bool loadModel(const std::string& paramPath, const std::string& binPath, const ModelProfile& profile);
     bool isModelLoaded() const { return detector_.isLoaded(); }
 
-    /// Starts the pipeline thread. Does nothing if it is running or no model is loaded.
+    /**
+     * Chooses what finds the targets: the loaded model (the default) or a colour, which needs no model.
+     * Must not be called while running; the choice is taken when the pipeline starts.
+     */
+    void setColourDetection(bool on);
+    bool detectsByColour() const { return colourMode_.load(std::memory_order_acquire); }
+
+    /// True when there is something to detect with: the model is loaded, or the colour detector is chosen.
+    bool canStart() const { return detectsByColour() || detector_.isLoaded(); }
+
+    /// What the colour detector looks for. Thread safe.
+    void setColourTarget(const ColourTarget& target);
+
+    /// Asks for the colour at the crosshair to be learned from the next frame. Thread safe.
+    void requestColourLearning() {
+        learningResult_.store(static_cast<int>(ColourLearning::kNone), std::memory_order_release);
+        learnRequested_.store(true, std::memory_order_release);
+    }
+    ColourLearning colourLearning() const { return static_cast<ColourLearning>(learningResult_.load(std::memory_order_acquire)); }
+
+    /// Sets where a learned colour is reported. Must be called while stopped.
+    void setColourSink(ColourSink sink) { colourSink_ = std::move(sink); }
+
+    /// Starts the pipeline thread. Does nothing if it is running or there is nothing to detect with.
     void start();
 
     /// Stops the pipeline thread and waits for it. Safe to call when not running.
@@ -80,8 +117,8 @@ public:
         maxRate_.store(perSecond, std::memory_order_relaxed);
     }
 
-    /// What each class of the loaded model means.
-    const ModelProfile& profile() const { return detector_.profile(); }
+    /// What each class of the loaded model means; one body class when a colour is looked for.
+    const ModelProfile& profile() const { return profile_; }
 
 #ifdef AIMBUDDY_DEBUG_HOOKS
     /// Testing only: with this on, targets come from a test scene (see feedSynthetic) instead of the model.
@@ -109,6 +146,8 @@ public:
 private:
     void run();
     void applyConfidenceIfChanged(float& applied);
+    bool detectByColour(const RoiFrame& frame, DetectionBatch& batch);
+    void learnColourFrom(const RoiFrame& frame);
     void measureCameraMotion(const RoiFrame& frame);
 #ifdef AIMBUDDY_DEBUG_HOOKS
     bool detectSynthetic(const RoiFrame& frame, DetectionBatch& batch);
@@ -119,6 +158,14 @@ private:
     RoiCapture capture_;
     FrameThinner thinner_;
     YoloDetector detector_;
+    ModelProfile profile_;                ///< What the detections mean; the model's, or one body class for a colour. Fixed while running.
+    ColourBlobFinder colourFinder_;       ///< Pipeline thread only.
+    std::atomic<bool> colourMode_{false};
+    std::mutex colourMutex_;              ///< Guards colourTarget_, which the capture thread sets and the pipeline thread reads.
+    ColourTarget colourTarget_;
+    std::atomic<bool> learnRequested_{false};
+    std::atomic<int> learningResult_{static_cast<int>(ColourLearning::kNone)};
+    ColourSink colourSink_;
     Tracker tracker_;
     BatchObserver observer_;
     CameraMotion* cameraMotion_ = nullptr;

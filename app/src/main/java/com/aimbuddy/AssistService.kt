@@ -160,6 +160,9 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
 
     private fun loadSettingsAndModel(): Boolean {
         NativeBridge.loadSettings(File(filesDir, SETTINGS_FILE).path)
+        if (NativeBridge.usesColourDetection()) {
+            return true   // a colour is looked for: there is no model to load
+        }
         val catalog = ModelCatalog(this)
         catalog.tidy()
         val model = catalog.getActiveModel() ?: run {

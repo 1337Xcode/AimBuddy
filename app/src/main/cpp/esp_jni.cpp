@@ -110,6 +110,31 @@ aimbuddy::AimLoopConfig makeAimLoopConfig() {
     return config;
 }
 
+/// The colour the pipeline looks for, as the player has set it.
+aimbuddy::DetectionPipeline::ColourTarget makeColourTarget(const Settings& settings) {
+    aimbuddy::DetectionPipeline::ColourTarget target;
+    target.learned = settings.colourLearned;
+    target.range.hueDegrees = settings.colourHue;
+    target.range.hueToleranceDegrees = settings.colourTolerance;
+    target.range.minSaturation = settings.colourSaturation;
+    target.range.minValue = settings.colourValue;
+    target.minHeightScreenPx = settings.colourMinHeight;
+    return target;
+}
+
+/// Keeps the colour that was learned from the picture under the crosshair, so it is looked for from now on and next time too.
+void keepLearnedColour(bool found, const aimbuddy::ColourRange& range) {
+    if (!found) {
+        return;
+    }
+    Settings settings = g_settingsStore.get();
+    settings.colourLearned = true;
+    settings.colourHue = range.hueDegrees;
+    settings.colourSaturation = range.minSaturation;
+    settings.colourValue = range.minValue;
+    g_settingsStore.set(settings);
+}
+
 /// Keeps what the aim loop measured about the game's camera, so the next run starts close to right.
 void keepLearnedCamera(const aimbuddy::CameraResponse& response, float confidence) {
     Settings settings = g_settingsStore.get();
@@ -320,6 +345,11 @@ Java_com_aimbuddy_NativeBridge_loadModel(JNIEnv* env, jclass /* clazz */, jstrin
     return g_modelLoaded ? JNI_TRUE : JNI_FALSE;
 }
 
+/** @brief Whether the player has chosen to find targets by a colour, which needs no model. */
+JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_usesColourDetection(JNIEnv* /* env */, jclass /* clazz */) {
+    return g_settingsStore.get().detector == 1 ? JNI_TRUE : JNI_FALSE;
+}
+
 /**
  * @brief Tells the native side how large the screen and the capture image are
  * @param displayWidth Display width in pixels, in the orientation the player sees
@@ -345,15 +375,18 @@ Java_com_aimbuddy_NativeBridge_configureDisplay(JNIEnv* /* env */, jclass /* cla
 
 /** @brief Starts detection and, if the assist is switched on, the aim loop. */
 JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_start(JNIEnv* /* env */, jclass /* clazz */) {
-    if (!g_pipeline.isModelLoaded()) {
+    // The choice of what finds the targets is taken here: a colour needs no model, the model needs to be loaded.
+    Settings settings = g_settingsStore.get();
+    g_pipeline.setColourDetection(settings.detector == 1);
+    if (!g_pipeline.canStart()) {
         LOGE("Cannot start: no model loaded");
         return JNI_FALSE;
     }
     // The assist starts off on every run. It moves the aim by itself, so the player turns it on in the game.
-    Settings settings = g_settingsStore.get();
     settings.assistEnabled = false;
     g_settingsStore.set(settings);
     g_cameraMotion.clear();
+    g_pipeline.setColourSink(keepLearnedColour);
     g_pipeline.start();
     g_aimLoop.setConfigSource(makeAimLoopConfig);
     g_aimLoop.setLearnedSink(keepLearnedCamera);
@@ -466,6 +499,7 @@ Java_com_aimbuddy_NativeBridge_onFrame(JNIEnv* env, jclass /* clazz */, jobject 
     }
     const Settings settings = g_settingsStore.get();
     g_pipeline.setConfidenceThreshold(settings.confidence);
+    g_pipeline.setColourTarget(makeColourTarget(settings));
     // The region is copied before this call returns, so the buffer can be recycled right away.
     g_pipeline.capture().setZoneRadius(settings.detectionZoneRadius);
     g_pipeline.capture().ingest(buffer, static_cast<int64_t>(timestamp));

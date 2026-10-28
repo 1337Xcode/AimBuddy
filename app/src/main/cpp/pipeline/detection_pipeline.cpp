@@ -25,6 +25,22 @@ constexpr int64_t kCameraLookIntervalNs = 30'000'000;
 /// How often debug builds print the statistics to the log.
 constexpr int64_t kStatsLogIntervalNs = 5'000'000'000;
 
+/// With a colour to look for there is no model to say how large the region should be: it is sized as for a model this big.
+constexpr int kColourModelSize = 256;
+
+/// The score a patch of the colour is given, and the detection confidence the tracker works with for it. The score
+/// does not vary: a patch that has the colour and the shape of a person is as certain as it gets.
+constexpr float kColourScore = 0.9f;
+constexpr float kColourConfidence = 0.5f;
+
+/// Learning looks at a square round the crosshair that reaches a fourth of the region's width to each side (and at
+/// least this many pixels), so that an outline a little way from the crosshair is in it.
+constexpr int kLearnHalfShareOfSide = 4;
+constexpr int kLearnMinHalfPx = 12;
+
+/// A patch of the colour is never counted shorter than this, whatever the minimum height set in screen pixels comes to in the region.
+constexpr int kLeastPatchHeightPx = 8;
+
 #ifdef AIMBUDDY_DEBUG_HOOKS
 /// A test scene is shown on screen about this long after it is drawn, and no more than this many are kept.
 constexpr int64_t kSyntheticScreenLatencyNs = 8'000'000;
@@ -58,12 +74,35 @@ bool DetectionPipeline::loadModel(const std::string& paramPath, const std::strin
     if (!detector_.load(paramPath.c_str(), binPath.c_str(), profile)) {
         return false;
     }
-    capture_.setModelSize(detector_.inputSize());
+    profile_ = detector_.profile();
+    if (!detectsByColour()) {
+        capture_.setModelSize(detector_.inputSize());
+    }
     return true;
 }
 
+void DetectionPipeline::setColourDetection(bool on) {
+    if (isRunning()) {
+        LOGE("Cannot change what finds the targets while running");
+        return;
+    }
+    colourMode_.store(on, std::memory_order_release);
+    if (on) {
+        profile_ = ModelProfile::defaultsFor(1);   // a patch of the colour is one enemy body
+        capture_.setModelSize(kColourModelSize);
+    } else if (detector_.isLoaded()) {
+        profile_ = detector_.profile();
+        capture_.setModelSize(detector_.inputSize());
+    }
+}
+
+void DetectionPipeline::setColourTarget(const ColourTarget& target) {
+    std::lock_guard<std::mutex> lock(colourMutex_);
+    colourTarget_ = target;
+}
+
 void DetectionPipeline::start() {
-    if (isRunning() || !detector_.isLoaded()) {
+    if (isRunning() || !canStart()) {
         return;
     }
     capture_.mailbox().reopen();
@@ -283,6 +322,72 @@ bool DetectionPipeline::detectSynthetic(const RoiFrame& frame, DetectionBatch& b
 }
 #endif
 
+/// Finds the patches of the learned colour that could be players, and reports them as the model would.
+bool DetectionPipeline::detectByColour(const RoiFrame& frame, DetectionBatch& batch) {
+    const int side = frame.roi.side;
+    if (side <= 0 || frame.rgba.size() < static_cast<size_t>(side) * static_cast<size_t>(side) * 4) {
+        return false;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    ColourTarget target;
+    {
+        std::lock_guard<std::mutex> lock(colourMutex_);
+        target = colourTarget_;
+    }
+    const float screenPerCapture = frame.geometry.screenPerCapture();
+    batch.count = 0;
+    if (target.learned) {
+        BlobFilter filter;
+        filter.minHeightPx = std::max(kLeastPatchHeightPx, static_cast<int>(std::lround(target.minHeightScreenPx / screenPerCapture)));
+        ColourBlob blobs[ColourBlobFinder::kMaxBlobs];
+        const int found = colourFinder_.find(frame.rgba.data(), side, side * 4, target.range, filter, blobs, ColourBlobFinder::kMaxBlobs);
+        for (int i = 0; i < found && batch.count < kMaxDetections; ++i) {
+            const ColourBlob& blob = blobs[i];
+            Detection detection;
+            detection.x = static_cast<float>(frame.roi.x + blob.left) * screenPerCapture;
+            detection.y = static_cast<float>(frame.roi.y + blob.top) * screenPerCapture;
+            detection.width = static_cast<float>(blob.width()) * screenPerCapture;
+            detection.height = static_cast<float>(blob.height()) * screenPerCapture;
+            detection.score = kColourScore;
+            detection.classId = 0;
+            // A patch that reaches the edge of the region goes on beyond it: its box is cut off there.
+            detection.clipFlags = static_cast<uint8_t>((blob.left <= 0 ? kClipLeft : 0) | (blob.right >= side ? kClipRight : 0) |
+                                                       (blob.top <= 0 ? kClipTop : 0) | (blob.bottom >= side ? kClipBottom : 0));
+            batch.detections[batch.count++] = detection;
+        }
+    }
+    batch.scanned.left = static_cast<float>(frame.roi.x) * screenPerCapture;
+    batch.scanned.top = static_cast<float>(frame.roi.y) * screenPerCapture;
+    batch.scanned.right = static_cast<float>(frame.roi.x + frame.roi.side) * screenPerCapture;
+    batch.scanned.bottom = static_cast<float>(frame.roi.y + frame.roi.side) * screenPerCapture;
+    batch.captureNs = frame.captureTimeNs;
+    batch.inferenceMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count();
+    return true;
+}
+
+/// Takes the most vivid colour round the crosshair, the middle of the region, as the one to look for.
+void DetectionPipeline::learnColourFrom(const RoiFrame& frame) {
+    const int side = frame.roi.side;
+    ColourRange range;
+    {
+        std::lock_guard<std::mutex> lock(colourMutex_);
+        range = colourTarget_.range;   // keeps the player's tolerance
+    }
+    const int half = std::max(kLearnMinHalfPx, side / kLearnHalfShareOfSide);
+    const bool found = side > 0 && frame.rgba.size() >= static_cast<size_t>(side) * static_cast<size_t>(side) * 4 &&
+                       learnColour(frame.rgba.data(), side, side * 4, side / 2, side / 2, half, &range);
+    if (found) {
+        LOGI("Learned the colour: hue %.0f, saturation from %.2f, brightness from %.2f", range.hueDegrees, range.minSaturation,
+             range.minValue);
+    } else {
+        LOGI("No vivid colour near the crosshair to learn");
+    }
+    if (colourSink_) {
+        colourSink_(found, range);
+    }
+    learningResult_.store(static_cast<int>(found ? ColourLearning::kLearned : ColourLearning::kNotFound), std::memory_order_release);
+}
+
 void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishedNs) {
     inferenceMs_.store(smooth(inferenceMs_.load(std::memory_order_relaxed), batch.inferenceMs),
                        std::memory_order_relaxed);
@@ -333,8 +438,12 @@ void DetectionPipeline::run() {
     // Pins this thread to the fast cores and times the CPU against the GPU. It runs here, not at
     // load time, because the thread that does it is the one that gets pinned. A stop does not have
     // to wait for the timing to end: it takes seconds on a slow phone.
-    detector_.chooseBackend([this] { return !running_.load(std::memory_order_acquire); });
-    backend_.store(detector_.backendName(), std::memory_order_relaxed);
+    if (detectsByColour()) {
+        backend_.store("Colour", std::memory_order_relaxed);
+    } else {
+        detector_.chooseBackend([this] { return !running_.load(std::memory_order_acquire); });
+        backend_.store(detector_.backendName(), std::memory_order_relaxed);
+    }
 
     DetectionBatch batch;
     float appliedConfidence = -1.0f;
@@ -347,12 +456,24 @@ void DetectionPipeline::run() {
             capture_.mailbox().endRead();   // the phone asked for fewer detections: this frame is left out
             continue;
         }
-        applyConfidenceIfChanged(appliedConfidence);
+        const bool byColour = detectsByColour();
+        if (byColour) {
+            if (appliedConfidence != kColourConfidence) {
+                tracker_.setConfig(TrackerConfig::forConfidence(kColourConfidence));   // the player's confidence is for the model
+                appliedConfidence = kColourConfidence;
+            }
+            if (learnRequested_.exchange(false, std::memory_order_acq_rel)) {
+                learnColourFrom(*frame);
+            }
+        } else {
+            applyConfidenceIfChanged(appliedConfidence);
+        }
 #ifdef AIMBUDDY_DEBUG_HOOKS
-        const bool detected = syntheticMode_.load(std::memory_order_acquire) ? detectSynthetic(*frame, batch)
-                                                                              : detector_.detect(*frame, batch);
+        const bool detected = syntheticMode_.load(std::memory_order_acquire)
+                                  ? detectSynthetic(*frame, batch)
+                                  : (byColour ? detectByColour(*frame, batch) : detector_.detect(*frame, batch));
 #else
-        const bool detected = detector_.detect(*frame, batch);
+        const bool detected = byColour ? detectByColour(*frame, batch) : detector_.detect(*frame, batch);
 #endif
         capture_.mailbox().endRead();  // the pixels are consumed; let the capture thread reuse the slot
         if (!detected) {
