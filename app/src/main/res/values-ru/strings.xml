@@ -42,6 +42,9 @@
     <string name="update_failed_unreachable">Не удаётся связаться с GitHub.</string>
     <string name="update_failed_not_verified">Не удалось проверить загруженный файл.</string>
     <string name="update_failed_not_installed">Не удалось установить обновление.</string>
+    <string name="update_failed_different_signer">Обновление подписано другим ключом.</string>
+    <string name="update_failed_different_signer_hint">Android не может установить его поверх этой копии. Один раз удалите AimBuddy, затем установите обновление с GitHub.</string>
+    <string name="update_action_releases">Релизы</string>
     <string name="update_allow_installs">Разрешите AimBuddy устанавливать приложения и вернитесь.</string>
 
     <!-- Запуск -->

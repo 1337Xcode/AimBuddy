@@ -20,11 +20,15 @@ import com.aimbuddy.ui.theme.Space
 import com.aimbuddy.update.UpdateProblem
 import com.aimbuddy.update.UpdateStatus
 
+/** Lines the banner gives its second line: what to do about an update signed with another key must not be cut short. */
+private const val SUBTITLE_LINES = 4
+
 /** The sentence for a problem with an update. */
 @StringRes
 fun updateProblemText(problem: UpdateProblem): Int = when (problem) {
     UpdateProblem.UNREACHABLE -> R.string.update_failed_unreachable
     UpdateProblem.NOT_VERIFIED -> R.string.update_failed_not_verified
+    UpdateProblem.DIFFERENT_SIGNER -> R.string.update_failed_different_signer
     UpdateProblem.NOT_INSTALLED -> R.string.update_failed_not_installed
 }
 
@@ -59,9 +63,12 @@ fun UpdateBanner(status: UpdateStatus, onAction: () -> Unit) {
             trailing = { Spinner(progress = null) }
         }
         is UpdateStatus.Failed -> {
+            // An update signed with another key cannot be retried into working: the player is sent to the releases page.
+            val differentSigner = status.problem == UpdateProblem.DIFFERENT_SIGNER
             title = stringResource(updateProblemText(status.problem))
-            subtitle = null
-            trailing = { SmallPill(text = stringResource(R.string.update_action_retry), onClick = onAction) }
+            subtitle = if (differentSigner) stringResource(R.string.update_failed_different_signer_hint) else null
+            val action = if (differentSigner) R.string.update_action_releases else R.string.update_action_retry
+            trailing = { SmallPill(text = stringResource(action), onClick = onAction) }
         }
         UpdateStatus.Unknown, UpdateStatus.Checking, UpdateStatus.UpToDate -> return
     }
@@ -70,6 +77,7 @@ fun UpdateBanner(status: UpdateStatus, onAction: () -> Unit) {
             ListRow(
                 title = title,
                 subtitle = subtitle,
+                subtitleMaxLines = SUBTITLE_LINES,
                 leading = { IconBadge(Icons.Rounded.SystemUpdate, AppTheme.palette.accent) },
                 trailing = { trailing() },
             )

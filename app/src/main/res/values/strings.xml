@@ -43,6 +43,9 @@
     <string name="update_failed_unreachable">Can\'t reach GitHub.</string>
     <string name="update_failed_not_verified">The download could not be verified.</string>
     <string name="update_failed_not_installed">The update could not be installed.</string>
+    <string name="update_failed_different_signer">The update is signed with another key.</string>
+    <string name="update_failed_different_signer_hint">Android can\'t install it over this copy. Uninstall AimBuddy once, then install the update from GitHub.</string>
+    <string name="update_action_releases">Releases</string>
     <string name="update_allow_installs">Allow AimBuddy to install apps, then come back.</string>
 
     <!-- Start flow -->

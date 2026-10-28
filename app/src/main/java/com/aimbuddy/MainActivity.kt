@@ -60,6 +60,7 @@ import com.aimbuddy.ui.settings.SettingsActions
 import com.aimbuddy.ui.settings.SettingsScreen
 import com.aimbuddy.ui.theme.AimBuddyTheme
 import com.aimbuddy.ui.theme.AppTheme
+import com.aimbuddy.update.UpdateProblem
 import com.aimbuddy.update.UpdateState
 import com.aimbuddy.update.UpdateStatus
 import rikka.shizuku.Shizuku
@@ -482,7 +483,12 @@ class MainActivity : AppCompatActivity() {
     private fun updateAction() {
         when (val status = UpdateState.status.value) {
             is UpdateStatus.Available -> viewModel.startUpdate()
-            is UpdateStatus.Failed -> if (status.info != null) viewModel.startUpdate() else viewModel.checkForUpdate(manual = true)
+            is UpdateStatus.Failed -> when {
+                // Trying again cannot change which key signed the update: the way on is the releases page.
+                status.problem == UpdateProblem.DIFFERENT_SIGNER -> openUrl(Project.RELEASES_PAGE_URL)
+                status.info != null -> viewModel.startUpdate()
+                else -> viewModel.checkForUpdate(manual = true)
+            }
             is UpdateStatus.ReadyToInstall -> beginInstall(status)
             UpdateStatus.Unknown, UpdateStatus.UpToDate -> viewModel.checkForUpdate(manual = true)
             else -> Unit   // checking, downloading or installing: already on its way

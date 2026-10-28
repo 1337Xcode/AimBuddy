@@ -17,6 +17,12 @@ import java.security.MessageDigest
 private const val TAG = "AppUpdater"
 
 /**
+ * The download is an AimBuddy, but signed with another key than the installed copy. Android never
+ * lets one replace the other, so the only way on is to uninstall this copy and install the new one.
+ */
+class DifferentSignerException : SecurityException("The download is signed with another key than the installed copy")
+
+/**
  * Finds a newer AimBuddy on GitHub, downloads it, and hands it to the system's installer.
  *
  * An update is only ever installed after three checks: the file has the SHA-256 GitHub lists for it,
@@ -111,8 +117,11 @@ class AppUpdater(
             throw SecurityException("The download is not newer than this version")
         }
         val archiveSigners = signersOf(archive)
-        if (archiveSigners.isEmpty() || archiveSigners != signersOf(installed)) {
-            throw SecurityException("The download is not signed by the same developer")
+        if (archiveSigners.isEmpty()) {
+            throw SecurityException("The download is not signed")
+        }
+        if (archiveSigners != signersOf(installed)) {
+            throw DifferentSignerException()
         }
     }
 

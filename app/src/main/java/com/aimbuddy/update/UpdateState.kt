@@ -10,8 +10,11 @@ enum class UpdateProblem {
     /** GitHub could not be reached, or sent something that is not a list of releases. */
     UNREACHABLE,
 
-    /** The download is not the file GitHub lists, or is not an AimBuddy signed by the same developer. */
+    /** The download is not the file GitHub lists, is not a newer AimBuddy, or is not signed at all. */
     NOT_VERIFIED,
+
+    /** The download is an AimBuddy signed with another key than the installed copy, which Android cannot replace with it. */
+    DIFFERENT_SIGNER,
 
     /** The system's installer refused the update. */
     NOT_INSTALLED,

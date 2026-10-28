@@ -120,6 +120,7 @@ fun ListRow(
     trailing: (@Composable RowScope.() -> Unit)? = null,
     titleColor: Color = AppTheme.palette.text,
     enabled: Boolean = true,
+    subtitleMaxLines: Int = 2,
     onClick: (() -> Unit)? = null,
 ) {
     val clickable = if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier
@@ -150,7 +151,7 @@ fun ListRow(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = AppTheme.palette.textDim,
-                    maxLines = 2,
+                    maxLines = subtitleMaxLines,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

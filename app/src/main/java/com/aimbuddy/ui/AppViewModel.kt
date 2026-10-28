@@ -20,6 +20,7 @@ import com.aimbuddy.StoreModelDefinition
 import com.aimbuddy.ui.theme.Accent
 import com.aimbuddy.ui.theme.ThemeMode
 import com.aimbuddy.update.AppUpdater
+import com.aimbuddy.update.DifferentSignerException
 import com.aimbuddy.update.UpdateInfo
 import com.aimbuddy.update.UpdateProblem
 import com.aimbuddy.update.UpdateState
@@ -225,7 +226,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 _installRequests.tryEmit(ready)
             }.onFailure { error ->
                 Log.w(TAG, "The update could not be downloaded: ${error.message}", error)
-                val problem = if (error is SecurityException) UpdateProblem.NOT_VERIFIED else UpdateProblem.UNREACHABLE
+                val problem = when (error) {
+                    is DifferentSignerException -> UpdateProblem.DIFFERENT_SIGNER
+                    is SecurityException -> UpdateProblem.NOT_VERIFIED
+                    else -> UpdateProblem.UNREACHABLE
+                }
                 UpdateState.set(UpdateStatus.Failed(problem, info))
             }
         }
