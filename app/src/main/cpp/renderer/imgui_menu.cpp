@@ -968,6 +968,9 @@ bool drawVisualsTab(Settings& s) {
     return changed;
 }
 
+/// A button that stands alone in a page is this tall, in font heights, and as wide as the page.
+constexpr float kPageButtonEm = 2.2f;
+
 bool drawAimTab(Settings& s) {
     bool changed = false;
     changed |= ImGui::Checkbox(T(Key::AssistEnable), &s.assistEnabled);
@@ -997,13 +1000,13 @@ bool drawAimTab(Settings& s) {
     changed |= ImGui::Checkbox(T(Key::InvertVertical), &s.invertY);
 
     ImGui::SeparatorText(T(Key::TouchAreaTitle));
+    const ImVec2 buttonSize(menu::ContentWidth(), kPageButtonEm * ImGui::GetFontSize());
     ImGui::BeginDisabled(s.streamerMode);   // the editor draws over the game
-    if (ImGui::Button(T(Key::MoveTouchArea))) {
+    if (menu::PillButton(T(Key::MoveTouchArea), buttonSize, menu::PillStyle::kTinted)) {
         openZoneEditor();
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button(T(Key::ResetTouchArea))) {
+    if (menu::PillButton(T(Key::ResetTouchArea), buttonSize, menu::PillStyle::kTinted)) {
         resetZone(s);
         changed = true;
     }
@@ -1022,7 +1025,9 @@ bool drawAimTab(Settings& s) {
 bool drawResetAllButton(Settings& s) {
     static double armedUntil = 0.0;   // while ImGui's clock is before this, the next press confirms
     const bool armed = ImGui::GetTime() < armedUntil;
-    if (!ImGui::Button(armed ? T(Key::ResetAllConfirm) : T(Key::ResetAllSettings))) {
+    const ImVec2 size(menu::ContentWidth(), kPageButtonEm * ImGui::GetFontSize());
+    const menu::PillStyle style = armed ? menu::PillStyle::kDanger : menu::PillStyle::kTinted;   // it turns red when it asks again
+    if (!menu::PillButton(armed ? T(Key::ResetAllConfirm) : T(Key::ResetAllSettings), size, style)) {
         return false;
     }
     if (!armed) {
