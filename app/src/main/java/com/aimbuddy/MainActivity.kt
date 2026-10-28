@@ -303,13 +303,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             SnackbarHost(hostState = snackbar, modifier = Modifier.align(Alignment.BottomCenter))
-            Dialogs()
+            Dialogs(homeShowing = screen == Screen.HOME)
         }
     }
 
-    /** The dialogs of the start flow and the first-run notice. */
+    /** The dialogs of the start flow and the first-run notice. The notice waits for the home screen, so it never covers the models guide. */
     @Composable
-    private fun Dialogs() {
+    private fun Dialogs(homeShowing: Boolean) {
         val palette = AppTheme.palette
         if (showOverlayDialog) {
             AlertDialog(
@@ -352,7 +352,7 @@ class MainActivity : AppCompatActivity() {
                 shape = MaterialTheme.shapes.medium,
             )
         }
-        if (showNotice) {
+        if (showNotice && homeShowing) {
             AlertDialog(
                 onDismissRequest = { dismissNotice() },
                 title = { Text(stringResource(R.string.notice_title)) },
