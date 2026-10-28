@@ -25,6 +25,10 @@ constexpr int kBenchmarkTimedRuns = 12;
 /// The GPU is shared with the game, so it must beat the CPU by a clear margin to be used.
 constexpr float kGpuMustBeFasterBy = 0.80f;
 
+/// What ncnn's GpuInfo::type() says of a Vulkan device that is the CPU in disguise (SwiftShader on an
+/// emulator). It cannot beat the CPU path, and loading the network onto it takes about a minute.
+constexpr int kGpuTypeCpu = 3;
+
 /// CPU worker threads are capped so the game keeps most of the fast cores.
 constexpr int kMaxCpuThreads = 3;
 
@@ -229,7 +233,7 @@ void YoloDetector::chooseBackend(const std::function<bool()>& shouldStop) {
         return;
     }
     float gpuMs = -1.0f;
-    if (ncnn::get_gpu_count() > 0 && !gpuLoaded_) {
+    if (ncnn::get_gpu_count() > 0 && ncnn::get_gpu_info().type() != kGpuTypeCpu && !gpuLoaded_) {
         applyCommonOptions(gpuNet_.opt);
         gpuNet_.opt.use_vulkan_compute = true;
         gpuNet_.set_vulkan_device(ncnn::get_default_gpu_index());
