@@ -10,6 +10,7 @@
 
 #include "../core/aim_controller.h"
 #include "../core/camera_motion.h"
+#include "../core/look_watch.h"
 #include "../core/model_profile.h"
 #include "../core/tracker.h"
 #include "../touch/touch_link.h"
@@ -107,6 +108,7 @@ private:
     void forgetFinger(int64_t nowNs);
     void sendOutput(const AimOutput& output);
     void keepHeartbeat(int64_t nowNs, int64_t maxSilenceNs);
+    PlayerInput readPlayer(int64_t nowNs);
     Display currentDisplay() const;
 #ifdef AIMBUDDY_DEBUG_HOOKS
     void recordTrace(int64_t nowNs);
@@ -120,6 +122,7 @@ private:
     LearnedSink learnedSink_;
 
     AimController controller_;
+    LookWatch lookWatch_;        ///< Tells from the helper's reports whether the player is steering the camera.
     AimLoopConfig config_;
     std::thread thread_;
     std::atomic<bool> running_{false};
@@ -139,7 +142,8 @@ private:
     int64_t handledDisplayChangeNs_ = 0;   ///< The display change the loop has acted on.
     touch::protocol::State loggedState_ = touch::protocol::State::kStarting;   ///< What the log last said about the helper...
     bool loggedTouching_ = false;                                              ///< ...and about the assist finger...
-    int loggedDeadFingers_ = 0;                                                ///< ...and about fingers the game ignored.
+    int loggedDeadFingers_ = 0;                                                ///< ...and about fingers the game ignored...
+    bool loggedSteering_ = false;                                              ///< ...and about the player steering the camera.
 
     std::atomic<int64_t> displayChangedNs_{0};   ///< When the display last changed shape (steady clock).
     std::atomic<bool> fingerDown_{false};

@@ -143,6 +143,40 @@ TEST(aim_release_lifts_the_finger_at_once) {
     CHECK(controller.step(116 * kMs, tracker, profile, PlayerInput()).action == AimAction::kNone);
 }
 
+TEST(aim_closes_more_gently_while_the_player_steers) {
+    // The same target 40 px from the crosshair, and the first move the finger makes. The more the player's
+    // own finger is steering the camera, the less of the gap the assist closes in that step.
+    const auto firstMove = [](float steering) {
+        AimSettings settings = baseSettings();
+        settings.zone = AimZone::kCenter;
+        CameraMotion motion;
+        AimController controller(settings, &motion);
+        controller.setCrosshair(1200.0f, 540.0f);
+        Tracker tracker;
+        const ModelProfile profile = ModelProfile::defaultsFor(1);
+        for (int i = 0; i < 6; ++i) {
+            Detection d;
+            d.x = 1240.0f;
+            d.y = 540.0f;
+            d.width = 60.0f;
+            d.height = 180.0f;
+            d.score = 0.9f;
+            tracker.update(&d, 1, i * 16 * kMs, nullptr);
+        }
+        PlayerInput player;
+        player.steering = steering;
+        controller.step(100 * kMs, tracker, profile, player);   // the finger goes down at the anchor
+        const AimOutput move = controller.step(108 * kMs, tracker, profile, player);
+        return move.action == AimAction::kTouchMove ? std::fabs(move.x - settings.anchorX) : -1.0f;
+    };
+    const float alone = firstMove(0.0f);
+    const float halfway = firstMove(0.5f);
+    const float steering = firstMove(1.0f);
+    CHECK(steering > 0.0f);   // it still helps a little
+    CHECK(halfway > steering);
+    CHECK(alone > halfway);
+}
+
 TEST(aim_ignores_targets_outside_the_field_of_view) {
     AimSettings settings = baseSettings();
     settings.fovRadiusPx = 150.0f;

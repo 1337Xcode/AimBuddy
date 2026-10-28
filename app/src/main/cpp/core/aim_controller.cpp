@@ -601,7 +601,7 @@ AimController::FingerStep AimController::planFingerStep(int64_t nowNs, const Cam
     // its centre, so the finger comes to rest instead of twitching.
     if (!pursuit.onTarget()) {
         const float shrink = (pursuit.distance - pursuit.deadzone) / pursuit.distance;
-        const float strength = player.lookActive ? settings_.strength * settings_.yieldWhileLooking : settings_.strength;
+        const float strength = settings_.strength * lerp(1.0f, settings_.yieldWhileLooking, std::clamp(player.steering, 0.0f, 1.0f));
         const float timeConstant =
             lerp(kSlowestTimeConstantS, kFastestTimeConstantS, std::pow(std::clamp(strength, 0.0f, 1.0f), 0.7f));
         const float closing = (1.0f - std::exp(-dt / timeConstant)) * stability_ * (1.0f - kBlindClosingLoss * blindness);

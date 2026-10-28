@@ -40,6 +40,9 @@ constexpr int64_t kSettleNs = 700'000'000;
 /// Priority of the loop thread; a late step is a late correction. The system may refuse a value this low.
 constexpr int kThreadNice = -8;
 
+/// How much steering (0 to 1) the log calls the player steering; it calls them stopped well below that.
+constexpr float kLoggedSteering = 0.5f;
+
 #ifdef AIMBUDDY_DEBUG_HOOKS
 /// Rows reserved for a trace: two minutes of steps.
 constexpr size_t kTraceReserve = 15000;
@@ -180,6 +183,24 @@ void AimLoop::keepHeartbeat(int64_t nowNs, int64_t maxSilenceNs) {
     }
 }
 
+/// What the player's own hands are doing, as far as the touch helper has said.
+PlayerInput AimLoop::readPlayer(int64_t nowNs) {
+    const touch::TouchLink::PlayerReport report = link_->playerReport();
+    const Display display = currentDisplay();
+    PlayerInput player;
+    player.steering = lookWatch_.update(nowNs, report.activity, report.atNs, config_.aim.anchorX,
+                                        static_cast<float>(display.width), static_cast<float>(display.height));
+    // The log says when the player starts and stops steering (with some slack, so it does not flicker).
+    if (player.steering > kLoggedSteering && !loggedSteering_) {
+        LOGI("The player is steering the camera");
+        loggedSteering_ = true;
+    } else if (player.steering < kLoggedSteering * 0.2f && loggedSteering_) {
+        LOGI("The player stopped steering the camera");
+        loggedSteering_ = false;
+    }
+    return player;
+}
+
 void AimLoop::sendOutput(const AimOutput& output) {
     switch (output.action) {
         case AimAction::kTouchDown:
@@ -214,7 +235,7 @@ void AimLoop::stepWhileActive(int64_t nowNs) {
             keepHeartbeat(nowNs, kHeartbeatNs);
             return;
         }
-        sendOutput(controller_.step(nowNs, *tracker_, *profile_, PlayerInput()));
+        sendOutput(controller_.step(nowNs, *tracker_, *profile_, readPlayer(nowNs)));
 #ifdef AIMBUDDY_DEBUG_HOOKS
         recordTrace(nowNs);
 #endif
@@ -260,6 +281,7 @@ void AimLoop::logChanges(touch::protocol::State state) {
 }
 
 void AimLoop::forgetFinger(int64_t nowNs) {
+    lookWatch_.reset();
     controller_.release();
     (void)controller_.step(nowNs, *tracker_, *profile_, PlayerInput());   // the lift has nowhere to go; this clears the state
 }

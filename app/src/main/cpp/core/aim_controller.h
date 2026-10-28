@@ -20,7 +20,7 @@ struct AimSettings {
     float strength = 0.6f;              ///< 0 to 1: how quickly the aim closes on a target.
     float fovRadiusPx = 220.0f;         ///< Targets further than this from the crosshair are left alone.
     int priority = 0;                   ///< Which target to prefer: 0 closest to the crosshair, 1 biggest, 2 most certain.
-    float yieldWhileLooking = 0.4f;     ///< Fraction of the assist kept while the player is steering themselves.
+    float yieldWhileLooking = 0.4f;     ///< Fraction of the assist kept while the player is steering themselves (at full steering).
 
     // --- Where the assist's finger rests ---
     float anchorX = 1800.0f;            ///< Display pixels. Should be in the game's look area, away from the player's thumb.
@@ -52,7 +52,7 @@ struct AimOutput {
 
 /// What the player is doing with their own hands, when it is known.
 struct PlayerInput {
-    bool lookActive = false;  ///< The player's own finger is steering the camera.
+    float steering = 0.0f;  ///< 0 to 1: how much the player's own finger is steering the camera (0 when it is still, or not known).
 };
 
 /// What the controller saw and did on its latest step. For diagnostics, tests and the overlay.
