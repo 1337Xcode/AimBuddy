@@ -79,6 +79,10 @@ class MainActivity : AppCompatActivity() {
 
     private val viewModel: AppViewModel by viewModels()
 
+    // Notifications are asked for once for each press of Start. A player who says no twice is not shown the
+    // dialog again, and the system answers a request at once, so asking again would loop and never reach the next step.
+    private var notificationsAnswered = false
+
     // Dialogs that belong to the start flow.
     private var showOverlayDialog by mutableStateOf(false)
     private var showTouchDialog by mutableStateOf(false)
@@ -111,6 +115,7 @@ class MainActivity : AppCompatActivity() {
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             // Allowed or not, the assist can run; the notification is only an easy way to stop it.
+            notificationsAnswered = true
             continueStartFlow()
         }
     private val screenCaptureLauncher =
@@ -393,6 +398,7 @@ class MainActivity : AppCompatActivity() {
         if (AssistState.state.value.phase != AssistState.Phase.IDLE) {
             return
         }
+        notificationsAnswered = false
         continueStartFlow()
     }
 
@@ -402,7 +408,7 @@ class MainActivity : AppCompatActivity() {
             showOverlayDialog = true
             return
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsAnswered &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
