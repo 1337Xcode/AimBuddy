@@ -11,6 +11,7 @@ Dates are in ISO-8601 (YYYY-MM-DD).
 - Start did nothing for a player who had said no to the notification permission twice: the app asked again as fast as the system answered (50 times in 4 seconds on an emulator) and never reached the screen capture step. It asks once for each press of Start now.
 - A model whose description file was unreadable or gave a network input of an absurd size could take the app down while it started. A size outside 32 to 2048 pixels is now left for the detector to work out, an unreadable description is ignored, and a failure while the model or the touch helper starts ends in a message instead of a crash.
 - The model store showed an older list, or said it could not be read, when the list had been fetched fine but the copy kept for offline use could not be written (a full phone). The fresh list is used and only the copy is skipped.
+- A download and an import that finished at the same moment could leave one of the two models off the list, though its files were there. Changes to the list are made one at a time now; a test that adds 300 models from two threads loses some without it.
 
 ## [0.3.5-beta.1] - 2026-10-28
 

@@ -1,6 +1,7 @@
 package com.aimbuddy
 
 import android.content.Context
+import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -32,12 +33,20 @@ data class InstalledModel(
  * The list of models on the phone and which one is in use, kept in the app's preferences. The app
  * ships with no model: every one on the list was downloaded from the store or imported.
  */
-class ModelCatalog(context: Context) {
-    private val modelsDir = File(context.filesDir, "models")
+class ModelCatalog internal constructor(private val modelsDir: File, private val prefs: SharedPreferences) {
+
+    constructor(context: Context) : this(
+        File(context.filesDir, "models"),
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+    )
 
     companion object {
         // Set once the first time a catalog is used in this process; see recoverInterruptedInstalls().
         private val recovered = AtomicBoolean(false)
+
+        // The list is read, changed and written back whole, by the downloads, the imports and the screens
+        // (each with a catalog of its own), so a change takes this lock to be sure of what it read.
+        private val listLock = Any()
 
         /**
          * The model to use: the one chosen if its files are there, otherwise the first model whose
@@ -51,18 +60,18 @@ class ModelCatalog(context: Context) {
         private const val KEY_ACTIVE_MODEL_ID = "active_model_id"
     }
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
     /**
      * Puts things right before the list is read: finishes what an install that was killed halfway
      * left behind, and makes the model in use one that can be loaded (none, if no model can be).
      */
     fun tidy() {
         recoverInterruptedInstalls()
-        val chosenId = prefs.getString(KEY_ACTIVE_MODEL_ID, null)
-        val activeId = chooseActive(loadInstalledModels(), chosenId)?.id
-        if (activeId != chosenId) {
-            prefs.edit().putString(KEY_ACTIVE_MODEL_ID, activeId).apply()
+        synchronized(listLock) {
+            val chosenId = prefs.getString(KEY_ACTIVE_MODEL_ID, null)
+            val activeId = chooseActive(loadInstalledModels(), chosenId)?.id
+            if (activeId != chosenId) {
+                prefs.edit().putString(KEY_ACTIVE_MODEL_ID, activeId).apply()
+            }
         }
     }
 
@@ -87,7 +96,7 @@ class ModelCatalog(context: Context) {
     }
 
     /** Adds a model, or replaces the one with the same id, and optionally makes it the one in use. */
-    fun addOrUpdateModel(model: InstalledModel, makeActive: Boolean = true) {
+    fun addOrUpdateModel(model: InstalledModel, makeActive: Boolean = true) = synchronized(listLock) {
         val models = loadInstalledModels().toMutableList()
         models.removeAll { it.id == model.id }
         models.add(model)
@@ -99,7 +108,7 @@ class ModelCatalog(context: Context) {
     }
 
     /** Removes a model and its files. Returns false if there was no such model. */
-    fun deleteModel(modelId: String): Boolean {
+    fun deleteModel(modelId: String): Boolean = synchronized(listLock) {
         val models = loadInstalledModels().toMutableList()
         val model = models.firstOrNull { it.id == modelId } ?: return false
 
@@ -111,17 +120,17 @@ class ModelCatalog(context: Context) {
         if (activeId == modelId) {
             prefs.edit().putString(KEY_ACTIVE_MODEL_ID, chooseActive(models, null)?.id).apply()
         }
-        return true
+        true
     }
 
     /** Makes a model the one in use. Returns false if there is no such model or its files are gone. */
-    fun setActiveModel(modelId: String): Boolean {
+    fun setActiveModel(modelId: String): Boolean = synchronized(listLock) {
         val model = loadInstalledModels().firstOrNull { it.id == modelId } ?: return false
         if (!model.canUse()) {
             return false
         }
         prefs.edit().putString(KEY_ACTIVE_MODEL_ID, modelId).apply()
-        return true
+        true
     }
 
     /** The model in use, or the first one that can be used if the chosen one is gone; null when there is none at all. */
