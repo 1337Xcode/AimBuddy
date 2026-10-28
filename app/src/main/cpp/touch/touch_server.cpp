@@ -648,6 +648,14 @@ void TouchServer::grabNow() {
         return;
     }
     mux_ = std::make_unique<TouchMux>(screenInfo_.device, &virtual_);
+    // The kernel's current slot outlives a touch, and the next touch names no slot when it uses that one, so a
+    // multiplexer that assumed slot 0 would file that finger under the wrong slot.
+    ContactSnapshot snapshot;
+    if (screen_.readSnapshot(screenInfo_.device, &snapshot)) {
+        mux_->resync(snapshot);
+    } else {
+        say("cannot read the touchscreen's current slot: assuming the first");
+    }
     player_.reset();
     playerWasDown_ = false;
     phase_ = Phase::kMerging;

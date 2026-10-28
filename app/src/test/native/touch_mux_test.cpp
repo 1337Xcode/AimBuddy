@@ -578,6 +578,23 @@ TEST(mux_keeps_commands_in_order_when_a_group_was_lost_with_commands_waiting) {
     CHECK(rig.reader.problems().empty());
 }
 
+TEST(mux_files_a_first_finger_that_names_no_slot_under_the_slot_the_kernel_is_at) {
+    // The kernel's current slot outlives a touch, and the next touch names no slot when it uses that one.
+    // A multiplexer that starts at the screen's state has to know it, or the finger lands in slot 0.
+    Rig rig;
+    ContactSnapshot snapshot;
+    snapshot.currentSlot = 2;
+    rig.mux.resync(snapshot);
+
+    rig.screen.send(kEvAbs, kAbsMtTrackingId, 5);
+    rig.screen.send(kEvAbs, kAbsMtPositionX, 4000);
+    rig.screen.send(kEvAbs, kAbsMtPositionY, 5000);
+    rig.screen.sync();
+    CHECK(rig.reader.lastFrame().xIn(2) == 4000 && rig.reader.lastFrame().yIn(2) == 5000);
+    CHECK(!rig.reader.lastFrame().has(0));
+    CHECK(rig.reader.problems().empty());
+}
+
 TEST(mux_declares_one_slot_more_than_the_real_screen) {
     Rig rig;
     CHECK(rig.mux.mergedSlotCount() == kRealSlots + 1);
