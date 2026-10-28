@@ -559,6 +559,25 @@ TEST(mux_leaves_the_extra_finger_alone_during_a_resync) {
     CHECK(rig.reader.problems().empty());
 }
 
+TEST(mux_keeps_commands_in_order_when_a_group_was_lost_with_commands_waiting) {
+    Rig rig;
+    rig.mux.aimDown(100, 100);
+    rig.screen.send(kEvAbs, kAbsMtTrackingId, 4);   // a group of real events begins, so the lift waits for its end
+    rig.screen.send(kEvAbs, kAbsMtPositionX, 700);
+    rig.mux.aimUp();
+    rig.screen.send(kEvSyn, kSynDropped, 0);        // the end never comes: the kernel lost events
+    rig.mux.aimDown(300, 300);                      // a newer command must not overtake the waiting lift
+
+    ContactSnapshot snapshot;                       // no real fingers
+    rig.mux.resync(snapshot);
+    CHECK(rig.mux.isAimDown());
+    CHECK(rig.reader.lastFrame().xIn(kAimSlot) == 300);
+
+    rig.screen.down(0, 9, 50, 50);                  // the next real group must not bring the old lift out late
+    CHECK(rig.mux.isAimDown());
+    CHECK(rig.reader.problems().empty());
+}
+
 TEST(mux_declares_one_slot_more_than_the_real_screen) {
     Rig rig;
     CHECK(rig.mux.mergedSlotCount() == kRealSlots + 1);

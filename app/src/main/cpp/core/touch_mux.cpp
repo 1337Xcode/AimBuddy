@@ -138,6 +138,10 @@ void TouchMux::endRealFrame() {
         inRealFrame_ = false;
     }
     // Commands for the extra finger that arrived in the middle of the group go out now, each as its own group.
+    flushQueuedAim();
+}
+
+void TouchMux::flushQueuedAim() {
     for (int i = 0; i < queuedAimCount_; ++i) {
         applyAim(queuedAim_[i]);
     }
@@ -190,6 +194,8 @@ void TouchMux::resync(const ContactSnapshot& snapshot) {
     if (changed) {
         finishFrame();
     }
+    // The extra finger's commands that waited for the catch up go out now, in the order they came.
+    flushQueuedAim();
 }
 
 int TouchMux::realContactCount() const {
@@ -224,12 +230,14 @@ void TouchMux::aimMove(int32_t x, int32_t y) { submitAim({AimKind::kMove, x, y})
 void TouchMux::aimUp() { submitAim({AimKind::kUp, 0, 0}); }
 
 void TouchMux::submitAim(const AimCommand& command) {
-    if (!inRealFrame_) {
+    // A command that is not behind an earlier one goes straight out, unless the real screen's events are in the way.
+    if (!inRealFrame_ && !needsResync_) {
         applyAim(command);
         return;
     }
-    // In the middle of a group of events from the real screen: wait for its end. Only the newest
-    // position matters, so a move replaces a move that is still waiting.
+    // In the middle of a group of events from the real screen, or while lost events are made good: wait
+    // for the end of the group, or for resync(). Only the newest position matters, so a move replaces a
+    // move that is still waiting.
     if (command.kind == AimKind::kMove && queuedAimCount_ > 0 &&
         queuedAim_[queuedAimCount_ - 1].kind == AimKind::kMove) {
         queuedAim_[queuedAimCount_ - 1] = command;
@@ -238,10 +246,7 @@ void TouchMux::submitAim(const AimCommand& command) {
     if (queuedAimCount_ == kMaxQueuedAim) {
         // Far more commands than one group of real events can take in practice; give up on
         // keeping the group whole rather than lose a finger-up.
-        for (int i = 0; i < queuedAimCount_; ++i) {
-            applyAim(queuedAim_[i]);
-        }
-        queuedAimCount_ = 0;
+        flushQueuedAim();
     }
     queuedAim_[queuedAimCount_++] = command;
 }

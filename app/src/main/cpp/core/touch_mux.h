@@ -74,7 +74,7 @@ struct ContactSnapshot {
  *  - BTN_TOUCH must be on while any contact is down, whoever's it is. Android treats contacts as
  *    hovering otherwise, so the button is derived here, never copied.
  *  - The extra finger's events must not cut into the middle of a group of events from the real
- *    screen, so they wait for its next SYN_REPORT.
+ *    screen, so they wait for its next SYN_REPORT, or for resync() when the group was lost.
  *
  * Not thread safe: call everything from one thread.
  */
@@ -149,6 +149,7 @@ private:
 
     // Extra finger handling.
     void submitAim(const AimCommand& command);
+    void flushQueuedAim();
     void applyAim(const AimCommand& command);
     void applyAimDown(int32_t x, int32_t y);
     void applyAimMove(int32_t x, int32_t y);
