@@ -340,13 +340,14 @@ private fun ModelRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            // The first line may take two lines of text; the ones after it, such as the details, stay on one.
+            // The first line (what the model is for) may take three lines of text, so a description is not cut
+            // short; the ones after it, such as the details, stay on one.
             lines.forEachIndexed { index, line ->
                 Text(
                     text = line,
                     style = MaterialTheme.typography.bodySmall,
                     color = AppTheme.palette.textDim,
-                    maxLines = if (index == 0) 2 else 1,
+                    maxLines = if (index == 0) 3 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
