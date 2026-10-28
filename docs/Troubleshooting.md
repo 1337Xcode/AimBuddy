@@ -62,7 +62,8 @@ Other things you may notice:
 ## The overlay
 
 - **The floating button is gone.** In streamer mode it is invisible but still there: tap where it was, or use the Menu button in the notification.
-- **A recording shows black while the menu is open.** That is on purpose in streamer mode, so that the menu never reaches the recording. It is a few moments.
+- **A recording shows a black panel while the menu is open.** That is on purpose in streamer mode, so that the menu never reaches the recording. The panel is as tall as the screen and as wide as the menu; the game shows everywhere else. A phone that does not allow a secure window keeps the menu shut in streamer mode and says so; turn streamer mode off to open it.
+- **Move or resize on screen and Learn colour are dimmed.** Both draw over the game, which streamer mode does not do. Turn streamer mode off, set them, and turn it back on.
 - **The menu does not open or close.** Hold the button to stop AimBuddy, then start it again.
 
 ## Models and the store

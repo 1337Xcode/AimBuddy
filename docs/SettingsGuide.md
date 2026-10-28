@@ -72,7 +72,7 @@ The touch area is where the assist's finger rests. Move and resize it from the A
 | Language | English | English, Chinese or Russian, for the app and the in-game menu together. |
 | Appearance | System | Follow the phone, or always dark or light. |
 | Accent color | Blue | The color of buttons and highlights in the app. Ten colors. |
-| Streamer mode | Off | Draws nothing over the game, makes the floating button invisible, and keeps the menu out of screenshots and recordings. Aim assist keeps working. The button stays where it is: tap there to open the menu and hold to stop. The notification has a Menu button too. While the menu is open a recording shows black. |
+| Streamer mode | Off | Draws nothing over the game (no boxes, outlines, touch area, labels or readout), makes the floating button invisible, and keeps the menu out of screenshots and recordings. Aim assist keeps working. The button stays where it is: tap there to open the menu and hold to stop. The notification has a Menu button too. While the menu is open a recording shows a black panel where the menu is and the game everywhere else. The touch area and the detection colour cannot be set in streamer mode; turn it off for that. |
 
 ## About
 
