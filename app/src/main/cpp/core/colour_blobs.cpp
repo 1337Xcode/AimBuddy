@@ -69,11 +69,12 @@ float hueDistance(float a, float b) {
     return std::min(apart, 360.0f - apart);
 }
 
-/// How much a pixel counts when a colour is learned: the cube of how vivid and bright it is, so that a thin,
-/// pure outline outweighs a large area of moderate colour (wood, skin, sand) behind it.
+/// How much a pixel counts when a colour is learned: the sixth power of how vivid and bright it is, so that a thin,
+/// pure outline outweighs a large area of moderate colour (sky, wood, skin, sand) behind it.
 float vividness(float saturation, float value) {
     const float product = saturation * value;
-    return product * product * product;
+    const float square = product * product;
+    return square * square * square;
 }
 
 /// The middle of a set of (value, weight) pairs when each value is counted as many times as its weight says.

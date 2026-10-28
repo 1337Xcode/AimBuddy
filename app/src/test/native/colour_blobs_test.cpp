@@ -294,6 +294,17 @@ TEST(learning_takes_the_most_vivid_colour_near_the_crosshair) {
     CHECK_NEAR(learned.hueToleranceDegrees, ColourRange().hueToleranceDegrees, 1e-6);   // the tolerance is the player's to set
 }
 
+TEST(learning_prefers_a_thin_pure_outline_to_the_moderate_colour_beside_it) {
+    // A line of pure lime one pixel thick, across a patch of sky, which is fairly vivid and has ten times as many pixels
+    // in the square looked at: what the player taps on is the line.
+    Picture picture;
+    picture.fillRect(70, 70, 140, 120, {74, 144, 217});
+    picture.fillRect(129, 80, 1, 100, {160, 255, 0});
+    ColourRange learned;
+    CHECK(learnColour(picture.data(), kSide, picture.stride(), 129, 110, 5, &learned));
+    CHECK_NEAR(learned.hueDegrees, 82.0, 4.0);   // lime, (160, 255, 0), is 82 degrees; the sky is 210
+}
+
 TEST(learning_finds_nothing_in_a_picture_without_a_vivid_colour) {
     Picture picture;
     picture.fillRect(80, 80, 60, 60, {120, 110, 100});   // dull
