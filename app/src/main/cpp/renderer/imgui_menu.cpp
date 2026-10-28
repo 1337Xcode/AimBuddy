@@ -1042,6 +1042,19 @@ void drawFooter(bool* open) {
     }
 }
 
+/**
+ * Runs `drawPage` in a scrolling area of its own that fills the room between the tabs and the footer. Each tab has
+ * one, so that it keeps its place when the player switches away and back, and the tabs themselves never scroll off.
+ * Returns what `drawPage` returns: true if a setting changed.
+ */
+template <typename DrawPage>
+bool drawScrollingPage(const char* id, DrawPage&& drawPage) {
+    ImGui::BeginChild(id, ImVec2(0, -footerHeight()), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+    const bool changed = drawPage();
+    ImGui::EndChild();
+    return changed;
+}
+
 /// Draws the menu beside the floating icon. Returns true if a setting changed.
 bool drawMenu(Settings& settings, int bodyCount) {
     const ImVec2 windowSize = ImGui::GetIO().DisplaySize;
@@ -1073,23 +1086,21 @@ bool drawMenu(Settings& settings, int bodyCount) {
         g_menuRect[2] = position.x + g_menuSize.x;
         g_menuRect[3] = position.y + g_menuSize.y;
 
-        ImGui::BeginChild("##MenuScroll", ImVec2(0, -footerHeight()), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
         if (ImGui::BeginTabBar("##MenuTabs", ImGuiTabBarFlags_FittingPolicyResizeDown)) {
             if (ImGui::BeginTabItem(T(Key::TabVisuals))) {
-                changed |= drawVisualsTab(settings);
+                changed |= drawScrollingPage("##VisualsPage", [&] { return drawVisualsTab(settings); });
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem(T(Key::TabAim))) {
-                changed |= drawAimTab(settings);
+                changed |= drawScrollingPage("##AimPage", [&] { return drawAimTab(settings); });
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem(T(Key::TabInfo))) {
-                changed |= drawInfoTab(settings, bodyCount);
+                changed |= drawScrollingPage("##InfoPage", [&] { return drawInfoTab(settings, bodyCount); });
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
         }
-        ImGui::EndChild();
         drawFooter(&open);
     }
     ImGui::End();
