@@ -69,7 +69,7 @@ If the aim overshoots or crawls with calibration on, give it a minute of aiming,
 
 | Setting | Default | What it does |
 |---------|---------|--------------|
-| Touch access | Automatic | How AimBuddy reaches the touchscreen: Shizuku, root, or automatic, which prefers Shizuku. Taken when you press Start, so it is in the app and not in the in-game menu. See [Shizuku setup](ShizukuSetup.md). |
+| Touch access | Automatic | How AimBuddy reaches the touchscreen: Shizuku, root, or automatic, which prefers Shizuku. It is on a screen of its own, opened from the Touch access row on Home or from Settings, Touch, which also shows where Shizuku and root stand and has a test button. Taken when you press Start, so it is in the app and not in the in-game menu. See [Shizuku setup](ShizukuSetup.md). |
 | Show touch area | On | Draws the touch area on the screen while the assist is on. In-game menu only. |
 | Touch area opacity | 30% | How strongly the touch area is drawn, 10% to 100%. In-game menu only. |
 

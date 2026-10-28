@@ -29,10 +29,27 @@ If AimBuddy stops by itself during a game, the phone's battery manager probably 
 
 Without it AimBuddy still outlines enemies, but the assist cannot move your aim. See [Shizuku setup](ShizukuSetup.md) for starting Shizuku. For root, grant it when your root manager asks.
 
+The Touch access screen (the Touch access row on Home, or Settings, Touch) shows where each route stands and has a Test touch access button. The test starts the touch helper the way Start does, says whether it took the touchscreen over, and stops it again. It cannot run while the assist is running, and Start waits until it has finished.
+
+| Shizuku, on the Touch access screen | What to do |
+|-------------------------------------|------------|
+| Ready | Nothing. It is running and has allowed AimBuddy. |
+| Tap to allow | It is running but has not allowed AimBuddy. Tap the row and answer Shizuku's question. If it does not ask again, the row opens Shizuku: allow AimBuddy in its list of apps. |
+| Not running | It is installed but stopped. Tap the row to open Shizuku and start it, see [Shizuku setup](ShizukuSetup.md). |
+| Not installed | The row opens the setup guide. |
+
+Root is shown as Not asked yet until you press Start or Test, because the only way to find out is to ask, and the root manager may show a prompt. After a refusal, or a prompt left unanswered, it says Not available.
+
+| What the test says | Cause and fix |
+|--------------------|---------------|
+| Works through Shizuku, or through root. | The helper started and took the touchscreen over. |
+| No route was available. | Neither route could start the helper: Shizuku has to be running and allow AimBuddy, or root has to be granted. If you chose one route, the message names it (Shizuku is not available, or Root was not granted). |
+| This phone does not let the touch helper use the touchscreen, or Another program is holding the touchscreen, or The touch helper could not be started. | The same causes as the table below. Under the message the test shows what the helper printed. |
+
 | What the Home screen says | Cause and fix |
 |---------------------------|---------------|
 | Aim assist needs Shizuku or root. | Neither is available. Start Shizuku, or grant root, then press Stop and Start. |
-| This phone does not let the touch helper use the touchscreen. | Shizuku or root started the helper, but this phone refused it access to the touchscreen. Under Settings, Touch, try the other choice: root if you were using Shizuku, or Shizuku if you were using root. |
+| This phone does not let the touch helper use the touchscreen. | Shizuku or root started the helper, but this phone refused it access to the touchscreen. On the Touch access screen, try the other choice: root if you were using Shizuku, or Shizuku if you were using root, and press Test touch access. |
 | Another program is holding the touchscreen. | Another app that reads the touchscreen directly is running. Close it. |
 | The touch helper could not be started. | Press Stop and Start again. If it keeps happening, check `adb logcat -s TouchHelper:W aimtouch:V` for the reason. |
 

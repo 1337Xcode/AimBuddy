@@ -66,6 +66,8 @@ Open Shizuku and use its Start button for root.
 2. Answer what it asks, in this order: display over other apps, notifications (on Android 13 and newer), Shizuku's own request to allow AimBuddy, and screen capture.
 3. When AimBuddy is running, the Touch access row on the Home screen says Shizuku.
 
+To check without starting the assist, open the Touch access row and press Test touch access. It says "Works through Shizuku" once the helper has started and taken the touchscreen over, and stops it again. The Shizuku row on that screen says Ready when Shizuku is running and has allowed AimBuddy, and tells you what is missing when it does not.
+
 Shizuku remembers the permission, so you only answer its request once.
 
 ## After a restart
@@ -76,7 +78,7 @@ Shizuku stops when the phone restarts. Start it again with the route you used be
 
 | What you see | What to do |
 |---|---|
-| Touch access says Not set up, or "Aim assist needs Shizuku or root" | Shizuku is not running or has not been allowed. Open Shizuku. If it says it is not running, repeat Step 2. |
+| Touch access says Not set up, or "Aim assist needs Shizuku or root" | Shizuku is not running or has not been allowed. Open the Touch access row: the Shizuku row there says which (Not running, Tap to allow, Not installed). If it is not running, repeat Step 2. |
 | "Shizuku was not allowed. Targets are still highlighted." | Open Shizuku, go to the list of authorized apps, and allow AimBuddy. Then press Start again. |
 | No Shizuku request appears | Force-stop Shizuku and AimBuddy, open Shizuku, check that it is running, and press Start in AimBuddy again. |
 | Shizuku stops by itself during play | The phone's battery manager is killing it. Exclude Shizuku and AimBuddy from battery optimization, see below. |
