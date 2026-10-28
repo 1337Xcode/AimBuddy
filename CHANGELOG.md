@@ -6,28 +6,33 @@ Dates are in ISO-8601 (YYYY-MM-DD).
 
 ## [Unreleased]
 
-Pre-release work staged for the next tag. A rebuild of the touch, aim and detection code and of every screen, plus updates from inside the app.
+## [0.3.5-beta.1] - 2026-10-28
+
+A rebuilt app with a model store and updates from inside the app. The APK no longer carries a model, and a debug build is published beside the release one.
 
 ### Added
-- Updates from inside the app. It reads the project's releases on GitHub, offers a newer one on the Home screen and in Settings, downloads it, checks the SHA-256, the package name, the version and the signing certificate, and hands it to the system installer. It opens again once the system has replaced it. The first release that has this must be installed by hand once.
-- A model store. `model/index.json` lists the models in the `model` folder. The Models screen installs them with every file checked against its size and SHA-256, keeps the old model until the new one is complete, and offers updates. AimBuddy General, the default model, is published there. The app carries no model of its own: its first run opens on the Models page with a short guide to downloading one or importing your own, and Start without a model leads there too.
-- A touch helper, `libaimtouch.so`, started through Shizuku or root. It takes the real touchscreen over, passes the player's touches to a virtual copy and adds the assist's finger as one more contact. It only takes the screen when no finger is on it, needs a heartbeat from the app, and gives the screen back when both volume keys are held or when it dies.
-- Measuring the game's camera while the player plays: how far the picture slid between frames, and from that the camera's gain and delay. The aim controller predicts through that delay, starts with small moves until the camera is known, and lifts and puts the finger down again when the game ignores it.
-- Ten box colors and ten accent colors, a performance readout, a Menu button in the notification, and a notice on the first run that the app is free and open source.
-- Two outlines for the fields of view: a blue square for the area the detector looks at and a red circle for how far the assist reaches. They are drawn while playing, each with a switch in the app and in the in-game menu, and always while the menu is open.
+- Updates from inside the app. It reads the project's releases on GitHub and offers a newer one on the Home screen and in Settings. Before it installs anything it checks the SHA-256, the package name, that the version is newer and that the signing certificate matches the installed copy, then hands the file to Android's installer. If an update is signed with another key, the app says so and links to the releases page. This is the first release that can do this, so it has to be installed by hand once.
+- A model store. `model/index.json` lists the models in the `model` folder and the Models screen installs them. Each file is checked against its size and SHA-256, the old model stays until the new one is complete, and updates are offered. AimBuddy General is published there. A first run opens on the Models page with a short guide to downloading a model or importing your own; when the first one is in, the page says so and points back to Start. Pressing Start with no model leads there too.
+- A touch helper, `libaimtouch.so`, started through Shizuku or root. It takes the real touchscreen over, passes your touches to a virtual copy and adds the assist's finger as one more contact. It takes the screen only when no finger is on it, needs a heartbeat from the app, and gives the screen back when both volume keys are held or when it dies.
+- Measuring the game's camera while you play: how far the picture slid between frames, and from that the camera's gain and delay. The aim controller plans through that delay, starts with small moves until the camera is known, and lifts and puts the finger down again when the game ignores it.
+- Ten box colors, ten accent colors, a performance readout, a Menu button in the notification, and a notice on the first run that the app is free and open source.
+- Two outlines for the fields of view: a blue square for the area the detector looks at and a red circle for how far the assist reaches. They are drawn while you play, each with a switch in the app and in the in-game menu, and always while the menu is open.
 - Detection eases off when the phone reports that it is getting hot: at most 30 detections a second when it is warm and 15 when it is hot, and full speed again once it has cooled down.
-- A launcher icon that is nothing but TV static, edge to edge in every layer, so it fills whatever shape the launcher cuts it to. It is drawn anew for each build (`-Paimbuddy.iconSeed` repeats one). The floating button is a bubble of the same static, drawn anew each time it appears.
-- Tests for the tracker, the aim controller against a simulated game, camera motion, the touch merger, the detector's decoding, the settings, the update logic and the model store.
+- A launcher icon made of TV static, edge to edge in every layer, so it fills whatever shape the launcher cuts. Each build draws its own (`-Paimbuddy.iconSeed` repeats one). The floating button is a bubble of the same static, drawn anew each time it appears.
+- A debug APK beside the release one on every release, `AimBuddy-v<version>-debug.apk`. It installs as a separate app (`com.aimbuddy.debug`), is signed with the same key, and updates itself from the debug file of later releases.
+- Labelling training frames with a model made for your game and exported to ONNX (`--teacher-onnx`). The model reads the frame in tiles at the pixel size it was trained on.
+- Tests for the tracker, the aim controller against a simulated game and a simulated person steering by hand, camera motion, the touch merger, the detector's decoding, the settings, the update logic and the model store.
 
 ### Changed
-- Every screen is rebuilt in Compose with a top bar that carries the screen's title, settings in groups, tiles for the models and no splash screen.
+- Every screen is rebuilt in Compose, with a top bar that carries the screen's title, settings in groups, tiles for the models and no splash screen.
 - Detection reads only a square around the crosshair, on the CPU or the GPU, whichever is faster on the phone, and the tracker follows targets through missed detections.
 - Settings live in one text file, `settings.cfg`, and are saved a moment after each change. The assist starts off on every run.
 - Streamer mode draws nothing over the game and makes the floating button invisible, and the menu is secure only while it is open. The old design blacked out the game in recordings.
 - The overlay draws in a `TextureView`.
+- The app carries no model. The release APK is 7.2 MB, down from 12.7 MB, and AimBuddy General (9.2 MB) is downloaded from the store the first time.
 - Debug builds install beside the release build as `com.aimbuddy.debug`.
+- The release workflow builds both APKs, signs them with the upload key and checks them before it publishes: that the signatures verify, that both use the key of the previous release, that each has the right package and version, and that neither carries a model.
 - The training pipeline writes `model.param`, `model.bin` and `model.json` to `training/outputs/export/` and no longer writes into the app's assets.
-- The app carries no model of its own. AimBuddy General is downloaded from the model store the first time (about 9 MB), and the debug build is about 4 MB smaller.
 - The documentation is rewritten to match.
 
 ### Removed
@@ -35,6 +40,7 @@ Pre-release work staged for the next tag. A rebuild of the touch, aim and detect
 - The old ESP renderer and overlay window.
 
 ### Fixed
+- Pressing Stop soon after Start froze the app until the CPU and GPU timing that runs at the start had finished. On an emulator that took 54 seconds and Android showed the app as not responding. Stop now ends the timing at its next step, and a Vulkan device that is only the CPU (an emulator's) is left out of it, which brings the timing there down to 3 seconds.
 - Boxes trailed the targets while the player turned the camera, by about 45 px in a simulated match. The camera is now read on the captured frames up to 30 times a second, not only on the frames the detector looks at, and the player's own turn is carried a little past the newest frame. The same match now shows about 7 px.
 - Ghost boxes: a box the detector reported for a single frame was drawn for a moment. A new target is now drawn from its third sighting on, or at once when the detector is at least 90 percent sure.
 - Boxes of still targets wandered about 6 px between screen refreshes. They are smoothed harder now (about 3 px), and only the part of a target's speed the tracker is sure of is carried forward.
@@ -45,7 +51,11 @@ Pre-release work staged for the next tag. A rebuild of the touch, aim and detect
 - The app crashed when the touch helper's output was cut short.
 - The first assist touch after the touchscreen changed hands was ignored by the system. The app now waits 700 ms.
 - A model that fails to download, or a damaged model list, no longer harms the model in use.
+- A model's description in the store was cut off after two lines. It now gets three.
 - Chinese text used half-width punctuation.
+
+### Upgrade note
+- This release installs over beta 2 and beta 3 and keeps your settings, because all three are signed with the same key. The app no longer carries a model, so after the update it opens on the Models page once, where you download AimBuddy General or import your own.
 
 ---
 
