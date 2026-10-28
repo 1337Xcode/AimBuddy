@@ -149,9 +149,15 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
-            // A separate application id lets a debug build be installed next to the release build
-            // (they are signed with different keys, so they could not replace each other).
+            // A separate application id lets a debug build be installed next to the release build,
+            // whichever key signs it.
             applicationIdSuffix = ".debug"
+            // Where the release keystore is at hand (CI, or a computer with keystore.properties) the debug
+            // build is signed with it too, so the debug files published with releases can update one
+            // another. Anywhere else it keeps Android's own debug key, which differs on every computer.
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
             versionNameSuffix = "-debug"
             debuggable = true
             jniDebuggable = false
