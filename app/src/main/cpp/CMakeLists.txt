@@ -156,6 +156,7 @@ set(ESP_SOURCES
     core/aim_controller.cpp
     core/camera_motion.cpp
     core/colour_blobs.cpp
+    core/drag_scroller.cpp
     core/global_motion.cpp
     core/look_watch.cpp
     core/response_estimator.cpp

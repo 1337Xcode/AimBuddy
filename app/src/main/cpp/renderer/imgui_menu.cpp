@@ -24,6 +24,7 @@
 #include <thread>
 
 #include "app_state.h"
+#include "core/drag_scroller.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_opengl3.h"
 #include "overlay/target_overlay.h"
@@ -521,6 +522,11 @@ std::deque<TouchStep> g_touchSteps;   ///< What the finger did, not yet shown to
 bool g_pressShown = false;            ///< ImGui has been told the button is down.
 int g_framesPressed = 0;              ///< Frames the button has been down.
 
+// A finger that goes down on a page of the menu may scroll it instead of pressing a control (see DragScroller).
+constexpr float kScrollSlopDp = 8.0f;
+aimbuddy::DragScroller g_scroller(0.0f);   ///< Given its real slop when the overlay attaches. GL thread only.
+float g_pendingScrollPx = 0.0f;            ///< How far the finger has scrolled the page since it was last moved. GL thread only.
+
 /**
  * Shows ImGui what the finger did, spaced so that even a very quick tap becomes a click.
  *
@@ -588,8 +594,36 @@ void queueImGuiUp(float x, float y) {
     g_touchSteps.push_back({TouchStep::Kind::kLeave, x, y});
 }
 
+/// Gives the menu what a finger did (`action` as in OverlayNative.touch), as the scroller decided: to the controls, or to the page.
+void deliverToMenu(const aimbuddy::ScrollDecision& decision, int action, float x, float y) {
+    using Kind = aimbuddy::ScrollDecision::Kind;
+    switch (decision.kind) {
+        case Kind::kHold:
+            return;
+        case Kind::kScroll:
+            g_pendingScrollPx += decision.scrollPx;
+            return;
+        case Kind::kPress:
+            queueImGuiDown(decision.pressX, decision.pressY);   // the controls get the press from where the finger went down
+            break;
+        case Kind::kPass:
+            if (action == 0) {
+                queueImGuiDown(x, y);
+                return;
+            }
+            break;
+    }
+    if (action == 2) {
+        queueImGuiMove(x, y);
+    } else {
+        queueImGuiUp(x, y);
+    }
+}
+
 /// Forgets the finger, so a press that was cut short (the menu closed) cannot stay down for next time.
 void resetTouch() {
+    g_scroller.cancel();
+    g_pendingScrollPx = 0.0f;
     if (!g_pressShown && g_touchSteps.empty()) {
         return;
     }
@@ -1097,7 +1131,23 @@ void drawFooter(bool* open) {
 template <typename DrawPage>
 bool drawScrollingPage(const char* id, DrawPage&& drawPage) {
     ImGui::BeginChild(id, ImVec2(0, -footerHeight()), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+    // A finger that goes down on the page may scroll it. Not on the scrollbar, which takes the finger itself (its grab
+    // is wider than it looks, so the strip is too), and not while a list is open, which takes every touch.
+    const ImVec2 position = ImGui::GetWindowPos();
+    const ImVec2 size = ImGui::GetWindowSize();
+    const float scrollbarStrip = ImGui::GetStyle().ScrollbarSize + ImGui::GetFontSize();
+    if (ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopup)) {
+        g_scroller.setArea(0.0f, 0.0f, 0.0f, 0.0f);
+    } else {
+        g_scroller.setArea(position.x, position.y, position.x + size.x - scrollbarStrip, position.y + size.y);
+    }
+
     const bool changed = drawPage();
+    if (g_pendingScrollPx != 0.0f) {
+        ImGui::SetScrollY(ImGui::GetScrollY() + g_pendingScrollPx);
+        g_pendingScrollPx = 0.0f;
+    }
     ImGui::EndChild();
     return changed;
 }
@@ -1257,6 +1307,7 @@ Java_com_aimbuddy_OverlayNative_attach(JNIEnv* env, jclass /* clazz */, jobject 
         g_contextCreated = true;
     }
     ImGui::GetIO().DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
+    g_scroller = aimbuddy::DragScroller(dp(kScrollSlopDp));
     aimbuddy::i18n::SetLanguage(aimbuddy::settingsStore().get().language);
     g_streamerModeApplied = false;   // a new window starts unsecured; the next frame tells Kotlin if it should not be
     g_lastTick = {};
@@ -1389,13 +1440,13 @@ Java_com_aimbuddy_OverlayNative_touch(JNIEnv* /* env */, jclass /* clazz */, jin
                 g_menuVisible.store(false, std::memory_order_relaxed);
                 return JNI_TRUE;
             }
-            queueImGuiDown(x, y);
+            deliverToMenu(g_scroller.down(x, y), action, x, y);
             break;
         case 2:   // finger moved
-            queueImGuiMove(x, y);
+            deliverToMenu(g_scroller.move(x, y), action, x, y);
             break;
         default:  // finger up or cancelled
-            queueImGuiUp(x, y);
+            deliverToMenu(g_scroller.up(x, y), action, x, y);
             break;
     }
     return JNI_TRUE;
