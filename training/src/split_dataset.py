@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-Stratified, leak-free split of a labelled directory into train/valid/test.
+Leak-free split of a labelled directory into train/valid/test.
 
-Treats every image+label pair as one unit. Splits deterministically by
-hashing the filename  -  so re-running the script (with new images added)
+Frames cut from one video look almost the same, so they all go to the same split:
+the split is chosen by hashing the clip a frame came from (the name without its
+`_frame_00042` part), and a frame that does not follow that pattern is its own
+clip. A split by frame would put near copies of a training image into the
+validation set, and the validation score, and the choice of best.pt, would only
+measure how well the model remembers.
+
+The choice is deterministic, so re-running the script (with new images added)
 keeps already-assigned images in their original split and only assigns
 new ones. No image ever moves between splits.
 
@@ -27,10 +33,19 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import shutil
 from pathlib import Path
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+# extract_frames.py names a frame <video>_frame_<number>.
+_FRAME_SUFFIX = re.compile(r"_frame_\d+$")
+
+
+def clip_of(stem: str) -> str:
+    """The clip a frame was cut from: the name of its video, or the whole name when it is not a numbered frame."""
+    return _FRAME_SUFFIX.sub("", stem)
 
 
 def _bucket_for(name: str, train: float, valid: float) -> str:
@@ -79,7 +94,7 @@ def split(
     counts = {"train": 0, "valid": 0, "test": 0, "missing_label": 0, "skipped_existing": 0}
 
     for img_path, label_path in _iter_pairs(src_images, src_labels):
-        bucket = _bucket_for(img_path.stem, train_ratio, valid_ratio)
+        bucket = _bucket_for(clip_of(img_path.stem), train_ratio, valid_ratio)
 
         dst_img = dataset_dir / bucket / "images" / img_path.name
         dst_label = dataset_dir / bucket / "labels" / (img_path.stem + ".txt")
