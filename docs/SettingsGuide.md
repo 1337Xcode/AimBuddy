@@ -4,6 +4,10 @@ Every setting AimBuddy has, what it does, and what to try when something is off.
 
 Where the settings are kept, and the limits each value is held to, are in `app/src/main/cpp/settings/settings.h` and `settings_store.cpp`.
 
+## The in-game menu
+
+The round button over the game opens it. Visuals, Aim assist and Info are tabs at the top, and they stay in view while the page under them scrolls. Drag a finger up or down on a page to scroll it; a finger that moves sideways drags a slider instead. Close and Stop AimBuddy are at the bottom of every page. A tap outside the menu closes it, and holding the button for two seconds stops AimBuddy.
+
 ## Overlay
 
 | Setting | Default | What it does |

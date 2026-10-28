@@ -79,6 +79,8 @@ The overlay is two windows added with `WindowManager`, managed by `OverlayContro
 - A full screen window with an `OverlayView`, a `TextureView` in which the native code draws the targets and the settings menu with ImGui on a thread of its own. It lets every touch through to the game, except while the menu is open.
 - The floating button, a `StaticBubbleView`. Tapping it opens the menu, dragging moves it, holding it stops AimBuddy.
 
+The menu is drawn with a few widgets of its own, in `renderer/menu_widgets.*`: pill buttons, a slider with its name and value above a thin track, a list with its name above it, and cards. Every page is built from them, so that the pages look alike. The tabs and the footer stay in place and each page scrolls by itself. `DragScroller` (`core/drag_scroller.*`, no input or output) decides what a finger that goes down on a page does. It holds the press back until the finger has moved eight dp or been lifted. A tap, or a move that is more sideways than up or down (a slider being dragged), is then given to the controls as a press where the finger went down. A move that is more up or down scrolls the page. It leaves the page's scrollbar alone, and every touch while a list is open, because the list takes them.
+
 The overlay is part of the screen the app captures, so the detector sees the marks the app draws on its own targets. That matters: on five frames of a free shooter (Xonotic), a full outline close to a target moved the model's confidence in it by 0.28 on average and made it lose one target in five, about twice as much as shifting the picture by a pixel does. Corner brackets a good way off the target moved it by 0.09 to 0.13 and lost none, so that is how targets are marked. The sample is small (ten boxes) and was measured offline with the app's own model, not on a phone in a match. A debug build can write the picture the detector reads (the playground's `dumpMs` extra writes `frame.ppm`), which is how the overlay's presence in it was confirmed.
 
 From Android 12 the system drops every touch that goes through another app's overlay when the overlay is more opaque than 0.8. A `SurfaceView` is judged by a rule that ignores how transparent its pixels are, which is why the overlay is a `TextureView`, and the window's alpha is kept just under the limit while it is see-through. The window only becomes opaque and takes touches while the menu is open, and if the menu is open but nothing is being drawn, it stops taking touches after a short while, so a broken renderer cannot leave an invisible layer over the screen.
@@ -125,7 +127,7 @@ The tracker is shared by the pipeline thread, the aim loop and the overlay, and 
 
 ## Testing
 
-- `app/src/test/native` holds the C++ tests of the parts that do no input or output: the tracker, the aim controller against a simulated game with a known camera response, camera motion, the touch merger, the detector's decoding, the colour finder, and the settings. Run them with `sh app/src/test/native/run.sh`.
+- `app/src/test/native` holds the C++ tests of the parts that do no input or output: the tracker, the aim controller against a simulated game with a known camera response, camera motion, the touch merger, the detector's decoding, the colour finder, the menu's drag scroller, and the settings. Run them with `sh app/src/test/native/run.sh`.
 - `app/src/test/java` holds the Kotlin tests of the update logic, the model store and model files, the touch hints on the Home screen and the thermal limits: `./gradlew testDebugUnitTest`.
 - Debug builds contain a playground (`app/src/debug`), a stand-in first-person game with a known camera gain and delay, and a few hooks into the native code that record traces. They are compiled in only for debug builds (`AIMBUDDY_DEBUG_HOOKS`).
 
@@ -145,6 +147,7 @@ The tracker is shared by the pipeline thread, the aim loop and the overlay, and 
 | How the aim moves | `core/aim_controller.*`, `pipeline/aim_loop.*` |
 | The touchscreen | `touch/`, `core/touch_mux.*` |
 | The overlay and the in-game menu | `OverlayController.kt`, `renderer/imgui_menu.cpp`, `overlay/target_overlay.*` |
+| The menu's widgets and scrolling | `renderer/menu_widgets.*`, `core/drag_scroller.*` |
 | The settings and their limits | `settings/settings.h`, `settings/settings_store.cpp` |
 | The model store | `ModelStoreRepository.kt`, `model/index.py` |
 | Updates | `update/` |

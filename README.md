@@ -34,7 +34,7 @@ tracker -> overlay (outlines, drawn a little ahead of now)
 
 ## How it is verified
 
-- `app/src/test/native` holds C++ tests of the parts that perform no input or output: the tracker, camera motion, the touch merger, the detector's decoding, the colour finder and the settings. The aim controller is run against a simulated game with a known camera gain and delay, and has to settle for gains and delays it was not told.
+- `app/src/test/native` holds C++ tests of the parts that perform no input or output: the tracker, camera motion, the touch merger, the detector's decoding, the colour finder, the menu's drag scroller and the settings. The aim controller is run against a simulated game with a known camera gain and delay, and has to settle for gains and delays it was not told.
 - `app/src/test/java` holds Kotlin tests of the update logic, the model store and the thermal limits.
 - Debug builds include a stand-in first-person game with a known camera response, used to run the whole loop on an emulator.
 
