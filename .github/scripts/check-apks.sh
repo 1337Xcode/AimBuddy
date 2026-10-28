@@ -20,19 +20,25 @@ fail() {
   exit 1
 }
 
-# Where apksigner and aapt2 are: the newest build tools in the SDK, unless the caller names them.
+# Where apksigner and aapt2 are, unless the caller names them: the build tools the app itself is built
+# with. The newest ones in the SDK are not used: a runner image can carry a newer apksigner whose
+# output is laid out differently.
 if [ -z "${APKSIGNER:-}" ] || [ -z "${AAPT2:-}" ]; then
   SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
   [ -n "${SDK}" ] || fail "ANDROID_HOME is not set, so apksigner and aapt2 cannot be found"
-  BUILD_TOOLS=$(find "${SDK}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)
-  [ -n "${BUILD_TOOLS}" ] || fail "no build tools found under ${SDK}/build-tools"
+  BUILD_TOOLS_VERSION=$(sed -n "s/.*buildToolsVersion = '\\([^']*\\)'.*/\\1/p" app/build.gradle)
+  [ -n "${BUILD_TOOLS_VERSION}" ] || fail "app/build.gradle does not say which build tools it uses"
+  BUILD_TOOLS="${SDK}/build-tools/${BUILD_TOOLS_VERSION}"
+  [ -d "${BUILD_TOOLS}" ] || fail "build tools ${BUILD_TOOLS_VERSION} are not installed under ${SDK}/build-tools"
   APKSIGNER="${APKSIGNER:-${BUILD_TOOLS}/apksigner}"
   AAPT2="${AAPT2:-${BUILD_TOOLS}/aapt2}"
 fi
 
-# The SHA-256 of the certificate an APK is signed with.
+# The SHA-256 of the certificate an APK is signed with, as one line. When an APK has several signers
+# (or one for each signature scheme) the digests are joined with commas, which the caller refuses.
+# Older apksigner versions print "Signer #1 certificate SHA-256 digest:", newer ones "V3 Signer: certificate ...".
 signer_of() {
-  "${APKSIGNER}" verify --print-certs "$1" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
+  "${APKSIGNER}" verify --print-certs "$1" | sed -n 's/^.*certificate SHA-256 digest: //p' | sort -u | paste -sd, -
 }
 
 # One field (name, versionCode or versionName) of the package line of an APK's manifest.
@@ -53,6 +59,9 @@ done
 APP_SIGNER=$(signer_of "${APP_APK}")
 DEBUG_SIGNER=$(signer_of "${DEBUG_APK}")
 [ -n "${APP_SIGNER}" ] || fail "${APP_FILE} has no signing certificate"
+case "${APP_SIGNER}${DEBUG_SIGNER}" in
+  *,*) fail "an APK has more than one signing certificate (${APP_SIGNER} and ${DEBUG_SIGNER})" ;;
+esac
 [ "${APP_SIGNER}" = "${DEBUG_SIGNER}" ] || fail "the two APKs are signed with different keys (${APP_SIGNER} and ${DEBUG_SIGNER})"
 
 # The packages and versions this release is meant to have.
