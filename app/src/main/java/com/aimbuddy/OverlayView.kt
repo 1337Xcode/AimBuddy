@@ -130,8 +130,7 @@ private class RenderThread(
                 while (true) {
                     (tasks.poll() ?: break).run()
                 }
-                OverlayNative.drawFrame()
-                if (!egl.swap()) {
+                if (OverlayNative.drawFrame() && !egl.swap()) {
                     Log.i(TAG, "The surface is gone; the renderer stops")
                     break
                 }

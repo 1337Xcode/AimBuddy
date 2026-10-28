@@ -25,6 +25,7 @@
 
 #include "app_state.h"
 #include "core/drag_scroller.h"
+#include "core/fingerprint.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_opengl3.h"
 #include "overlay/target_overlay.h"
@@ -50,6 +51,9 @@ constexpr int64_t kDisplayLeadNs = 20'000'000;
 // Overlay frame caps. The menu may render faster for smoother slider feedback.
 constexpr int kBaseFpsCap = 60;
 constexpr int kMenuFpsCap = 90;
+
+// How long the draw thread waits before looking again for an ImGui that is not yet attached.
+constexpr int kNotReadyWaitMs = 16;
 
 // Settings are written this long after the last change, once no control is being dragged.
 constexpr double kSaveDelaySeconds = 0.35;
@@ -96,6 +100,11 @@ bool g_menuWasVisible = false;
 bool g_streamerModeApplied = false;
 std::chrono::steady_clock::time_point g_lastTick{};
 float g_measuredFps = 0.0f;
+
+// What the last frame that was drawn looked like. A frame that looks the same is not drawn again, so a game with
+// nothing to show over it costs no drawing and no compositing. GL thread only.
+uint64_t g_lastDrawnFingerprint = 0;
+bool g_hasDrawn = false;
 
 // ---------------------------------------------------------------------------------------------
 // Fonts and theme
@@ -1273,6 +1282,32 @@ void saveSettingsWhenDue() {
     }
 }
 
+/// A fingerprint of what a frame would draw: where, with which texture, and every vertex and index it uses.
+uint64_t fingerprintOf(const ImDrawData* frame) {
+    uint64_t fingerprint = aimbuddy::mixIntoFingerprint(aimbuddy::kFingerprintStart, &frame->DisplayPos, sizeof(frame->DisplayPos));
+    fingerprint = aimbuddy::mixIntoFingerprint(fingerprint, &frame->DisplaySize, sizeof(frame->DisplaySize));
+    fingerprint = aimbuddy::mixIntoFingerprint(fingerprint, &frame->FramebufferScale, sizeof(frame->FramebufferScale));
+    for (const ImDrawList* list : frame->CmdLists) {
+        fingerprint = aimbuddy::mixIntoFingerprint(fingerprint, list->CmdBuffer.Data, static_cast<size_t>(list->CmdBuffer.Size) * sizeof(ImDrawCmd));
+        fingerprint = aimbuddy::mixIntoFingerprint(fingerprint, list->VtxBuffer.Data, static_cast<size_t>(list->VtxBuffer.Size) * sizeof(ImDrawVert));
+        fingerprint = aimbuddy::mixIntoFingerprint(fingerprint, list->IdxBuffer.Data, static_cast<size_t>(list->IdxBuffer.Size) * sizeof(ImDrawIdx));
+    }
+    return fingerprint;
+}
+
+/// Whether the backend has a texture to make, change or drop: that happens when the next frame is drawn, whatever it looks like.
+bool hasTextureWork(const ImDrawData* frame) {
+    if (frame->Textures == nullptr) {
+        return false;
+    }
+    for (const ImTextureData* texture : *frame->Textures) {
+        if (texture->Status != ImTextureStatus_OK) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Keeps the overlay from drawing faster than needed, and measures how fast it does draw. Returns the seconds since the previous frame.
 float limitFrameRate() {
     const int cap = g_menuVisible.load(std::memory_order_relaxed) ? kMenuFpsCap : kBaseFpsCap;
@@ -1332,6 +1367,7 @@ Java_com_aimbuddy_OverlayNative_attach(JNIEnv* env, jclass /* clazz */, jobject 
     aimbuddy::i18n::SetLanguage(aimbuddy::settingsStore().get().language);
     g_streamerModeApplied = false;   // a new window starts unsecured; the next frame tells Kotlin if it should not be
     g_lastTick = {};
+    g_hasDrawn = false;              // a new surface shows nothing yet
 
     if (g_backendReady) {
         ImGui_ImplOpenGL3_Shutdown();
@@ -1356,6 +1392,7 @@ Java_com_aimbuddy_OverlayNative_resize(JNIEnv* /* env */, jclass /* clazz */, ji
     // The overlay is not the screen: it shrinks while a bar is showing. Detection and aiming always
     // work in display pixels (see NativeBridge.configureDisplay).
     ImGui::GetIO().DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
+    g_hasDrawn = false;   // the surface changed size: what it showed is gone
 }
 
 /// Where the overlay window's top-left corner is on the display, in pixels.
@@ -1365,11 +1402,15 @@ Java_com_aimbuddy_OverlayNative_setOrigin(JNIEnv* /* env */, jclass /* clazz */,
     g_overlayOriginY.store(y, std::memory_order_relaxed);
 }
 
-/// Draws one frame into the current GL context.
-extern "C" JNIEXPORT void JNICALL
+/**
+ * Draws one frame into the current GL context, and says whether it did. A frame that looks like the last one
+ * drawn is not drawn again (false): the view already shows it, and the caller must not swap buffers for it.
+ */
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */) {
     if (!g_imguiReady.load(std::memory_order_acquire)) {
-        return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(kNotReadyWaitMs));
+        return JNI_FALSE;
     }
     try {
         const float deltaSeconds = limitFrameRate();
@@ -1421,14 +1462,24 @@ Java_com_aimbuddy_OverlayNative_drawFrame(JNIEnv* /* env */, jclass /* clazz */)
         }
 
         ImGui::Render();
+        const ImDrawData* frame = ImGui::GetDrawData();
+        const uint64_t fingerprint = fingerprintOf(frame);
+        if (g_hasDrawn && fingerprint == g_lastDrawnFingerprint && !hasTextureWork(frame)) {
+            return JNI_FALSE;
+        }
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        g_lastDrawnFingerprint = fingerprint;
+        g_hasDrawn = true;
+        return JNI_TRUE;
     } catch (const std::exception& e) {
         LOGE("Exception while drawing the overlay: %s", e.what());
     } catch (...) {
         LOGE("Unknown exception while drawing the overlay");
     }
+    g_hasDrawn = false;   // what is on the surface is not known: the next frame is drawn whatever it looks like
+    return JNI_FALSE;
 }
 
 /**

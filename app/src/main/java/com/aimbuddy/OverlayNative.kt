@@ -26,9 +26,12 @@ object OverlayNative {
     @JvmStatic
     external fun resize(width: Int, height: Int)
 
-    /** Draws one frame. GL thread. */
+    /**
+     * Draws one frame, and says whether it did. A frame that looks like the last one drawn is left out, and the buffers
+     * must not be swapped for it: the view still shows the last one. GL thread.
+     */
     @JvmStatic
-    external fun drawFrame()
+    external fun drawFrame(): Boolean
 
     /** Stops drawing and frees what was made for the OpenGL context, which must still be current. GL thread. */
     @JvmStatic
