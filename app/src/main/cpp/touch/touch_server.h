@@ -101,6 +101,7 @@ private:
     void catchUp(TouchMux* target);
     void resetObserver();
     void readKeys(int fd);
+    void dropKeyDevice(int fd);
     void checkVirtualDevice();
     void reportPlayerFingers(int64_t now);
 

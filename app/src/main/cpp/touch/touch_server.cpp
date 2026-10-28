@@ -585,7 +585,11 @@ void TouchServer::readKeys(int fd) {
     input_event events[kEventsPerRead];
     for (;;) {
         const ssize_t bytes = read(fd, events, sizeof(events));
+        if (bytes < 0 && (errno == EAGAIN || errno == EINTR)) {
+            return;   // nothing more to read for now
+        }
         if (bytes <= 0) {
+            dropKeyDevice(fd);
             return;
         }
         const int count = static_cast<int>(bytes / static_cast<ssize_t>(sizeof(input_event)));
@@ -601,6 +605,18 @@ void TouchServer::readKeys(int fd) {
             }
         }
     }
+}
+
+/// Lets go of a volume key device that has gone away (a headset that went out of range, say). epoll reports a
+/// device that is gone as readable for ever, so keeping it would spin the loop, and a key that was down on it
+/// would stay down.
+void TouchServer::dropKeyDevice(int fd) {
+    say("a volume key device went away");
+    epoll_ctl(epollFd_, EPOLL_CTL_DEL, fd, nullptr);
+    ::close(fd);
+    keyFds_.erase(std::remove(keyFds_.begin(), keyFds_.end(), fd), keyFds_.end());
+    volumeUpHeld_ = false;
+    volumeDownHeld_ = false;
 }
 
 void TouchServer::checkVirtualDevice() {
