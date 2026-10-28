@@ -436,6 +436,67 @@ TEST(aim_starts_over_without_a_wait_when_it_is_released) {
     CHECK(touchesSoonAfter > touchesAtRelease);
 }
 
+TEST(aim_hands_off_lifts_the_finger_once_it_is_on_a_still_target) {
+    AimSettings handsOff = baseSettings();
+    handsOff.afterLanding = AfterLanding::kHandsOff;
+    SimulatedGame lifting({1.5f, 0.05f}, handsOff, stationary(300.0f, -150.0f));
+    const Outcome result = measure(lifting, 3.0f, 300.0f);
+    CHECK(result.settleSeconds >= 0.0f);
+    CHECK(result.settleSeconds < 1.0f);
+    CHECK(result.finalRms < 8.0f);               // the one correction landed on it
+    CHECK(!lifting.controller().isTouching());   // and the finger is up for good
+
+    // The default stays with the target: its finger is still down.
+    SimulatedGame staying({1.5f, 0.05f}, baseSettings(), stationary(300.0f, -150.0f));
+    measure(staying, 3.0f, 300.0f);
+    CHECK(staying.controller().isTouching());
+}
+
+TEST(aim_hands_off_does_not_follow_a_target_that_moves_on) {
+    // The target swings 140 px either way, 0.5 times a second. Following it keeps the crosshair within
+    // 40 px of it (a test above); with hands off the crosshair stays where the one correction left it, and
+    // the target swings round it by about 140 px over the square root of two.
+    AimSettings handsOff = baseSettings();
+    handsOff.afterLanding = AfterLanding::kHandsOff;
+    SimulatedGame lifting({1.5f, 0.05f}, handsOff, strafingPath(0.5f, 140.0f));
+    CHECK(rmsError(lifting, 5.0f, 1.5f) > 80.0);
+}
+
+TEST(aim_hands_off_makes_a_new_correction_when_the_target_has_been_let_go_of) {
+    // The assist lands on a target. The player then turns the camera 700 px away, past the reach of the assist,
+    // so that the lock is let go of, and 665 px back, to within 35 px of the same target. It is a new
+    // meeting with it: the finger goes down again and lands on it once more.
+    SimulatedGame::Truth truth;
+    truth.playerTurn = [](float seconds, float* speedX, float* speedY) {
+        *speedX = 0.0f;
+        *speedY = 0.0f;
+        if (seconds >= 2.5f && seconds < 2.85f) {
+            *speedX = 2000.0f;
+        } else if (seconds >= 3.2f && seconds < 3.55f) {
+            *speedX = -1900.0f;
+        }
+    };
+    AimSettings handsOff = baseSettings();
+    handsOff.afterLanding = AfterLanding::kHandsOff;
+    SimulatedGame game(truth, handsOff, stationary(300.0f, 0.0f));
+    float errorBeforeTheTurn = 1e9f;
+    int touchesBeforeTheTurn = 0;
+    float errorAtTheEnd = 1e9f;
+    game.run(6.0f, [&](float seconds, float errorX, float errorY) {
+        if (seconds >= 2.4f && seconds < 2.401f) {
+            errorBeforeTheTurn = std::hypot(errorX, errorY);
+            touchesBeforeTheTurn = game.touchCount();
+        }
+        if (seconds >= 5.9f && seconds < 5.901f) {
+            errorAtTheEnd = std::hypot(errorX, errorY);
+        }
+    });
+    CHECK(errorBeforeTheTurn < 8.0f);
+    CHECK(game.touchCount() > touchesBeforeTheTurn);   // a finger went down again for the second correction
+    CHECK(errorAtTheEnd < 8.0f);
+    CHECK(!game.controller().isTouching());
+}
+
 TEST(aim_does_not_run_away_when_a_saved_camera_figure_is_far_wrong) {
     // An earlier run left the belief that the scene slides 0.9 px per finger pixel, with high
     // confidence; this game really slides it 6 px. The figures are only trusted as a guess, so the

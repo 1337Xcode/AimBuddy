@@ -13,6 +13,12 @@
 
 namespace aimbuddy {
 
+/// What the assist does once the crosshair is on a target.
+enum class AfterLanding : uint8_t {
+    kKeepFollowing,  ///< Stay with the target: follow it as it moves, and bring the crosshair back if it drifts off.
+    kHandsOff,       ///< One correction per target: lift the finger once the crosshair is on it, and leave the rest to the player.
+};
+
 /// How the assist behaves. Every field is either a player preference or a property of the screen.
 struct AimSettings {
     // --- Player preferences ---
@@ -21,6 +27,7 @@ struct AimSettings {
     float fovRadiusPx = 220.0f;         ///< Targets further than this from the crosshair are left alone.
     int priority = 0;                   ///< Which target to prefer: 0 closest to the crosshair, 1 biggest, 2 most certain.
     float yieldWhileLooking = 0.4f;     ///< Fraction of the assist kept while the player is steering themselves (at full steering).
+    AfterLanding afterLanding = AfterLanding::kKeepFollowing;
 
     // --- Where the assist's finger rests ---
     float anchorX = 1800.0f;            ///< Display pixels. Should be in the game's look area, away from the player's thumb.
@@ -104,6 +111,11 @@ struct AimTelemetry {
  * however the camera turns, so the aim never gets nearer. When the camera has swept a good way and
  * the target has stayed put on the screen, well away from the crosshair, it is given up on for a
  * while, longer each time it happens again at the same place.
+ *
+ * With AfterLanding::kHandsOff the assist makes one correction for each target it takes up: once the
+ * crosshair has stayed on the target for a moment the finger is lifted, and nothing more is done
+ * for that target until the lock moves to another (or is let go of and taken up again), however
+ * the target moves afterwards.
  *
  * The class holds no threads or platform calls: call step() at a steady rate and carry out the
  * returned action. That keeps it testable against a simulated game.
@@ -205,6 +217,7 @@ private:
                       const ModelProfile& profile, Pursuit* pursuit);
     AimOutput putFingerDown(int64_t nowNs, const Pursuit& pursuit);
     bool fingerSeemsDead(int64_t nowNs);
+    bool hasLanded(int64_t nowNs, const Pursuit& pursuit);
     void endRun();
     void forgetFinger();
     FingerStep planFingerStep(int64_t nowNs, const CameraResponse& response, const Pursuit& pursuit,
@@ -251,6 +264,10 @@ private:
     float watchErrorSumPx_ = 0.0f;
     int watchLooks_ = 0;
     int futileLooks_ = 0;
+
+    // Hands off: the target the one correction was made for, and since when the crosshair has been on the target being followed.
+    int landedId_ = -1;
+    int64_t onTargetSinceNs_ = 0;
 
     // Is the finger being answered? A run is the touches made one after another for the same pursuit: a
     // finger lifted at the edge of its circle and put down again at the anchor belongs to the same run,

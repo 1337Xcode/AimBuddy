@@ -100,6 +100,9 @@ constexpr float kAnswerWindowS = 1.5f;
 /// picture was hard to read cannot condemn a finger that is being answered.
 constexpr float kIgnoredFor = 0.3f;
 
+/// With the finger set to hands off, the crosshair must have stayed on the target this long before the correction counts as made.
+constexpr float kLandedHoldS = 0.04f;
+
 /// After the first lift the finger waits this long before touching again; each further failure doubles it, to this limit.
 constexpr float kRetryFirstS = 0.25f;
 constexpr float kRetryLongestS = 4.0f;
@@ -206,6 +209,13 @@ AimOutput AimController::step(int64_t nowNs, const Tracker& tracker, const Model
         noteFinger();
         return out;
     }
+    if (settings_.afterLanding == AfterLanding::kHandsOff && hasLanded(nowNs, pursuit)) {
+        // The one correction for this target has been made: hands off.
+        const AimOutput out = lift();
+        endRun();
+        noteFinger();
+        return out;
+    }
     const AimOutput out = touching_ ? moveFinger(nowNs, dt, pursuit, planFingerStep(nowNs, response, pursuit, player, dt))
                                     : putFingerDown(nowNs, pursuit);
     noteFinger();
@@ -237,6 +247,25 @@ bool AimController::fingerSeemsDead(int64_t nowNs) {
     }
     ignoredSinceNs_ = 0;
     return false;
+}
+
+/// True once the crosshair has stayed on the target for a moment, and for as long as that target stays the lock.
+bool AimController::hasLanded(int64_t nowNs, const Pursuit& pursuit) {
+    if (landedId_ == pursuit.body->id) {
+        return true;
+    }
+    if (!pursuit.onTarget()) {
+        onTargetSinceNs_ = 0;
+        return false;
+    }
+    if (onTargetSinceNs_ == 0) {
+        onTargetSinceNs_ = nowNs;
+    }
+    if (nsToSeconds(nowNs - onTargetSinceNs_) < kLandedHoldS) {
+        return false;
+    }
+    landedId_ = pursuit.body->id;
+    return true;
 }
 
 /// Ends the run of touches: the next finger gets the full time to show an effect, and a game that ignored
@@ -273,6 +302,8 @@ void AimController::forgetTarget() {
     lockedId_.store(-1, std::memory_order_relaxed);
     lostSinceNs_ = 0;
     rivalId_ = -1;
+    landedId_ = -1;
+    onTargetSinceNs_ = 0;
 }
 
 AimOutput AimController::lift() {

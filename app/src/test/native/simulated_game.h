@@ -67,6 +67,7 @@ public:
         float measureNoisePx = 0.7f;  ///< Std. dev. of that measurement.
         float dropoutRate = 0.10f;    ///< Share of frames in which the detector misses the target.
         int ignoredTouches = 0;       ///< How many finger touches, from the first, the game takes no notice of.
+        std::function<bool(float)> visibleAt{};   ///< Whether the target is on screen at a time in seconds (the detector cannot see it when it is not); empty means always.
 
         // What a real match adds. All of it is off unless set, so the tests above are not touched.
         std::function<void(float, float*, float*)> playerTurn{};  ///< The player's own turning: how fast the scene slides, in px/s, at a time in seconds.
@@ -324,7 +325,9 @@ private:
         PendingFrame frame;
         frame.captureNs = nowNs;
         frame.deliverNs = nowNs + truth_.detectionLatencyMs * kMs;
-        const bool present = random_.uniform() > truth_.dropoutRate;
+        const float seconds = static_cast<float>(nowNs - kStartMs * kMs) * 1e-9f;
+        const bool inView = !truth_.visibleAt || truth_.visibleAt(seconds);
+        const bool present = random_.uniform() > truth_.dropoutRate && inView;
         frame.cameraX = cameraX_;
         frame.cameraY = cameraY_;
         Detection target;
