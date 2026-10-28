@@ -369,6 +369,23 @@ void drawColourLearning(ImDrawList* list, const ImVec2& windowSize) {
     }
 }
 
+/**
+ * Fills `views` with the targets in view, projected to the moment the frame being drawn will be on screen, without the
+ * player's own weapon or character: a box stuck to the screen is not a target. Returns how many there are.
+ */
+int collectTargets(aimbuddy::TrackView* views) {
+    const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch()).count();
+    const int viewCount = aimbuddy::pipeline().tracker().snapshot(nowNs + kDisplayLeadNs, views, aimbuddy::kMaxTracks);
+    int kept = 0;
+    for (int i = 0; i < viewCount; ++i) {
+        if (!aimbuddy::aimLoop().isDecoy(views[i], nowNs)) {
+            views[kept++] = views[i];
+        }
+    }
+    return kept;
+}
+
 /// Draws a line, a box or a marker for every target, and the zones the detector and the assist work in.
 void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCountOut) {
     ImDrawList* list = ImGui::GetBackgroundDrawList();
@@ -393,21 +410,9 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
         list->AddLine(ImVec2(crosshair.x, crosshair.y - arm), ImVec2(crosshair.x, crosshair.y + arm), crossColor, 3.0f);
     }
 
-    // Targets come from the tracker, projected to the moment this frame will be on screen.
-    const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                              std::chrono::steady_clock::now().time_since_epoch()).count();
     aimbuddy::TrackView views[aimbuddy::kMaxTracks];
-    int viewCount = aimbuddy::pipeline().tracker().snapshot(nowNs + kDisplayLeadNs, views, aimbuddy::kMaxTracks);
+    const int viewCount = collectTargets(views);
     const aimbuddy::ModelProfile& profile = aimbuddy::pipeline().profile();
-
-    // A box stuck to the screen is the player's own weapon or character, not a target: leave it out of everything below.
-    int kept = 0;
-    for (int i = 0; i < viewCount; ++i) {
-        if (!aimbuddy::aimLoop().isDecoy(views[i], nowNs)) {
-            views[kept++] = views[i];
-        }
-    }
-    viewCount = kept;
 
     aimbuddy::TargetStyle style;
     style.color = clearOfTarget(
