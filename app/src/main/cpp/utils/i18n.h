@@ -76,10 +76,6 @@ enum class Key : int {
 
     // Aim tab
     AssistEnable,
-    TouchAccess,
-    AccessAutomatic,
-    AccessShizuku,
-    AccessRoot,
     HelperOff,
     HelperIdle,
     HelperWaiting,
@@ -181,10 +177,6 @@ inline const char* kTranslations[static_cast<int>(Key::Count)][static_cast<int>(
     /* Language */             {"Language", "语言", "Язык"},
 
     /* AssistEnable */         {"Enable aim assist", "启用瞄准辅助", "Включить помощь"},
-    /* TouchAccess */          {"Touch access", "触控方式", "Доступ к касаниям"},
-    /* AccessAutomatic */      {"Automatic", "自动", "Автоматически"},
-    /* AccessShizuku */        {"Shizuku", "Shizuku", "Shizuku"},
-    /* AccessRoot */           {"Root", "Root", "Root"},
     /* HelperOff */            {"Touch helper: not running", "触控助手：未运行", "Помощник: не запущен"},
     /* HelperIdle */           {"Touch helper: ready", "触控助手：就绪", "Помощник: готов"},
     /* HelperWaiting */        {"Lift your fingers off the screen to start", "请抬起手指以开始", "Уберите пальцы с экрана, чтобы начать"},

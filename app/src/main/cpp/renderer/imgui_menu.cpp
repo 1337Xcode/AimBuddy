@@ -1035,9 +1035,6 @@ bool drawAimTab(Settings& s) {
     ImGui::TextWrapped("%s", helperStatusText(stats));
     ImGui::Separator();
 
-    const char* access[] = {T(Key::AccessAutomatic), T(Key::AccessShizuku), T(Key::AccessRoot)};
-    changed |= menu::Choice(T(Key::TouchAccess), &s.touchBackend, access, 3);
-
     const char* zones[] = {T(Key::ZoneHead), T(Key::ZoneChest), T(Key::ZoneCentre)};
     changed |= menu::Choice(T(Key::AimZone), &s.aimZone, zones, 3);
     changed |= menu::Slider(T(Key::AimStrength), &s.aimStrength, 0.0f, 1.0f, "%.2f");
