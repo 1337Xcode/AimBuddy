@@ -3,6 +3,7 @@ package com.aimbuddy.ui
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.annotation.StringRes
@@ -17,6 +18,8 @@ import com.aimbuddy.NativeBridge
 import com.aimbuddy.Project
 import com.aimbuddy.R
 import com.aimbuddy.StoreModelDefinition
+import com.aimbuddy.TransferMeter
+import com.aimbuddy.TransferProgress
 import com.aimbuddy.ui.theme.Accent
 import com.aimbuddy.ui.theme.ThemeMode
 import com.aimbuddy.update.AppUpdater
@@ -56,15 +59,14 @@ sealed interface StoreState {
     data object Failed : StoreState
 }
 
-/**
- * What the models screens show. `busyId` is the model being downloaded or imported, if any, and
- * `progress` how far a download has got (0 to 1).
- */
+/** The download under way: which model, and how far it has got. */
+data class Transfer(val modelId: String, val progress: TransferProgress = TransferProgress())
+
+/** What the models screens show. `transfer` is the model being downloaded, if any. */
 data class ModelsState(
     val installed: List<InstalledModel> = emptyList(),
     val activeId: String? = null,
-    val busyId: String? = null,
-    val progress: Float = 0f,
+    val transfer: Transfer? = null,
     val store: StoreState = StoreState.Idle,
 ) {
     /** The version of the model with this id that is on the phone, or null when it is not there. */
@@ -364,19 +366,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Downloads a model from the store, or the newer version of one that is installed, and makes it the one in use. */
     fun downloadModel(model: StoreModelDefinition) {
-        if (_models.value.busyId != null) {
+        if (_models.value.transfer != null) {
             return
         }
         val wasInUse = _models.value.activeId == model.id
         val isNew = _models.value.installedVersion(model.id) == null
         val isFirstModel = _models.value.installed.isEmpty()
-        _models.update { it.copy(busyId = model.id, progress = 0f) }
+        _models.update { it.copy(transfer = Transfer(model.id, TransferProgress(bytesTotal = model.totalSizeBytes))) }
         work.launch {
+            val meter = TransferMeter()
+            var shownAtMs = 0L
             val installed = withContext(Dispatchers.IO) {
                 runCatching {
                     val id = catalog.sanitizeModelId(model.id)
-                    val files = storeRepository.install(model, File(context.filesDir, "models/$id")) { progress ->
-                        _models.update { it.copy(progress = progress) }
+                    val files = storeRepository.install(model, File(context.filesDir, "models/$id")) { done, total ->
+                        // The screen is told a few times a second, not at every read of the network.
+                        val nowMs = SystemClock.elapsedRealtime()
+                        if (done == total || nowMs - shownAtMs >= PROGRESS_INTERVAL_MS) {
+                            shownAtMs = nowMs
+                            val progress = TransferProgress(done, total, meter.add(nowMs, done))
+                            _models.update { state -> state.copy(transfer = state.transfer?.copy(progress = progress)) }
+                        }
                     }
                     InstalledModel(
                         id = id,
@@ -401,7 +411,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 Log.w(TAG, "Download failed: ${it.message}")
                 _messages.tryEmit(UiMessage(R.string.models_download_failed))
             }
-            _models.update { it.copy(busyId = null, progress = 0f) }
+            _models.update { it.copy(transfer = null) }
             refreshModels()
         }
     }
@@ -511,5 +521,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         const val KEY_LEGACY_BIN = "model_bin_path"
         const val SETTINGS_FILE = "settings.cfg"
         const val SAVE_DELAY_MS = 400L
+        const val PROGRESS_INTERVAL_MS = 250L
     }
 }

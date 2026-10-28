@@ -80,6 +80,10 @@
     <string name="models_download_failed">Не удалось скачать модель.</string>
     <string name="models_store_empty">Пока нет моделей.</string>
     <string name="models_retry">Повторить</string>
+    <string name="models_progress">%1$s из %2$s</string>
+    <string name="models_speed">%1$s/с</string>
+    <string name="models_left_seconds">осталось %1$d с</string>
+    <string name="models_left_minutes">осталось %1$d мин</string>
     <string name="models_delete_title">Удалить модель?</string>
     <string name="models_delete_message">«%1$s» будет удалена с этого телефона.</string>
     <string name="models_next_start">Будет использована при следующем нажатии «Старт».</string>

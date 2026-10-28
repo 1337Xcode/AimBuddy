@@ -1,6 +1,8 @@
 package com.aimbuddy
 
+import java.io.FilterInputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -28,6 +30,20 @@ object Http {
             throw IOException("HTTP $code for $url")
         }
         return connection
+    }
+
+    /** Opens a GET request and returns what it answers as a stream. Closing the stream also ends the connection. */
+    fun openStream(url: String, allowInsecure: Boolean = false): InputStream {
+        val connection = open(url, allowInsecure = allowInsecure)
+        return object : FilterInputStream(connection.inputStream) {
+            override fun close() {
+                try {
+                    super.close()
+                } finally {
+                    connection.disconnect()
+                }
+            }
+        }
     }
 
     /** Reads a small text answer. */

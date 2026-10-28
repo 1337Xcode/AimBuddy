@@ -80,6 +80,10 @@
     <string name="models_download_failed">无法下载该模型。</string>
     <string name="models_store_empty">暂无模型。</string>
     <string name="models_retry">重试</string>
+    <string name="models_progress">%1$s / %2$s</string>
+    <string name="models_speed">%1$s/秒</string>
+    <string name="models_left_seconds">剩余 %1$d 秒</string>
+    <string name="models_left_minutes">剩余 %1$d 分钟</string>
     <string name="models_delete_title">删除此模型？</string>
     <string name="models_delete_message">将从此手机移除“%1$s”。</string>
     <string name="models_next_start">下次点按“开始”时生效。</string>

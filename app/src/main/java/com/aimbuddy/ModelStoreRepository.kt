@@ -5,6 +5,7 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.security.MessageDigest
 
 private const val TAG = "ModelStore"
@@ -52,6 +53,7 @@ data class StoreModelDefinition(
 /** The files of a model that was just installed. */
 class InstalledFiles(val param: File, val bin: File)
 
+
 /**
  * Reads the store: the models published in the project's `model` folder on GitHub, and the files of
  * each. The list is one small file (`index.json`), so opening the store costs a single request, and
@@ -64,6 +66,8 @@ class InstalledFiles(val param: File, val bin: File)
 class ModelStoreRepository(
     private val baseUrl: String,
     private val cacheDir: File,
+    /** How the bytes of a file are read; the network by default. The one who asked for the stream closes it. */
+    private val openFile: (String) -> InputStream = { Http.openStream(it) },
     /** How the text of an address is read; the network by default. */
     private val readText: (String) -> String = { Http.getText(it) },
 ) {
@@ -102,9 +106,14 @@ class ModelStoreRepository(
     /**
      * Downloads a model into [targetDir], replacing what is there. The files go into a folder beside
      * it first and are checked one by one, so a broken or altered download never replaces a model
-     * that works. [onProgress] gets 0 to 1 over all the files, a percent at a time.
+     * that works. [onProgress] gets the bytes that have arrived in all and the bytes there will be, each
+     * time more arrive.
      */
-    fun install(model: StoreModelDefinition, targetDir: File, onProgress: (Float) -> Unit): InstalledFiles {
+    fun install(
+        model: StoreModelDefinition,
+        targetDir: File,
+        onProgress: (bytesDone: Long, bytesTotal: Long) -> Unit,
+    ): InstalledFiles {
         val parent = targetDir.parentFile ?: throw IOException("There is no place to put the model")
         val work = File(parent, targetDir.name + DOWNLOAD_SUFFIX)
         work.deleteRecursively()
@@ -115,16 +124,9 @@ class ModelStoreRepository(
         try {
             val total = model.totalSizeBytes.coerceAtLeast(1L)
             var doneBytes = 0L
-            var reported = -1
             val steps = listOf(model.param to PARAM_FILE, model.bin to BIN_FILE, model.profile to PROFILE_FILE)
             for ((file, name) in steps) {
-                download(file, File(work, name)) { read ->
-                    val percent = ((doneBytes + read) * 100 / total).toInt()
-                    if (percent != reported) {
-                        reported = percent
-                        onProgress(percent / 100f)
-                    }
-                }
+                download(file, File(work, name)) { read -> onProgress(doneBytes + read, total) }
                 doneBytes += file.sizeBytes
             }
             swapIn(work, targetDir)
@@ -162,33 +164,28 @@ class ModelStoreRepository(
 
     /** Downloads one file to [destination] and checks it against the size and SHA-256 the index gave. */
     private fun download(file: StoreFile, destination: File, onBytes: (Long) -> Unit) {
-        val connection = Http.open(file.url)
-        try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            var received = 0L
-            connection.inputStream.use { input ->
-                destination.outputStream().use { output ->
-                    val buffer = ByteArray(BUFFER_BYTES)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) {
-                            break
-                        }
-                        received += count
-                        if (received > file.sizeBytes) {
-                            throw IOException("${destination.name} is larger than the store says")
-                        }
-                        digest.update(buffer, 0, count)
-                        output.write(buffer, 0, count)
-                        onBytes(received)
+        val digest = MessageDigest.getInstance("SHA-256")
+        var received = 0L
+        openFile(file.url).use { input ->
+            destination.outputStream().use { output ->
+                val buffer = ByteArray(BUFFER_BYTES)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) {
+                        break
                     }
+                    received += count
+                    if (received > file.sizeBytes) {
+                        throw IOException("${destination.name} is larger than the store says")
+                    }
+                    digest.update(buffer, 0, count)
+                    output.write(buffer, 0, count)
+                    onBytes(received)
                 }
             }
-            if (received != file.sizeBytes || toHex(digest.digest()) != file.sha256) {
-                throw IOException("${destination.name} does not match the store's checksum")
-            }
-        } finally {
-            connection.disconnect()
+        }
+        if (received != file.sizeBytes || toHex(digest.digest()) != file.sha256) {
+            throw IOException("${destination.name} does not match the store's checksum")
         }
     }
 

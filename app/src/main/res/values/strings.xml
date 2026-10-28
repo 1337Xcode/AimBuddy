@@ -82,6 +82,10 @@
     <string name="models_download_failed">That model could not be downloaded.</string>
     <string name="models_store_empty">No models to show yet.</string>
     <string name="models_retry">Try again</string>
+    <string name="models_progress">%1$s of %2$s</string>
+    <string name="models_speed">%1$s/s</string>
+    <string name="models_left_seconds">%1$d s left</string>
+    <string name="models_left_minutes">%1$d min left</string>
     <string name="models_delete_title">Delete this model?</string>
     <string name="models_delete_message">\"%1$s\" will be removed from this phone.</string>
     <string name="models_next_start">Used the next time you press Start.</string>

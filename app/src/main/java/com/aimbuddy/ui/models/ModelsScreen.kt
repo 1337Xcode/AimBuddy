@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,8 +44,10 @@ import com.aimbuddy.InstalledModel
 import com.aimbuddy.ModelSource
 import com.aimbuddy.R
 import com.aimbuddy.StoreModelDefinition
+import com.aimbuddy.TransferProgress
 import com.aimbuddy.ui.ModelsState
 import com.aimbuddy.ui.StoreState
+import com.aimbuddy.ui.Transfer
 import com.aimbuddy.ui.components.Group
 import com.aimbuddy.ui.components.IconBadge
 import com.aimbuddy.ui.components.ListRow
@@ -244,7 +247,11 @@ private fun InstalledRow(model: InstalledModel, active: Boolean, onUse: (String)
 }
 
 /** The models the project offers. */
-private fun LazyStaggeredGridScope.storeTab(state: ModelsState, onGet: (StoreModelDefinition) -> Unit, onRetry: () -> Unit) {
+private fun LazyStaggeredGridScope.storeTab(
+    state: ModelsState,
+    onGet: (StoreModelDefinition) -> Unit,
+    onRetry: () -> Unit,
+) {
     when (val store = state.store) {
         StoreState.Idle, StoreState.Loading -> item {
             Box(modifier = Modifier.fillMaxWidth().padding(vertical = Space.xl), contentAlignment = Alignment.Center) {
@@ -272,8 +279,8 @@ private fun LazyStaggeredGridScope.storeTab(state: ModelsState, onGet: (StoreMod
                                 StoreRow(
                                     model = model,
                                     installedVersion = state.installedVersion(model.id),
-                                    busy = state.busyId == model.id,
-                                    progress = state.progress,
+                                    transfer = state.transfer?.takeIf { it.modelId == model.id },
+                                    anotherDownloadIsRunning = state.transfer != null && state.transfer.modelId != model.id,
                                     picturePath = store.icons[model.id],
                                     onGet = onGet,
                                 )
@@ -288,14 +295,15 @@ private fun LazyStaggeredGridScope.storeTab(state: ModelsState, onGet: (StoreMod
 
 /**
  * One model in the store: its tile, its name, what it is for, who made it and how big it is, and a
- * way to get it, update it to a newer version, or see that it is already on the phone.
+ * way to get it, update it to a newer version, or see that it is already on the phone. While it is
+ * being downloaded the row shows how far it has got.
  */
 @Composable
 private fun StoreRow(
     model: StoreModelDefinition,
     installedVersion: Int?,
-    busy: Boolean,
-    progress: Float,
+    transfer: Transfer?,
+    anotherDownloadIsRunning: Boolean,
     picturePath: String?,
     onGet: (StoreModelDefinition) -> Unit,
 ) {
@@ -309,14 +317,20 @@ private fun StoreRow(
         title = model.title,
         lines = listOfNotNull(model.description.takeIf { it.isNotBlank() }, details),
         picturePath = picturePath,
+        below = {
+            if (transfer != null) {
+                TransferLine(transfer)
+            }
+        },
     ) {
         when {
-            busy -> CircularProgressIndicator(
-                progress = { progress },
+            transfer != null -> CircularProgressIndicator(
+                progress = { transfer.progress.fraction },
                 color = AppTheme.palette.accent,
                 strokeWidth = 3.dp,
                 modifier = Modifier.size(MarkSize),
             )
+            anotherDownloadIsRunning -> Unit   // one at a time: the others wait for their turn
             installedVersion == null -> SmallPill(text = stringResource(R.string.models_get), onClick = { onGet(model) })
             model.version > installedVersion -> SmallPill(text = stringResource(R.string.models_update), onClick = { onGet(model) })
             else -> Icon(
@@ -329,6 +343,48 @@ private fun StoreRow(
     }
 }
 
+/** How far a download has got: a bar, and under it what has arrived of the total, how fast, and how long is left. */
+@Composable
+private fun TransferLine(transfer: Transfer) {
+    val progress = transfer.progress
+    Column(modifier = Modifier.padding(top = Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        LinearProgressIndicator(
+            progress = { progress.fraction },
+            color = AppTheme.palette.accent,
+            trackColor = AppTheme.palette.textDim.copy(alpha = 0.2f),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = transferSummary(progress),
+            style = MaterialTheme.typography.bodySmall,
+            color = AppTheme.palette.textDim,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** "12.4 MB of 38.0 MB · 3.1 MB/s · 8 s left", as much of it as is known yet. */
+@Composable
+private fun transferSummary(progress: TransferProgress): String {
+    val parts = mutableListOf(
+        stringResource(R.string.models_progress, formatBytes(progress.bytesDone), formatBytes(progress.bytesTotal)),
+    )
+    if (progress.bytesPerSecond > 0) {
+        parts += stringResource(R.string.models_speed, formatBytes(progress.bytesPerSecond))
+    }
+    progress.secondsLeft?.let { seconds ->
+        parts += if (seconds < SECONDS_PER_MINUTE) {
+            stringResource(R.string.models_left_seconds, seconds.toInt())
+        } else {
+            stringResource(R.string.models_left_minutes, ((seconds + SECONDS_PER_MINUTE - 1) / SECONDS_PER_MINUTE).toInt())
+        }
+    }
+    return parts.joinToString(" · ")
+}
+
+private const val SECONDS_PER_MINUTE = 60L
+
 /**
  * The row both lists use: a tile, a title with up to two short lines under it, and what the player
  * can do with the model at the end. The row can be tapped when [onClick] is given.
@@ -340,6 +396,7 @@ private fun ModelRow(
     lines: List<String>,
     onClick: (() -> Unit)? = null,
     picturePath: String? = null,
+    below: @Composable () -> Unit = {},
     trailing: @Composable () -> Unit,
 ) {
     val clickable = if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier
@@ -372,6 +429,7 @@ private fun ModelRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            below()
         }
         Spacer(Modifier.width(Space.m))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
