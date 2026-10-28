@@ -958,6 +958,7 @@ bool drawVisualsTab(Settings& s) {
     ImGui::Separator();
 
     changed |= ImGui::Checkbox(T(Key::StreamerMode), &s.streamerMode);
+    menu::Footnote(T(Key::StreamerModeHint));
     const char* languages[] = {aimbuddy::i18n::LanguageName(0), aimbuddy::i18n::LanguageName(1),
                                aimbuddy::i18n::LanguageName(2)};
     if (menu::Choice(T(Key::Language), &s.language, languages, 3)) {

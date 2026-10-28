@@ -71,6 +71,7 @@ enum class Key : int {
     ShowAnchor,
     AnchorOpacity,
     StreamerMode,
+    StreamerModeHint,
     Language,
 
     // Aim tab
@@ -174,6 +175,9 @@ inline const char* kTranslations[static_cast<int>(Key::Count)][static_cast<int>(
     /* ShowAnchor */           {"Show touch area", "显示触控区域", "Показать зону касания"},
     /* AnchorOpacity */        {"Touch area opacity", "触控区域透明度", "Прозрачность зоны"},
     /* StreamerMode */         {"Streamer mode", "主播模式", "Режим стримера"},
+    /* StreamerModeHint */     {"Nothing is drawn over the game, and the button turns invisible. The menu stays out of recordings: they show a black panel where it is.",
+                                "不会在游戏画面上绘制任何内容，按钮会变为透明。菜单不会出现在录屏中，录屏里该位置显示为黑色面板。",
+                                "Поверх игры ничего не рисуется, а кнопка становится невидимой. Меню не попадает в записи: на его месте в записи видна чёрная панель."},
     /* Language */             {"Language", "语言", "Язык"},
 
     /* AssistEnable */         {"Enable aim assist", "启用瞄准辅助", "Включить помощь"},
