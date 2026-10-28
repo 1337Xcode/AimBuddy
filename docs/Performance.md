@@ -8,9 +8,9 @@ What AimBuddy costs a phone, how to read the numbers it shows, and what to do wh
 |-------|---------------|--------------------------|
 | Capture | The system draws a second copy of the screen, at most 1600 pixels on the long edge. Only a small square around the crosshair is copied out of each frame. | Nothing in AimBuddy. A lower game frame rate or lower game graphics frees the GPU for it. |
 | Detection | One run of the model on that square for every frame it can keep up with. This is the biggest cost. | A lighter model, if one is listed under Models. The CPU or the GPU is chosen for you, see below. |
-| Camera motion | Both pictures are reduced to 64 by 64 grey values and compared. Small. | Nothing. |
+| Camera motion | Both pictures are reduced to 64 by 64 grey values and compared, at most 30 times a second, on the capture thread. The detector already has the frame by then, so this never delays it. About 0.6 ms on a desktop processor for a recorded run of the emulator's test scene; not measured on a phone. | Nothing. |
 | Tracking and aim | Small next to the detector. | Nothing. |
-| Overlay | Boxes and text drawn with ImGui, at most 60 frames a second (90 while the menu is open). Streamer mode draws nothing. | Turn off what you do not need: labels, lines, count. |
+| Overlay | Boxes and text drawn with ImGui, at most 60 frames a second (90 while the menu is open). A frame that looks like the last one is not drawn or handed to the system, so an overlay with nothing moving costs next to nothing. Streamer mode draws nothing. | Turn off what you do not need: labels, lines, count. |
 
 ## A slow phone drops frames, it does not fall behind
 
@@ -21,6 +21,10 @@ The capture hands each frame to the detector through a mailbox that keeps only t
 When the assist starts, the model is timed on the CPU and on the GPU (Vulkan), three warm-up runs and twelve timed ones each, and the median counts. The GPU is used only if it takes less than 80% of the CPU's time, because the game needs the GPU too. The GPU must also give the CPU's answer to a test picture (the values of the two outputs, sorted, within 5% of the CPU's range at 64 ranks, and none that is not a number), or the CPU is used; the log says `The GPU's answer matches the CPU's` or `does not match`. A phone without a working Vulkan driver uses the CPU.
 
 On the CPU the model runs on at most three of the fast cores, and the little cores stay free for the game and the system. Idle worker threads sleep after one millisecond instead of spinning, which keeps the phone cooler between frames.
+
+## A screen that does not change costs nothing
+
+The screen capture only delivers a frame when the screen changes, and the overlay is part of the screen. An overlay that redrew itself 60 times a second made the screen change 60 times a second, so the detector ran on every one of those frames even when the game showed a still picture (a loading screen, a menu, a pause). The overlay now compares each frame with the last one it drew and leaves out the ones that look the same. On the emulator, with the assist running over the app's own home screen, the app's threads used 214% and 203% of a core in two runs before the change and 46.6% and 2.6% in two runs after it (the readout was still settling in the first). While a game moves, the frames change and nothing is left out.
 
 ## When the phone gets hot
 
@@ -51,7 +55,7 @@ adb logcat -s AimBuddy_Native:I
 | `Backend: ...` | Once, at start: the choice between CPU and GPU, with the time each took. |
 | `Pipeline: ...` | Detections a second, inference time, frame age, how many frames were replaced by newer ones, and the processor in use. |
 | `Last frame: ...` | How many targets the last frame had and the best score. |
-| `Camera: ...` | How far the picture slid per frame on average, how well that could be measured, and what the assist has learned about the game's response. |
+| `Camera: ...` | How far the picture slid per look on average, how well that could be measured, how long a look took (on average and at most), and what the assist has learned about the game's response. |
 
 ## Memory
 
