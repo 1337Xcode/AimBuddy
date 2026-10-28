@@ -86,6 +86,14 @@ object NativeBridge {
         inputSize: Int,
     ): Boolean
 
+    /**
+     * Whether a pair of files can be used as a detection model: it is loaded and run once on a blank picture.
+     * Slow enough (a moment on a phone) to be called off the main thread. For a pair the player imports, so that one the
+     * detector cannot read is refused then and not at the next Start.
+     */
+    @JvmStatic
+    external fun canReadModel(paramPath: String, binPath: String): Boolean
+
     /** True when the player has chosen to find targets by a colour, which needs no model. */
     @JvmStatic
     external fun usesColourDetection(): Boolean

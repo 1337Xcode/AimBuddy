@@ -48,6 +48,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** An imported pair of files that the detector could not read as a model. */
+private class UnreadableModelException : IllegalStateException("The detector cannot read that pair of files as a model")
+
 /** A short message for the player, shown once. */
 data class UiMessage(@StringRes val resId: Int, val args: List<Any> = emptyList())
 
@@ -466,12 +469,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val name = pendingName
         work.launch {
             val installed = withContext(Dispatchers.IO) {
+                val id = catalog.sanitizeModelId("local-$name-${System.currentTimeMillis()}")
+                val dir = File(context.filesDir, "models/$id")
+                val paramFile = File(dir, "$id.param")
+                val binFile = File(dir, "$id.bin")
                 runCatching {
-                    val id = catalog.sanitizeModelId("local-$name-${System.currentTimeMillis()}")
-                    val dir = File(context.filesDir, "models/$id")
-                    val paramFile = File(dir, "$id.param")
-                    val binFile = File(dir, "$id.bin")
                     check(copy(paramUri, paramFile) && copy(binUri, binFile)) { "The files could not be copied" }
+                    // A pair the detector cannot read would become the model in use and fail at the next Start.
+                    if (!NativeBridge.canReadModel(paramFile.absolutePath, binFile.absolutePath)) {
+                        throw UnreadableModelException()
+                    }
                     InstalledModel(
                         id = id,
                         title = name,
@@ -481,7 +488,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         binPath = binFile.absolutePath,
                         totalSizeBytes = paramFile.length() + binFile.length(),
                     )
-                }
+                }.onFailure { dir.deleteRecursively() }
             }
             val isFirstModel = _models.value.installed.isEmpty()
             installed.onSuccess {
@@ -491,7 +498,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }.onFailure {
                 Log.w(TAG, "Import failed: ${it.message}")
-                _messages.tryEmit(UiMessage(R.string.models_import_failed))
+                _messages.tryEmit(UiMessage(if (it is UnreadableModelException) R.string.models_import_unreadable else R.string.models_import_failed))
             }
             refreshModels()
         }

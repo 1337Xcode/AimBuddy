@@ -349,6 +349,18 @@ Java_com_aimbuddy_NativeBridge_loadModel(JNIEnv* env, jclass /* clazz */, jstrin
     return g_modelLoaded ? JNI_TRUE : JNI_FALSE;
 }
 
+/**
+ * @brief Whether a pair of files can be used as a detection model: loaded, and run once on a blank picture.
+ *
+ * It uses a detector of its own, so it can run while the assist does; the one that finds targets is not touched.
+ */
+JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_canReadModel(JNIEnv* env, jclass /* clazz */, jstring paramPath,
+                                                                         jstring binPath) {
+    aimbuddy::YoloDetector probe;
+    const bool readable = probe.load(toStdString(env, paramPath).c_str(), toStdString(env, binPath).c_str(), aimbuddy::ModelProfile());
+    return readable ? JNI_TRUE : JNI_FALSE;
+}
+
 /** @brief Whether the player has chosen to find targets by a colour, which needs no model. */
 JNIEXPORT jboolean JNICALL Java_com_aimbuddy_NativeBridge_usesColourDetection(JNIEnv* /* env */, jclass /* clazz */) {
     return g_settingsStore.get().detector == 1 ? JNI_TRUE : JNI_FALSE;

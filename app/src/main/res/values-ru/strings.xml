@@ -89,6 +89,7 @@
     <string name="models_error_damaged">Загрузка повреждена. Повторите.</string>
     <string name="models_error_space">На телефоне не хватает места.</string>
     <string name="models_store_saved">Нет соединения. Ниже список, сохранённый ранее.</string>
+    <string name="models_import_unreadable">AimBuddy не может прочитать эти файлы как модель обнаружения.</string>
     <string name="models_delete_title">Удалить модель?</string>
     <string name="models_delete_message">«%1$s» будет удалена с этого телефона.</string>
     <string name="models_next_start">Будет использована при следующем нажатии «Старт».</string>
