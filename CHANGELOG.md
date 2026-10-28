@@ -55,7 +55,7 @@ A rebuilt app with a model store and updates from inside the app. The APK no lon
 - Chinese text used half-width punctuation.
 
 ### Upgrade note
-- This release installs over beta 2 and beta 3 and keeps your settings, because all three are signed with the same key. The app no longer carries a model, so after the update it opens on the Models page once, where you download AimBuddy General or import your own.
+- This release installs over beta 2 and beta 3 without uninstalling, because all three are signed with the same key. The settings were rebuilt, so they start at their defaults. The app no longer carries a model, so after the update it opens on the Models page once, where you download AimBuddy General or import your own.
 
 ---
 
