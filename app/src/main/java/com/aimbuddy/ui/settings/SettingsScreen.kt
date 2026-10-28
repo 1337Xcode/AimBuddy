@@ -105,7 +105,7 @@ fun SettingsScreen(
     var confirmReset by remember { mutableStateOf(false) }
     var showNotices by remember { mutableStateOf(false) }
 
-    ScreenScaffold(title = stringResource(R.string.settings_title), onBack = onBack, columnWidth = 360.dp, maxWidth = 1100.dp) {
+    ScreenScaffold(title = stringResource(R.string.settings_title), onBack = onBack, columnWidth = 340.dp, maxWidth = 1200.dp) {
         item { OverlayGroup(settings, actions) }
         item { DetectionGroup(settings, actions) }
         item { AimGroup(settings, actions) }
