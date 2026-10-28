@@ -22,6 +22,13 @@ TEST(settings_survive_a_round_trip) {
     original.showDetectionArea = false;
     original.showAimReach = false;
     original.assistEnabled = true;
+    original.detector = 1;
+    original.colourLearned = true;
+    original.colourHue = 292.5f;
+    original.colourSaturation = 0.62f;
+    original.colourValue = 0.55f;
+    original.colourTolerance = 21.0f;
+    original.colourMinHeight = 55.0f;
     original.aimZone = 1;
     original.aimStrength = 0.8f;
     original.aimAfterLanding = 1;
@@ -40,6 +47,12 @@ TEST(settings_survive_a_round_trip) {
     CHECK(loaded.showSnapLine && !loaded.showAimPoint);
     CHECK(!loaded.showDetectionArea && !loaded.showAimReach);
     CHECK(!loaded.assistEnabled);   // the assist is never saved: it starts off every run
+    CHECK(loaded.detector == 1 && loaded.colourLearned);
+    CHECK_NEAR(loaded.colourHue, 292.5, 1e-4);
+    CHECK_NEAR(loaded.colourSaturation, 0.62, 1e-6);
+    CHECK_NEAR(loaded.colourValue, 0.55, 1e-6);
+    CHECK_NEAR(loaded.colourTolerance, 21.0, 1e-5);
+    CHECK_NEAR(loaded.colourMinHeight, 55.0, 1e-5);
     CHECK(loaded.aimZone == 1);
     CHECK_NEAR(loaded.aimStrength, 0.8, 1e-6);
     CHECK(loaded.aimAfterLanding == 1);
@@ -105,6 +118,18 @@ TEST(an_integer_too_big_for_its_type_is_clamped_not_wrapped) {
     CHECK(loaded.boxThickness == 6);   // not 1
     CHECK(loaded.language == 2);       // not 2 by luck of the wrap: the largest value
     CHECK(loaded.touchBackend == 0);   // not 2147483647 wrapped back to a valid one
+}
+
+TEST(a_colour_is_kept_round_the_colour_wheel_and_the_rest_in_range) {
+    const Settings loaded = SettingsStore::parse(
+        "colourHue=370\ncolourSaturation=0\ncolourValue=5\ncolourTolerance=2\ncolourMinHeight=9000\ndetector=7\n");
+    CHECK_NEAR(loaded.colourHue, 10.0, 1e-4);   // 370 degrees is 10, not 360
+    CHECK_NEAR(loaded.colourSaturation, 0.1, 1e-6);
+    CHECK_NEAR(loaded.colourValue, 1.0, 1e-6);
+    CHECK_NEAR(loaded.colourTolerance, 4.0, 1e-6);
+    CHECK_NEAR(loaded.colourMinHeight, 300.0, 1e-4);
+    CHECK(loaded.detector == 1);
+    CHECK_NEAR(SettingsStore::parse("colourHue=-30\n").colourHue, 330.0, 1e-4);
 }
 
 TEST(settings_tolerate_damaged_lines) {

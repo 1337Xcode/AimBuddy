@@ -38,6 +38,13 @@ struct Settings {
     // --- Detection ---
     float confidence = 0.5f;              ///< Lowest detector confidence that starts a target.
     float detectionZoneRadius = 200.0f;   ///< Pixels around the crosshair the detector looks at.
+    int detector = 0;                     ///< What finds the targets: 0 the detection model, 1 a colour (experimental; needs no model). Read when the assist starts.
+    bool colourLearned = false;           ///< A colour to look for has been learned, so the colour detector has something to find.
+    float colourHue = 0.0f;               ///< The colour's hue in degrees, 0 to 360.
+    float colourSaturation = 0.5f;        ///< The least saturated a pixel may be and still count, 0 to 1.
+    float colourValue = 0.4f;             ///< The darkest a pixel may be and still count, 0 to 1.
+    float colourTolerance = 14.0f;        ///< How far either side of the hue still counts, in degrees.
+    float colourMinHeight = 40.0f;        ///< Patches of the colour shorter than this, in screen pixels, are not targets.
 
     // --- Aim assist ---
     bool assistEnabled = false;

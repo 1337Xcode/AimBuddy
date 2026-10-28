@@ -41,6 +41,13 @@ void visitFields(Settings_& s, Visitor&& visit) {
     visit("showAimReach", s.showAimReach);
     visit("confidence", s.confidence);
     visit("detectionZoneRadius", s.detectionZoneRadius);
+    visit("detector", s.detector);
+    visit("colourLearned", s.colourLearned);
+    visit("colourHue", s.colourHue);
+    visit("colourSaturation", s.colourSaturation);
+    visit("colourValue", s.colourValue);
+    visit("colourTolerance", s.colourTolerance);
+    visit("colourMinHeight", s.colourMinHeight);
     visit("aimZone", s.aimZone);
     visit("aimStrength", s.aimStrength);
     visit("aimFovRadius", s.aimFovRadius);
@@ -159,6 +166,12 @@ void Settings::clamp() {
     boxThickness = std::clamp(boxThickness, 1, 6);
     confidence = clampTo(confidence, 0.1f, 0.95f);
     detectionZoneRadius = clampTo(detectionZoneRadius, 100.0f, 650.0f);
+    detector = std::clamp(detector, 0, 1);
+    colourHue = std::fmod(std::fmod(colourHue, 360.0f) + 360.0f, 360.0f);   // round the colour wheel, not clamped to its ends
+    colourSaturation = clampTo(colourSaturation, 0.1f, 1.0f);
+    colourValue = clampTo(colourValue, 0.1f, 1.0f);
+    colourTolerance = clampTo(colourTolerance, 4.0f, 40.0f);
+    colourMinHeight = clampTo(colourMinHeight, 10.0f, 300.0f);
     aimZone = std::clamp(aimZone, 0, 2);
     aimStrength = clampTo(aimStrength, 0.0f, 1.0f);
     aimFovRadius = clampTo(aimFovRadius, 50.0f, 650.0f);
