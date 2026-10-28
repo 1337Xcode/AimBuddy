@@ -367,7 +367,12 @@ Java_com_aimbuddy_NativeBridge_configureDisplay(JNIEnv* /* env */, jclass /* cla
     geometry.screenHeight = displayHeight;
     geometry.captureWidth = captureWidth;
     geometry.captureHeight = captureHeight;
+    const aimbuddy::CaptureGeometry before = g_pipeline.capture().geometry();
     g_pipeline.capture().configure(geometry);
+    const bool turned = before.isValid() && (before.screenWidth != displayWidth || before.screenHeight != displayHeight);
+    if (turned) {
+        g_pipeline.forgetScene();
+    }
     g_aimLoop.setDisplay(displayWidth, displayHeight, rotation);
     LOGI("Display %dx%d rotation %d, capture %dx%d", displayWidth, displayHeight, rotation, captureWidth,
          captureHeight);

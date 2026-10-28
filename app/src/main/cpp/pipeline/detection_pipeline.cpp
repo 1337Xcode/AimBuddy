@@ -126,6 +126,13 @@ void DetectionPipeline::stop() {
     }
 }
 
+void DetectionPipeline::forgetScene() {
+    tracker_.reset();
+    std::lock_guard<std::mutex> lock(motionMutex_);
+    sceneMotion_.reset();
+    lastFrameNs_ = 0;
+}
+
 void DetectionPipeline::applyConfidenceIfChanged(float& applied) {
     const float requested = confidence_.load(std::memory_order_relaxed);
     if (std::fabs(requested - applied) < 1e-4f) {

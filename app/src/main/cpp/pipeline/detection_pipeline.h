@@ -101,6 +101,9 @@ public:
     /// Stops the pipeline thread and waits for it. Safe to call when not running.
     void stop();
 
+    /// The screen turned: where the targets were, and the picture the camera's slide is measured against, mean nothing now.
+    void forgetScene();
+
     bool isRunning() const { return running_.load(std::memory_order_acquire); }
 
     /// Sets the observer. Must be called while stopped.

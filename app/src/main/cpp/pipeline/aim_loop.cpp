@@ -173,6 +173,9 @@ void AimLoop::syncDisplayWithHelper() {
     }
     link_->configure(display.width, display.height, display.rotation);
     controller_.setCrosshair(static_cast<float>(display.width) * 0.5f, static_cast<float>(display.height) * 0.5f);
+    if (display.version != configuredDisplayVersion_) {
+        controller_.forgetScene();   // the screen turned: the places of the boxes given up on are not the same places now
+    }
     configuredSession_ = session;
     configuredDisplayVersion_ = display.version;
 }
