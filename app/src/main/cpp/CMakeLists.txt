@@ -159,6 +159,7 @@ set(ESP_SOURCES
     core/drag_scroller.cpp
     core/global_motion.cpp
     core/look_watch.cpp
+    core/output_agreement.cpp
     core/response_estimator.cpp
     detector/yolo_detector.cpp
     pipeline/aim_loop.cpp
