@@ -266,6 +266,33 @@ void drawPerformanceReadout(ImDrawList* list, const ImVec2& windowSize) {
     list->AddText(font, size, ImVec2(corner.x + padding, corner.y + padding), IM_COL32(255, 255, 255, 230), text);
 }
 
+/// How far past the colour's tolerance (in degrees of hue) the overlay keeps its own colours away from it.
+constexpr float kOverlayHueMarginDegrees = 20.0f;
+
+/**
+ * What the overlay draws is in the picture the colour detector reads, so while a colour is looked for the overlay
+ * must not draw in it: a box of that colour would be found as a target, and a bigger box the next time. A colour
+ * near it is turned half way round the colour wheel; greys, and colours far from it, are left as they are.
+ */
+ImU32 clearOfTarget(ImU32 colour, const Settings& settings) {
+    if (!aimbuddy::pipeline().detectsByColour() || !settings.colourLearned) {
+        return colour;
+    }
+    ImVec4 rgba = ImGui::ColorConvertU32ToFloat4(colour);
+    float hue, saturation, value;
+    ImGui::ColorConvertRGBtoHSV(rgba.x, rgba.y, rgba.z, hue, saturation, value);
+    if (saturation < 0.25f) {
+        return colour;
+    }
+    float apart = std::fabs(hue - settings.colourHue / 360.0f);
+    apart = std::min(apart, 1.0f - apart);
+    if (apart * 360.0f > settings.colourTolerance + kOverlayHueMarginDegrees) {
+        return colour;
+    }
+    ImGui::ColorConvertHSVtoRGB(std::fmod(hue + 0.5f, 1.0f), saturation, value, rgba.x, rgba.y, rgba.z);
+    return ImGui::ColorConvertFloat4ToU32(rgba);
+}
+
 /// Draws a line, a box or a marker for every target, and the zones the detector and the assist work in.
 void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCountOut) {
     ImDrawList* list = ImGui::GetBackgroundDrawList();
@@ -284,7 +311,7 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
     const bool showGuides = g_menuVisible.load(std::memory_order_relaxed) || g_zoneEditing.load(std::memory_order_relaxed);
     if (showGuides) {
         const float arm = 11.5f;
-        const ImU32 crossColor = IM_COL32(58, 156, 255, 240);
+        const ImU32 crossColor = clearOfTarget(IM_COL32(58, 156, 255, 240), settings);
         list->AddLine(ImVec2(crosshair.x - arm, crosshair.y), ImVec2(crosshair.x + arm, crosshair.y), crossColor, 3.0f);
         list->AddLine(ImVec2(crosshair.x, crosshair.y - arm), ImVec2(crosshair.x, crosshair.y + arm), crossColor, 3.0f);
     }
@@ -306,7 +333,8 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
     viewCount = kept;
 
     aimbuddy::TargetStyle style;
-    style.color = ImGui::ColorConvertFloat4ToU32(ImVec4(settings.boxColor[0], settings.boxColor[1], settings.boxColor[2], 1.0f));
+    style.color = clearOfTarget(
+        ImGui::ColorConvertFloat4ToU32(ImVec4(settings.boxColor[0], settings.boxColor[1], settings.boxColor[2], 1.0f)), settings);
     style.thickness = static_cast<float>(settings.boxThickness);
     style.showScore = settings.showLabels;
     style.showAimPoint = settings.showAimPoint;
@@ -335,7 +363,7 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
 
     if (settings.showSnapLine && nearest != nullptr) {
         list->AddLine(crosshair, ImVec2(nearest->centerX - origin.x, nearest->centerY - origin.y),
-                      IM_COL32(255, 100, 50, static_cast<int>(255.0f * nearest->opacity)), 2.0f);
+                      clearOfTarget(IM_COL32(255, 100, 50, static_cast<int>(255.0f * nearest->opacity)), settings), 2.0f);
     }
 
     // The two fields of view: the area the detector looks at, and how far the assist reaches. They
@@ -350,8 +378,8 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
                       kFovLineWidth);
     }
     if (settings.showAimReach || showGuides) {
-        list->AddCircle(crosshair, settings.aimFovRadius, settings.assistEnabled ? kAimFovColor : kAimFovIdleColor, 64,
-                        kFovLineWidth);
+        list->AddCircle(crosshair, settings.aimFovRadius,
+                        clearOfTarget(settings.assistEnabled ? kAimFovColor : kAimFovIdleColor, settings), 64, kFovLineWidth);
     }
 
     // Where the assist's finger rests, so the player can keep their own thumb away from it. The
@@ -370,7 +398,7 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
         ImFont* font = ImGui::GetFont();
         const float size = ImGui::GetFontSize() * 2.0f;
         const ImVec2 textSize = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
-        list->AddText(font, size, ImVec2((windowSize.x - textSize.x) * 0.5f, 40.0f), IM_COL32(255, 50, 50, 255), text);
+        list->AddText(font, size, ImVec2((windowSize.x - textSize.x) * 0.5f, 40.0f), clearOfTarget(IM_COL32(255, 50, 50, 255), settings), text);
     }
 
     if (settings.showPerformance) {
