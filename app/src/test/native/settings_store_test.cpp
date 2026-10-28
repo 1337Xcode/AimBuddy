@@ -226,6 +226,34 @@ TEST(resetting_keeps_only_the_language) {
     CHECK(fresh.touchBackend == defaults.touchBackend);
 }
 
+TEST(the_touch_area_stays_inside_the_display) {
+    Settings nearTheEdge;
+    nearTheEdge.anchorX = 0.95f;   // 120 px from the right edge of a display 2400 px wide
+    nearTheEdge.anchorY = 0.5f;
+    nearTheEdge.anchorRadius = 250.0f;
+    const TouchArea squeezed = nearTheEdge.touchAreaOn(2400.0f, 1080.0f);
+    CHECK_NEAR(squeezed.centerX, 2280.0, 1e-3);
+    CHECK_NEAR(squeezed.centerY, 540.0, 1e-3);
+    CHECK_NEAR(squeezed.radiusPx, 120.0, 1e-3);
+
+    Settings nearTheTop = nearTheEdge;
+    nearTheTop.anchorX = 0.5f;
+    nearTheTop.anchorY = 0.05f;   // 54 px from the top edge of a display 1080 px high
+    CHECK_NEAR(nearTheTop.touchAreaOn(2400.0f, 1080.0f).radiusPx, 54.0, 1e-3);
+
+    Settings roomy;
+    roomy.anchorX = 0.75f;
+    roomy.anchorY = 0.4f;
+    roomy.anchorRadius = 250.0f;
+    const TouchArea whole = roomy.touchAreaOn(2400.0f, 1080.0f);
+    CHECK_NEAR(whole.centerX, 1800.0, 1e-3);
+    CHECK_NEAR(whole.centerY, 432.0, 1e-3);
+    CHECK_NEAR(whole.radiusPx, 250.0, 1e-3);   // it fits already
+
+    const TouchArea unknown = roomy.touchAreaOn(0.0f, 0.0f);
+    CHECK_NEAR(unknown.radiusPx, 250.0, 1e-3);   // nothing is known about the display, so nothing is cut
+}
+
 TEST(what_was_learned_about_the_camera_is_kept_and_kept_in_range) {
     Settings original;
     original.autoCalibrate = false;

@@ -90,9 +90,10 @@ aimbuddy::AimLoopConfig makeAimLoopConfig() {
     config.aim.strength = settings.aimStrength;
     config.aim.fovRadiusPx = settings.aimFovRadius;
     config.aim.priority = settings.aimPriority;
-    config.aim.anchorX = settings.anchorX * displayWidth;
-    config.aim.anchorY = settings.anchorY * displayHeight;
-    config.aim.anchorRadiusPx = settings.anchorRadius;
+    const aimbuddy::TouchArea touchArea = settings.touchAreaOn(displayWidth, displayHeight);
+    config.aim.anchorX = touchArea.centerX;
+    config.aim.anchorY = touchArea.centerY;
+    config.aim.anchorRadiusPx = touchArea.radiusPx;
 
     config.cameraGuess.gainX = settings.sceneGain;
     config.cameraGuess.gainY = settings.sceneGain;

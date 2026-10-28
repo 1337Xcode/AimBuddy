@@ -10,6 +10,13 @@ enum class TouchBackend : int {
     kRoot = 2,
 };
 
+/// The circle the assist's finger works in on one display, in display pixels.
+struct TouchArea {
+    float centerX = 0.0f;
+    float centerY = 0.0f;
+    float radiusPx = 0.0f;
+};
+
 /**
  * Everything the player can change.
  *
@@ -62,6 +69,14 @@ struct Settings {
 
     /// The settings a fresh install starts with. The language is kept so the screen stays readable.
     Settings resetKeepingLanguage() const;
+
+    /**
+     * Where the assist's finger really works on a display of this size: the resting place and radius set,
+     * with the radius brought down to the nearest edge of the display. A finger sent past an edge stays on it
+     * while the controller counts the whole move, and the camera is credited with a turn the game never saw.
+     * A display of no size gives the settings as they are.
+     */
+    TouchArea touchAreaOn(float displayWidth, float displayHeight) const;
 };
 
 }  // namespace aimbuddy

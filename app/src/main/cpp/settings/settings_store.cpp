@@ -181,6 +181,22 @@ Settings Settings::resetKeepingLanguage() const {
     return fresh;
 }
 
+TouchArea Settings::touchAreaOn(float displayWidth, float displayHeight) const {
+    TouchArea area;
+    area.centerX = anchorX * displayWidth;
+    area.centerY = anchorY * displayHeight;
+    area.radiusPx = anchorRadius;
+    if (displayWidth <= 0.0f || displayHeight <= 0.0f) {
+        return area;
+    }
+    area.centerX = std::clamp(area.centerX, 0.0f, displayWidth);
+    area.centerY = std::clamp(area.centerY, 0.0f, displayHeight);
+    const float nearestEdgePx = std::min(std::min(area.centerX, displayWidth - area.centerX),
+                                         std::min(area.centerY, displayHeight - area.centerY));
+    area.radiusPx = std::min(area.radiusPx, nearestEdgePx);
+    return area;
+}
+
 Settings SettingsStore::withValue(const Settings& settings, const std::string& name, const std::string& value) {
     Settings changed = settings;
     visitFields(changed, Setter{&name, &value});

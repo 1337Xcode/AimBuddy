@@ -356,10 +356,11 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
     // Where the assist's finger rests, so the player can keep their own thumb away from it. The
     // editor draws the area itself while it is open.
     if (settings.assistEnabled && settings.showAnchor && !g_zoneEditing.load(std::memory_order_relaxed)) {
-        const ImVec2 anchor(settings.anchorX * displayWidth - origin.x, settings.anchorY * displayHeight - origin.y);
+        const aimbuddy::TouchArea area = settings.touchAreaOn(displayWidth, displayHeight);
+        const ImVec2 anchor(area.centerX - origin.x, area.centerY - origin.y);
         const int alpha = static_cast<int>(255.0f * settings.anchorOpacity);
-        list->AddCircleFilled(anchor, settings.anchorRadius, IM_COL32(120, 200, 255, alpha / 4), 64);
-        list->AddCircle(anchor, settings.anchorRadius, IM_COL32(120, 200, 255, alpha), 64, 2.0f);
+        list->AddCircleFilled(anchor, area.radiusPx, IM_COL32(120, 200, 255, alpha / 4), 64);
+        list->AddCircle(anchor, area.radiusPx, IM_COL32(120, 200, 255, alpha), 64, 2.0f);
     }
 
     if (settings.showCount && bodies > 0) {
@@ -518,9 +519,10 @@ struct ZoneGeometry {
 
 ZoneGeometry zoneGeometry(const Settings& settings, const ImVec2& origin) {
     const ImVec2 extent = displayExtent();
+    const aimbuddy::TouchArea area = settings.touchAreaOn(extent.x, extent.y);   // what the assist really uses
     ZoneGeometry zone;
-    zone.centre = ImVec2(settings.anchorX * extent.x - origin.x, settings.anchorY * extent.y - origin.y);
-    zone.radius = settings.anchorRadius;
+    zone.centre = ImVec2(area.centerX - origin.x, area.centerY - origin.y);
+    zone.radius = area.radiusPx;
     zone.handle = ImVec2(zone.centre.x + zone.radius * kZoneHandleSlope, zone.centre.y + zone.radius * kZoneHandleSlope);
     return zone;
 }
@@ -612,6 +614,8 @@ void resizeZoneTo(const ImVec2& finger, const ImVec2& origin) {
     Settings settings = aimbuddy::settingsStore().get();
     const ZoneGeometry zone = zoneGeometry(settings, origin);
     settings.anchorRadius = distanceBetween(finger, zone.centre);
+    const ImVec2 extent = displayExtent();
+    settings.anchorRadius = settings.touchAreaOn(extent.x, extent.y).radiusPx;   // the area stops at the edge of the screen
     aimbuddy::settingsStore().set(settings);
 }
 
