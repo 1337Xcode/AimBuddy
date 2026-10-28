@@ -16,13 +16,18 @@ import com.aimbuddy.ModelSource
 import com.aimbuddy.ModelStoreRepository
 import com.aimbuddy.NativeBridge
 import com.aimbuddy.Project
+import com.aimbuddy.AssistState
 import com.aimbuddy.R
+import com.aimbuddy.RootShell
 import com.aimbuddy.ShizukuStatus
 import com.aimbuddy.StoreModelDefinition
 import com.aimbuddy.DownloadCancelledException
+import com.aimbuddy.TouchHelper
+import com.aimbuddy.TouchTest
 import com.aimbuddy.TransferFailure
 import com.aimbuddy.TransferMeter
 import com.aimbuddy.TransferProgress
+import com.aimbuddy.runTouchTest
 import com.aimbuddy.ui.theme.Accent
 import com.aimbuddy.ui.theme.ThemeMode
 import com.aimbuddy.update.AppUpdater
@@ -139,6 +144,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _touchAccess = MutableStateFlow(TouchAccess())
     val touchAccess: StateFlow<TouchAccess> = _touchAccess.asStateFlow()
+
+    private val _touchTest = MutableStateFlow<TouchTest>(TouchTest.Idle)
+    val touchTest: StateFlow<TouchTest> = _touchTest.asStateFlow()
 
     private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UiMessage> = _messages.asSharedFlow()
@@ -291,6 +299,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setSetting(name: String, value: String) {
         NativeBridge.setSetting(name, value)
         _settings.value = SettingsView.parse(NativeBridge.settingsSnapshot())
+        if (name == "touchBackend") {
+            forgetTouchTest()
+        }
         saveSoon()
     }
 
@@ -310,6 +321,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun resetSettings() {
         NativeBridge.resetSettings()
         _settings.value = SettingsView.parse(NativeBridge.settingsSnapshot())
+        forgetTouchTest()
         saveSoon()
     }
 
@@ -334,6 +346,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateTouchAccess(shizuku: ShizukuStatus, rootAllowed: Boolean) {
         _touchAccess.value = TouchAccess(shizuku, rootAllowed)
+    }
+
+    /**
+     * Starts the touch helper once and stops it again, to say whether this phone lets AimBuddy move the aim. It is
+     * not run while the assist is, which has the touchscreen. The helper is stopped even if the screen is left
+     * meanwhile: the work runs to its end, and Start waits for it (see [touchTest]).
+     */
+    fun testTouchAccess() {
+        if (_touchTest.value == TouchTest.Running) {
+            return
+        }
+        if (AssistState.state.value.phase != AssistState.Phase.IDLE) {
+            post(UiMessage(R.string.touch_test_stop_first))
+            return
+        }
+        _touchTest.value = TouchTest.Running
+        viewModelScope.launch(Dispatchers.IO) {
+            settingsLoaded.join()
+            val helper = TouchHelper(context)
+            _touchTest.value = runTouchTest(NativeBridge.touchBackend(), helper::start, helper::stop)
+            // Root is known to be allowed, or not, only once it has been asked for.
+            _touchAccess.update { it.copy(rootAllowed = RootShell.isGranted()) }
+        }
+    }
+
+    /** Clears the result of the last test, which is about a choice that has since changed. A test under way is left alone. */
+    private fun forgetTouchTest() {
+        if (_touchTest.value != TouchTest.Running) {
+            _touchTest.value = TouchTest.Idle
+        }
     }
 
     // ---------------------------------------------------------------------------------------
