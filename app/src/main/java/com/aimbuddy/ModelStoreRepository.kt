@@ -61,19 +61,33 @@ class InstalledFiles(val param: File, val bin: File)
  * formed, file paths must stay inside the store, and every downloaded file must have exactly the
  * size and SHA-256 the index gives for it.
  */
-class ModelStoreRepository(private val baseUrl: String, private val cacheDir: File) {
+class ModelStoreRepository(
+    private val baseUrl: String,
+    private val cacheDir: File,
+    /** How the text of an address is read; the network by default. */
+    private val readText: (String) -> String = { Http.getText(it) },
+) {
 
     /** Fetches the list of models. Without a connection the copy saved by the last success is used. */
     fun fetchModels(): List<StoreModelDefinition> {
         val cache = File(cacheDir, INDEX_FILE)
-        return try {
-            val text = Http.getText("$baseUrl/$INDEX_FILE")
-            parseIndex(text, baseUrl).also { saveText(cache, text) }
+        val text: String
+        val models: List<StoreModelDefinition>
+        try {
+            text = readText("$baseUrl/$INDEX_FILE")
+            models = parseIndex(text, baseUrl)
         } catch (e: IOException) {
-            fallBackToSavedList(cache, e)
+            return fallBackToSavedList(cache, e)
         } catch (e: JSONException) {
-            fallBackToSavedList(cache, e)
+            return fallBackToSavedList(cache, e)
         }
+        // A copy that cannot be kept (a full disk) must not hide the list that was just read.
+        try {
+            saveText(cache, text)
+        } catch (e: IOException) {
+            Log.w(TAG, "Could not keep a copy of the store's list: ${e.message}")
+        }
+        return models
     }
 
     /** Reads the list saved by the last success, or rethrows [cause] when there is none. */
