@@ -157,6 +157,7 @@ set(ESP_SOURCES
     core/camera_motion.cpp
     core/colour_blobs.cpp
     core/drag_scroller.cpp
+    core/fingerprint.cpp
     core/global_motion.cpp
     core/look_watch.cpp
     core/output_agreement.cpp
