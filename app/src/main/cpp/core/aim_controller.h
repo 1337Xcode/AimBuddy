@@ -19,6 +19,13 @@ enum class AfterLanding : uint8_t {
     kHandsOff,       ///< One correction per target: lift the finger once the crosshair is on it, and leave the rest to the player.
 };
 
+/// How readily the lock moves from the target being followed to another one that has come closer to the crosshair.
+enum class Switching : uint8_t {
+    kSticky,    ///< Stays with the target unless a rival is far closer, and has been for a while.
+    kBalanced,  ///< Moves to a rival that is clearly closer once it has stayed so for a moment.
+    kQuick,     ///< Moves to a rival that is only a little closer, almost at once.
+};
+
 /// How the assist behaves. Every field is either a player preference or a property of the screen.
 struct AimSettings {
     // --- Player preferences ---
@@ -28,6 +35,9 @@ struct AimSettings {
     int priority = 0;                   ///< Which target to prefer: 0 closest to the crosshair, 1 biggest, 2 most certain.
     float yieldWhileLooking = 0.4f;     ///< Fraction of the assist kept while the player is steering themselves (at full steering).
     AfterLanding afterLanding = AfterLanding::kKeepFollowing;
+
+    /// Sets how readily the lock moves to another target: the two numbers above, for a player's choice.
+    void setSwitching(Switching switching);
 
     // --- Where the assist's finger rests ---
     float anchorX = 1800.0f;            ///< Display pixels. Should be in the game's look area, away from the player's thumb.
@@ -40,7 +50,7 @@ struct AimSettings {
     float deadzoneBoxFraction = 0.04f;  ///< ...or this fraction of the target's height, whichever is larger.
     float lockLossSeconds = 0.15f;      ///< How long a lost target is waited for before letting go.
     float switchRatio = 0.7f;           ///< A rival must be this much closer to take over the lock...
-    float switchHoldSeconds = 0.15f;    ///< ...for this long.
+    float switchHoldSeconds = 0.15f;    ///< ...for this long. (Set both together with setSwitching.)
 };
 
 /// What the controller wants done with the assist's finger this step.

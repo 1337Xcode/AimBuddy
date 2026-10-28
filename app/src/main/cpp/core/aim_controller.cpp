@@ -158,6 +158,23 @@ float movingShareOf(const TrackView& view) {
 
 }  // namespace
 
+void AimSettings::setSwitching(Switching switching) {
+    switch (switching) {
+        case Switching::kSticky:
+            switchRatio = 0.55f;
+            switchHoldSeconds = 0.30f;
+            break;
+        case Switching::kQuick:
+            switchRatio = 0.85f;
+            switchHoldSeconds = 0.06f;
+            break;
+        case Switching::kBalanced:
+            switchRatio = 0.7f;
+            switchHoldSeconds = 0.15f;
+            break;
+    }
+}
+
 AimController::AimController(const AimSettings& settings, CameraMotion* motion)
     : settings_(settings), motion_(motion) {}
 

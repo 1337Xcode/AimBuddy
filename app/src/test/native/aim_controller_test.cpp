@@ -177,6 +177,84 @@ TEST(aim_closes_more_gently_while_the_player_steers) {
     CHECK(alone > halfway);
 }
 
+namespace {
+
+/// What happened to the lock when a second enemy came to stand `ratio` times as far from the crosshair as the first.
+struct SwitchResult {
+    bool switched = false;
+    float secondsAfterItArrived = 0.0f;
+};
+
+/// Two enemies stand still, 200 px apart. The crosshair starts near the right one, which is taken as the target, and
+/// then slides left (over 0.3 s) to the place where the left one is `ratio` times as far from it as the right one.
+SwitchResult switchAfterRivalIsCloser(Switching switching, float ratio) {
+    AimSettings settings = baseSettings();
+    settings.zone = AimZone::kCenter;
+    settings.deadzoneMinPx = 2000.0f;   // the crosshair always counts as on target, so the finger never moves: only the lock is looked at
+    settings.setSwitching(switching);
+    CameraMotion motion;
+    AimController controller(settings, &motion);
+    Tracker tracker;
+    const ModelProfile profile = ModelProfile::defaultsFor(1);
+    const float rightX = 1300.0f;
+    const float leftX = 1100.0f;
+    const float startX = 1250.0f;
+    const float endX = (leftX + rightX * ratio) / (1.0f + ratio);   // where the left one is `ratio` times as far as the right one
+    const auto feed = [&](int64_t atMs) {
+        Detection d[2];
+        d[0].x = rightX - 30.0f; d[0].y = 450; d[0].width = 60; d[0].height = 180; d[0].score = 0.9f;
+        d[1].x = leftX - 30.0f; d[1].y = 450; d[1].width = 60; d[1].height = 180; d[1].score = 0.9f;
+        tracker.update(d, 2, atMs * kMs, nullptr);
+    };
+    controller.setCrosshair(startX, 540.0f);
+    for (int64_t atMs = 0; atMs < 100; atMs += 16) {
+        feed(atMs);
+    }
+    controller.step(100 * kMs, tracker, profile, PlayerInput());
+    const int firstTarget = controller.lockedTrackId();
+    SwitchResult result;
+    const int64_t arrivedMs = 400;
+    for (int64_t atMs = 104; atMs < 2400; atMs += 8) {
+        if (atMs % 16 == 0) {
+            feed(atMs);
+        }
+        const float slid = std::clamp(static_cast<float>(atMs - 100) / 300.0f, 0.0f, 1.0f);
+        controller.setCrosshair(startX + (endX - startX) * slid, 540.0f);
+        controller.step(atMs * kMs, tracker, profile, PlayerInput());
+        if (!result.switched && controller.lockedTrackId() != firstTarget) {
+            result.switched = true;
+            result.secondsAfterItArrived = static_cast<float>(atMs - arrivedMs) * 0.001f;
+        }
+    }
+    return result;
+}
+
+}  // namespace
+
+TEST(aim_switching_presets_say_how_much_closer_a_rival_must_be) {
+    // A rival 5% closer is never worth leaving the target for.
+    CHECK(!switchAfterRivalIsCloser(Switching::kSticky, 0.95f).switched);
+    CHECK(!switchAfterRivalIsCloser(Switching::kBalanced, 0.95f).switched);
+    CHECK(!switchAfterRivalIsCloser(Switching::kQuick, 0.95f).switched);
+    // One 20% closer is enough for the quick preset only; 40% closer for the balanced one too; half as far for all.
+    CHECK(!switchAfterRivalIsCloser(Switching::kSticky, 0.8f).switched);
+    CHECK(!switchAfterRivalIsCloser(Switching::kBalanced, 0.8f).switched);
+    CHECK(switchAfterRivalIsCloser(Switching::kQuick, 0.8f).switched);
+    CHECK(!switchAfterRivalIsCloser(Switching::kSticky, 0.6f).switched);
+    CHECK(switchAfterRivalIsCloser(Switching::kBalanced, 0.6f).switched);
+    CHECK(switchAfterRivalIsCloser(Switching::kSticky, 0.4f).switched);
+}
+
+TEST(aim_switching_presets_say_how_long_the_rival_must_stay_closer) {
+    const SwitchResult sticky = switchAfterRivalIsCloser(Switching::kSticky, 0.4f);
+    const SwitchResult balanced = switchAfterRivalIsCloser(Switching::kBalanced, 0.4f);
+    const SwitchResult quick = switchAfterRivalIsCloser(Switching::kQuick, 0.4f);
+    CHECK(quick.switched && balanced.switched && sticky.switched);
+    CHECK(quick.secondsAfterItArrived < balanced.secondsAfterItArrived - 0.05f);
+    CHECK(balanced.secondsAfterItArrived < sticky.secondsAfterItArrived - 0.05f);
+    CHECK(quick.secondsAfterItArrived < 0.25f);   // "snap between players": a quarter of a second at the most
+}
+
 TEST(aim_ignores_targets_outside_the_field_of_view) {
     AimSettings settings = baseSettings();
     settings.fovRadiusPx = 150.0f;
