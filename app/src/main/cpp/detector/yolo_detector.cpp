@@ -176,16 +176,19 @@ void YoloDetector::unload() {
     backend_ = Backend::kCpu;
 }
 
-float YoloDetector::medianLatencyMs(ncnn::Net& net) {
+float YoloDetector::medianLatencyMs(ncnn::Net& net, const std::function<bool()>& shouldStop) {
     const ncnn::Mat probe = makeProbeImage(inputSize_);
     ncnn::Mat output;
     for (int i = 0; i < kBenchmarkWarmupRuns; ++i) {
-        if (!runOnce(net, probe, output)) {
+        if (shouldStop() || !runOnce(net, probe, output)) {
             return -1.0f;
         }
     }
     std::vector<float> times;
     for (int i = 0; i < kBenchmarkTimedRuns; ++i) {
+        if (shouldStop()) {
+            return -1.0f;
+        }
         const auto start = std::chrono::steady_clock::now();
         if (!runOnce(net, probe, output)) {
             return -1.0f;
@@ -212,7 +215,7 @@ bool YoloDetector::useBackend(Backend backend) {
     return true;
 }
 
-void YoloDetector::chooseBackend() {
+void YoloDetector::chooseBackend(const std::function<bool()>& shouldStop) {
     if (!loaded_) {
         return;
     }
@@ -220,7 +223,11 @@ void YoloDetector::chooseBackend() {
     ncnn::set_cpu_powersave(2);
     ncnn::set_kmp_blocktime(kSpinWaitMs);
 
-    const float cpuMs = medianLatencyMs(cpuNet_);
+    // A stop leaves the CPU net that load() set up as the backend, and nothing will run on it anyway.
+    const float cpuMs = medianLatencyMs(cpuNet_, shouldStop);
+    if (shouldStop()) {
+        return;
+    }
     float gpuMs = -1.0f;
     if (ncnn::get_gpu_count() > 0 && !gpuLoaded_) {
         applyCommonOptions(gpuNet_.opt);
@@ -231,12 +238,18 @@ void YoloDetector::chooseBackend() {
             gpuNet_.clear();
         }
     }
+    if (shouldStop()) {
+        return;
+    }
     if (gpuLoaded_) {
-        gpuMs = medianLatencyMs(gpuNet_);
+        gpuMs = medianLatencyMs(gpuNet_, shouldStop);
         if (gpuMs < 0.0f) {
             gpuNet_.clear();
             gpuLoaded_ = false;
         }
+    }
+    if (shouldStop()) {
+        return;
     }
 
     const bool useGpu = gpuLoaded_ && cpuMs > 0.0f && gpuMs < cpuMs * kGpuMustBeFasterBy;

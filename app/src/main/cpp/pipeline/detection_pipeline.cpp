@@ -331,8 +331,9 @@ void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishe
 void DetectionPipeline::run() {
     LOGI("Detection pipeline started");
     // Pins this thread to the fast cores and times the CPU against the GPU. It runs here, not at
-    // load time, because the thread that does it is the one that gets pinned.
-    detector_.chooseBackend();
+    // load time, because the thread that does it is the one that gets pinned. A stop does not have
+    // to wait for the timing to end: it takes seconds on a slow phone.
+    detector_.chooseBackend([this] { return !running_.load(std::memory_order_acquire); });
     backend_.store(detector_.backendName(), std::memory_order_relaxed);
 
     DetectionBatch batch;

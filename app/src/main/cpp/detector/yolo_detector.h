@@ -5,6 +5,7 @@
 #include <ncnn/net.h>
 
 #include <atomic>
+#include <functional>
 #include <string>
 
 #include "../capture/roi_capture.h"
@@ -52,8 +53,12 @@ public:
     /**
      * Times the model on the CPU and on the GPU and keeps the faster. Call it on the thread that
      * will run detect(): it also pins that thread, and the CPU worker threads, to the fast cores.
+     *
+     * The timing takes seconds on a slow phone, and whoever stops the assist waits for it, so
+     * `shouldStop` is asked between its steps: once it says true the timing ends and the CPU stays
+     * the backend. A step already under way (loading the network onto the GPU) is not cut short.
      */
-    void chooseBackend();
+    void chooseBackend(const std::function<bool()>& shouldStop);
 
     /**
      * Detects targets in one captured region.
@@ -85,7 +90,7 @@ private:
     bool loadNet(ncnn::Net& net, const char* paramPath, const char* binPath) const;
     bool runOnce(ncnn::Net& net, const ncnn::Mat& input, ncnn::Mat& output) const;
     bool probeOutput(ncnn::Net& net);
-    float medianLatencyMs(ncnn::Net& net);
+    float medianLatencyMs(ncnn::Net& net, const std::function<bool()>& shouldStop);
 
     ncnn::Net cpuNet_;
     ncnn::Net gpuNet_;
