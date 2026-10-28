@@ -234,9 +234,18 @@ bool TouchServer::openDevices(Reason* reason) {
     addToEpoll(epollFd_, screen_.fd(), EPOLLIN);
     for (const std::string& path : findVolumeKeyDevices()) {
         const int fd = ::open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-        if (fd >= 0 && addToEpoll(epollFd_, fd, EPOLLIN)) {
-            keyFds_.push_back(fd);
+        if (fd < 0) {
+            continue;
         }
+        if (addToEpoll(epollFd_, fd, EPOLLIN)) {
+            keyFds_.push_back(fd);
+        } else {
+            ::close(fd);
+        }
+    }
+    if (keyFds_.empty()) {
+        // The player's way out when the screen is not answering is these keys, so the log must say they are missing.
+        say("no volume key device can be read: holding both volume keys will not give the touchscreen back");
     }
     resetObserver();
     usleep(kVirtualDeviceSettleMs * 1000);
