@@ -162,6 +162,7 @@ set(ESP_SOURCES
     detector/yolo_detector.cpp
     pipeline/aim_loop.cpp
     renderer/imgui_menu.cpp
+    renderer/menu_widgets.cpp
     settings/settings_store.cpp
     touch/touch_link.cpp
 )

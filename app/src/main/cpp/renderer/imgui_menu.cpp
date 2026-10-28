@@ -27,12 +27,14 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_opengl3.h"
 #include "overlay/target_overlay.h"
+#include "renderer/menu_widgets.h"
 #include "utils/i18n.h"
 #include "utils/logger.h"
 
 using aimbuddy::Settings;
 using aimbuddy::i18n::Key;
 using aimbuddy::i18n::T;
+namespace menu = aimbuddy::menu;
 
 extern "C" bool GetDetectionZoneScreenRect(float* left, float* top, float* right, float* bottom);
 extern "C" void NotifyStreamerModeChanged(bool enabled);
@@ -963,6 +965,40 @@ bool drawInfoTab(Settings& s, int bodyCount) {
     return drawResetAllButton(s);
 }
 
+/// The footer's buttons are this tall, in font heights: tall enough for a thumb.
+constexpr float kFooterButtonEm = 2.4f;
+
+/// The room, in font heights, between the page and the footer's buttons. The divider is in it.
+constexpr float kFooterGapEm = 0.4f;
+
+/// The height the footer takes under the page: the gap with its divider, and the buttons.
+float footerHeight() {
+    return ImGui::GetStyle().ItemSpacing.y + (kFooterGapEm + kFooterButtonEm) * ImGui::GetFontSize();
+}
+
+/// Draws the divider and, under it, Close and Stop as two buttons of one width. Close sets `open` to false.
+void drawFooter(bool* open) {
+    const float font = ImGui::GetFontSize();
+    const ImGuiStyle& style = ImGui::GetStyle();
+
+    // A line across the whole window says that what is under it stays put while the page scrolls.
+    const ImVec2 windowPosition = ImGui::GetWindowPos();
+    const float dividerY = ImGui::GetCursorScreenPos().y - 0.5f * style.ItemSpacing.y;
+    ImGui::GetWindowDrawList()->AddLine(ImVec2(windowPosition.x, dividerY),
+                                        ImVec2(windowPosition.x + ImGui::GetWindowWidth(), dividerY),
+                                        ImGui::GetColorU32(ImGuiCol_Border));
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + kFooterGapEm * font);
+
+    const ImVec2 size(0.5f * (ImGui::GetContentRegionAvail().x - style.ItemSpacing.x), kFooterButtonEm * font);
+    if (menu::PillButton(T(Key::Close), size, menu::PillStyle::kPrimary)) {
+        *open = false;
+    }
+    ImGui::SameLine();
+    if (menu::PillButton(T(Key::StopService), size, menu::PillStyle::kDanger)) {
+        NotifyStopRequested();
+    }
+}
+
 /// Draws the menu beside the floating icon. Returns true if a setting changed.
 bool drawMenu(Settings& settings, int bodyCount) {
     const ImVec2 windowSize = ImGui::GetIO().DisplaySize;
@@ -994,8 +1030,7 @@ bool drawMenu(Settings& settings, int bodyCount) {
         g_menuRect[2] = position.x + g_menuSize.x;
         g_menuRect[3] = position.y + g_menuSize.y;
 
-        ImGui::BeginChild("##MenuScroll", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 6.0f), false,
-                          ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        ImGui::BeginChild("##MenuScroll", ImVec2(0, -footerHeight()), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
         if (ImGui::BeginTabBar("##MenuTabs", ImGuiTabBarFlags_FittingPolicyResizeDown)) {
             if (ImGui::BeginTabItem(T(Key::TabVisuals))) {
                 changed |= drawVisualsTab(settings);
@@ -1012,13 +1047,7 @@ bool drawMenu(Settings& settings, int bodyCount) {
             ImGui::EndTabBar();
         }
         ImGui::EndChild();
-        if (ImGui::Button(T(Key::Close), ImVec2(dp(84.0f), 0.0f))) {
-            open = false;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button(T(Key::StopService), ImVec2(0.0f, 0.0f))) {
-            NotifyStopRequested();
-        }
+        drawFooter(&open);
     }
     ImGui::End();
     if (!open) {
