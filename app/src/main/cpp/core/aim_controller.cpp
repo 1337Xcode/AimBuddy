@@ -393,6 +393,15 @@ bool AimController::isDecoy(const TrackView& view, int64_t nowNs) const {
     return false;
 }
 
+void AimController::forgetScene() {
+    {
+        std::lock_guard<std::mutex> lock(givenUpMutex_);
+        givenUp_ = {};
+    }
+    forgetWatch();
+    release();
+}
+
 /// Forgets what was seen of the target being watched, so the watch starts afresh at the next look.
 void AimController::forgetWatch() {
     watchedId_ = -1;

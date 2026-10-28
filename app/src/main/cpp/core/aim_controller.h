@@ -154,6 +154,12 @@ public:
     /// Lifts the finger at the next step and forgets the current target.
     void release() { releaseRequested_ = true; }
 
+    /**
+     * Forgets the boxes that were given up on, and the one being watched, and lets go of the target. Where they
+     * were on the screen means nothing once the screen has turned. Call from the same thread as step().
+     */
+    void forgetScene();
+
     bool isTouching() const { return touching_; }
 
     /// Id of the target being followed, or -1. Safe to read from other threads.
