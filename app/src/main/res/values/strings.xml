@@ -159,6 +159,7 @@
     <string name="s_light">Light</string>
     <string name="s_accent">Accent color</string>
     <string name="s_streamer">Streamer mode</string>
+    <string name="streamer_menu_unavailable">This phone does not let the menu be hidden from recordings, so in streamer mode it stays closed. Turn streamer mode off to open it.</string>
     <string name="s_streamer_footer">Nothing is drawn over the game, and the button turns invisible but stays where it is: tap there to open the menu, hold to stop. The notification has a Menu button too. Aim assist keeps working.</string>
     <string name="s_reset">Reset all settings</string>
     <string name="s_reset_title">Reset all settings?</string>

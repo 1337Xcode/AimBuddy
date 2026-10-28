@@ -8,6 +8,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -28,10 +29,11 @@ import kotlin.math.abs
  *    while, so a broken renderer cannot leave an invisible layer over the screen.
  *  - Holding the icon for a moment stops AimBuddy, whatever state the menu is in.
  *  - A secure window shows as solid black in a recording, and AimBuddy's own picture of the screen is
- *    a recording too. So streamer mode never makes a window secure while the game is being played:
- *    the full screen window draws nothing and the icon is made invisible, but it stays where it is
- *    and works, so the player is never locked out of the menu or of stopping. The full screen window
- *    is secure only while the menu is open (see [setStreamerMode]).
+ *    a recording too. So no window that covers the game is ever secure. In streamer mode the full screen
+ *    window draws nothing but the menu and the icon is made invisible, but it stays where it is and works,
+ *    so the player is never locked out of the menu or of stopping. While the menu is open a secure window
+ *    covers its column of the display (see [SecureShield]): a recording sees black there, and the game
+ *    everywhere else.
  *  - Every window is removed in [hide], which cannot fail halfway: each step is guarded.
  *
  * Use it from the main thread only.
@@ -47,9 +49,14 @@ class OverlayController(
     private var surfaceParams: WindowManager.LayoutParams? = null
     private var icon: StaticBubbleView? = null
     private var iconParams: WindowManager.LayoutParams? = null
+    private val shield = SecureShield(context)
 
     private var streamerMode = false
     private var touchable = false
+
+    // In streamer mode the menu waits for the secure window that covers it; a second tap on the button while it waits cancels it.
+    private var opening = false
+    private var openTicket = 0
     private var lastFrameCount = -1L
     private var lastFrameChangeMs = 0L
 
@@ -70,10 +77,10 @@ class OverlayController(
         onStopRequested()
     }
 
-    // Gives the touches back to the game once the menu has had time to be cleared away (see releaseTouches).
-    private val giveTouchesBack = Runnable {
+    // Takes the secure window away once the menu has had time to be cleared from the screen (see releaseTouches).
+    private val removeShield = Runnable {
         if (!OverlayNative.wantsTouches()) {
-            setTouchable(false)
+            shield.hide()
         }
     }
 
@@ -126,7 +133,9 @@ class OverlayController(
     /** Removes both windows. Safe to call at any time, any number of times. */
     fun hide() {
         handler.removeCallbacks(monitor)
-        handler.removeCallbacks(giveTouchesBack)
+        handler.removeCallbacks(removeShield)
+        opening = false
+        shield.hide()
         removeIcon()
         surface?.let {
             runCatching { OverlayNative.showMenu(false) }
@@ -141,19 +150,19 @@ class OverlayController(
     /**
      * Turns streamer mode on or off: nothing of AimBuddy may show in a screenshot or a recording.
      *
-     * A secure window is drawn as solid black in a recording, so it cannot sit over the game: it
-     * would black out the game and the picture AimBuddy detects targets in. So while streamer mode
-     * is on, the icon is invisible (it still opens the menu and still stops AimBuddy when held), the
-     * full screen window draws nothing (see the native overlay), and that window is secure only while
-     * the menu or the touch area editor is open, which is a few moments in which the recording shows black.
+     * While it is on, the icon is invisible (it still opens the menu and still stops AimBuddy when held) and the full
+     * screen window draws nothing but the menu (see the native overlay). The menu is covered by a secure window of
+     * its own (see [SecureShield]), which exists only while the menu is open, so a recording is never black all over.
      */
     fun setStreamerMode(enabled: Boolean) {
         streamerMode = enabled
-        surfaceParams?.let { params ->
-            params.flags = surfaceFlags(touchable)
-            update(surface, params)
-        }
         icon?.alpha = if (enabled) 0f else 1f
+        handler.removeCallbacks(removeShield)
+        if (!enabled) {
+            shield.hide()
+        } else if (touchable && !shield.cover(shieldBounds())) {   // the menu is already open: cover it now
+            closeMenu()
+        }
     }
 
     /** Opens the menu, or closes it if it is open. */
@@ -161,38 +170,86 @@ class OverlayController(
         if (!isShown) {
             return
         }
-        val show = !OverlayNative.wantsTouches()
-        lastFrameChangeMs = SystemClock.uptimeMillis()
-        if (show) {
-            // In streamer mode the window turns secure before the menu is drawn into it, never after...
-            handler.removeCallbacks(giveTouchesBack)
-            setTouchable(true)
-            OverlayNative.showMenu(true)
+        if (OverlayNative.wantsTouches() || opening) {
+            closeMenu()
         } else {
-            // ...and the menu stops being drawn before the window stops being secure.
-            OverlayNative.showMenu(false)
-            releaseTouches()
+            openMenu()
         }
+    }
+
+    private fun openMenu() {
+        lastFrameChangeMs = SystemClock.uptimeMillis()
+        handler.removeCallbacks(removeShield)
+        if (!streamerMode) {
+            showMenuNow()
+            return
+        }
+        // In streamer mode the menu appears only once the secure window that covers it is on the screen, never before...
+        opening = true
+        val ticket = ++openTicket
+        val covering = shield.show(shieldBounds()) {
+            if (opening && ticket == openTicket) {
+                opening = false
+                showMenuNow()
+            }
+        }
+        if (!covering) {
+            opening = false
+            Log.w(TAG, "The menu stays shut: it could not be hidden from recordings")
+            Toast.makeText(context, R.string.streamer_menu_unavailable, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showMenuNow() {
+        setTouchable(true)
+        OverlayNative.showMenu(true)
+    }
+
+    /** ...and the menu stops being drawn before that window goes (see releaseTouches). */
+    private fun closeMenu() {
+        opening = false
+        lastFrameChangeMs = SystemClock.uptimeMillis()
+        OverlayNative.showMenu(false)
+        releaseTouches()
     }
 
     /**
-     * Gives the touches back to the game. In streamer mode the window is secure while it takes touches,
-     * and a recording must not catch a last frame of the menu, so the window stays secure for a few
-     * frames: long enough for the renderer to draw the cleared picture and for the system to show it.
+     * Gives the touches back to the game. In streamer mode the secure window stays for a few frames more: a recording
+     * must not catch a last frame of the menu, so the renderer gets time to draw the cleared picture and the system to show it.
      */
     private fun releaseTouches() {
-        if (!touchable) {
-            return
-        }
-        if (!streamerMode) {
+        if (touchable) {
             setTouchable(false)
-        } else if (!handler.hasCallbacks(giveTouchesBack)) {
-            handler.postDelayed(giveTouchesBack, SECURE_RELEASE_DELAY_MS)
+        }
+        if (shield.isShown && !opening) {
+            scheduleShieldRemoval()
         }
     }
 
-    /** Brings the button back inside the display after the screen has turned or changed size. */
+    private fun scheduleShieldRemoval() {
+        if (!handler.hasCallbacks(removeShield)) {
+            handler.postDelayed(removeShield, SHIELD_RELEASE_DELAY_MS)
+        }
+    }
+
+    /** Where the secure window goes: the menu's column of the display, found from where the menu is (or would open) now. */
+    private fun shieldBounds(): Bounds {
+        val menu = OverlayNative.menuBounds()
+        val windowOrigin = IntArray(2)
+        surface?.getLocationOnScreen(windowOrigin)
+        val display = windowManager.maximumWindowMetrics.bounds
+        val margin = (SHIELD_MARGIN_DP * context.resources.displayMetrics.density).toInt()
+        return shieldBoundsFor(Bounds(menu[0], menu[1], menu[2], menu[3]), windowOrigin[0], display.width(), display.height(), margin)
+    }
+
+    /**
+     * Brings the button back inside the display after the screen has turned or changed size. In streamer mode an open
+     * menu is closed: the secure window that covers it would be a moment behind the menu's new place.
+     */
     fun keepIconOnScreen() {
+        if (streamerMode && (touchable || opening)) {
+            closeMenu()
+        }
         val params = iconParams ?: return
         val bounds = windowManager.maximumWindowMetrics.bounds
         val size = params.width
@@ -216,9 +273,6 @@ class OverlayController(
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
         if (!touchable) {
             flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        }
-        if (streamerMode && touchable) {
-            flags = flags or FLAG_SECURE
         }
         return flags
     }
@@ -263,11 +317,18 @@ class OverlayController(
         if (wanted && now - lastFrameChangeMs > STALL_MS) {
             Log.w(TAG, "The menu is open but nothing is being drawn: giving the screen back")
             OverlayNative.showMenu(false)
-            setTouchable(false)
+            releaseTouches()
             return
         }
         if (wanted) {
             setTouchable(true)
+            if (streamerMode) {
+                handler.removeCallbacks(removeShield)
+                if (!shield.cover(shieldBounds())) {   // follows the menu, and covers it however it came to be open
+                    closeMenu()
+                    return
+                }
+            }
         } else {
             releaseTouches()
         }
@@ -375,7 +436,6 @@ class OverlayController(
 
     private companion object {
         const val TAG = "OverlayController"
-        const val FLAG_SECURE = WindowManager.LayoutParams.FLAG_SECURE
 
         // The system setting behind the opacity limit for touches that pass through an overlay.
         const val OBSCURING_OPACITY_SETTING = "maximum_obscuring_opacity_for_touch"
@@ -387,7 +447,8 @@ class OverlayController(
         const val ICON_START_Y = 120
         const val MONITOR_INTERVAL_MS = 100L
         const val STALL_MS = 1500L
-        const val SECURE_RELEASE_DELAY_MS = 60L   // a few frames
+        const val SHIELD_RELEASE_DELAY_MS = 60L   // a few frames
+        const val SHIELD_MARGIN_DP = 16
         const val HOLD_TO_STOP_MS = 1500L
         const val MOVE_SLOP_PX = 10
     }
