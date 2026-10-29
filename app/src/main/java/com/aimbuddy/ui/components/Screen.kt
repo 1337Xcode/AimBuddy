@@ -112,7 +112,8 @@ fun ScreenScaffold(
     val direction = LocalLayoutDirection.current
     val scrolled by remember { derivedStateOf { gridState.canScrollBackward } }
     val tight = LocalConfiguration.current.screenHeightDp < ShortWindowHeight.value
-    val slide = remember { TopBarSlide(canHide = { gridState.canScrollForward }) }
+    // One for each kind of window, so a bar half hidden in a short window is not brought along to a tall one and back.
+    val slide = remember(tight) { TopBarSlide(canHide = { gridState.canScrollForward }) }
 
     Column(
         modifier = modifier
