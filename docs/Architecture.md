@@ -70,7 +70,7 @@ Everything that could leave the player without a working screen is guarded:
 
 `TouchHelper` starts the helper through Shizuku (`HelperHost`, a Shizuku user service) or through root (`HelperProcess`, with `RootShell`). Automatic prefers Shizuku. The helper picks its own port and prints it, and the app sends a secret with its first message, so the app never talks to a program that is not the helper.
 
-The Touch access screen (`ui/touch/TouchAccessScreen.kt`) is where the route is chosen and checked. `probeShizuku` asks the phone, without starting anything, whether Shizuku is installed, running and allowed (`ShizukuStatus`), and `RootShell.status()` says whether root has been asked for and answered, which is only learned by asking. The Test button runs `runTouchTest`, which starts the helper by the chosen route the way Start does and stops it again whatever happened, so the touchscreen is never left taken; it is off while the assist runs, and Start waits for a test under way.
+The Touch access screen (`ui/touch/TouchAccessScreen.kt`) is where the route is chosen and checked. `probeShizuku` asks the phone, without starting anything, whether Shizuku is installed, running and allowed (`ShizukuStatus`), and `RootShell.status()` says whether root has been asked for and answered, which is only learned by asking. The Test button runs `runTouchTest`, which starts the helper by the chosen route the way Start does and stops it again whatever happened, so the touchscreen is never left taken; it is off while the assist runs, and a press of Start is refused until a test under way has finished.
 
 `TouchMux` is the bookkeeping that merges the two sources. It does no input or output itself, so it is tested on a computer.
 

@@ -29,7 +29,7 @@ If AimBuddy stops by itself during a game, the phone's battery manager probably 
 
 Without it AimBuddy still outlines enemies, but the assist cannot move your aim. See [Shizuku setup](ShizukuSetup.md) for starting Shizuku. For root, grant it when your root manager asks.
 
-The Touch access screen (the Touch access row on Home, or Settings, Touch) shows where each route stands and has a Test touch access button. The test starts the touch helper the way Start does, says whether it took the touchscreen over, and stops it again. It cannot run while the assist is running, and Start waits until it has finished.
+The Touch access screen (the Touch access row on Home, or Settings, Touch) shows where each route stands and has a Test touch access button. The test starts the touch helper the way Start does, says whether it took the touchscreen over, and stops it again. It cannot run while the assist is running, and a press of Start while it runs is refused with a message: press it again once the test has finished.
 
 | Shizuku, on the Touch access screen | What to do |
 |-------------------------------------|------------|
