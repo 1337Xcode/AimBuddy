@@ -36,7 +36,7 @@ Switch it on under Settings, Overlay, Performance readout. It sits at the top ri
 
 | Part | Meaning |
 |------|---------|
-| `42/s` | Detections finished each second. The rate at which the screen updates is the ceiling, because a picture that did not change is not captured again. |
+| `42/s` | Detections finished each second. The rate at which the screen updates is the ceiling, because a picture that did not change is not captured again, so it reads 0 while nothing on the screen changes. |
 | `21 ms` | The age of a result when it is ready, counted from the moment its frame was on screen. This is the delay the aim has to make up for. Lower is better. |
 | `GPU` | Which processor runs the model. |
 
