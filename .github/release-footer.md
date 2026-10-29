@@ -5,4 +5,4 @@
 
 Neither file contains a detection model. The app opens on the Models page, where you download one or import your own.
 
-If Android says "App not installed as package conflicts with an existing package", the copy on your phone was signed with a different key. Uninstall it once, then install again. Releases from beta 2 on are signed with the same key, so they install over each other.
+If Android says "App not installed as package conflicts with an existing package", the copy on your phone was signed with a different key. Uninstall it once, then install again. Releases from 0.3.0-beta.2 on are signed with the same key, so they install over each other.

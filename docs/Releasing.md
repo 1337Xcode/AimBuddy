@@ -49,9 +49,9 @@ certificate). Every published AimBuddy APK must therefore be signed with one
 fixed key. If the certificate changes between releases, users cannot upgrade
 and the installer reports a package conflict.
 
-Beta 2, beta 3 and every release after them are signed with the certificate whose
+0.3.0-beta.2, 0.3.0-beta.3 and every release after them are signed with the certificate whose
 SHA-256 is `140ed02ffe4830211fdb61da47eba26e508aa67e88262e7f66ecb1a3d57eb675`.
-Beta 1 was published unsigned, so a copy of it was signed by whoever installed it.
+0.3.0-beta.1 was published unsigned, so a copy of it was signed by whoever installed it.
 
 Generate the key once and keep it safe (losing it means every user must
 uninstall before their next update):
@@ -99,7 +99,7 @@ Which copy can be replaced by which:
 
 | Installed | New | Result |
 |-----------|-----|--------|
-| A release from beta 2 on | A later release | Installs over it and keeps the settings. |
+| A release from 0.3.0-beta.2 on | A later release | Installs over it and keeps the settings. |
 | `com.aimbuddy.debug` from a release | The debug file of a later release | Installs over it. |
 | `com.aimbuddy.debug` built on your computer | A debug file from a release (or another computer's build) | Package conflict: each was signed with a different key. |
 | `com.aimbuddy` | `com.aimbuddy.debug` | No conflict: they are two apps and install side by side. |

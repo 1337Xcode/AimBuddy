@@ -6,7 +6,7 @@ When something does not work: first installing the app, then what the app says, 
 
 | What Android says | Cause and fix |
 |-------------------|---------------|
-| App not installed as package conflicts with an existing package. | The copy on your phone is signed with another key than the file you are installing, and Android never lets one replace the other. Releases from beta 2 on share one key, so they install over each other. The usual causes are a beta 1 that you signed yourself, or a debug build made on a computer, which carries that computer's own key. Uninstall AimBuddy once, then install again. The settings and downloaded models go with it. |
+| App not installed as package conflicts with an existing package. | The copy on your phone is signed with another key than the file you are installing, and Android never lets one replace the other. Releases from 0.3.0-beta.2 on share one key, so they install over each other. The usual causes are a 0.3.0-beta.1 that you signed yourself, or a debug build made on a computer, which carries that computer's own key. Uninstall AimBuddy once, then install again. The settings and downloaded models go with it. |
 | App not installed. (and nothing more) | The file is damaged or incomplete, or it is for another kind of phone: AimBuddy needs an arm64 phone with Android 11 or newer. Download the file again. |
 | A second AimBuddy appears after the install. | That is the debug build (`com.aimbuddy.debug`), which installs beside the app instead of replacing it. Its name on the phone is AimBuddy Debug. Keep the app and delete the debug build if you do not need it. |
 
