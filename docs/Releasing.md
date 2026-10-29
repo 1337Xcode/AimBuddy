@@ -8,7 +8,7 @@ AimBuddy is in beta, so every version looks like `0.3.5-beta.1`: `MAJOR.MINOR.PA
 
 - A release that adds or fixes a handful of things raises the patch number: `0.3.5`, then `0.3.6`. The minor number (`0.4.0`) is for a bigger step with new features, and the `-beta` tag goes away only when the project calls itself stable.
 - The beta number counts the releases of one patch number and starts again at 1 when the patch number changes: `0.3.5-beta.1`, `0.3.5-beta.2`, then `0.3.6-beta.1`.
-- `aimbuddy.versionCode` in `gradle.properties` goes up by one with every release, whatever the name. Android refuses to put a lower code over a higher one, and the app's updater only offers a build with a higher code than the installed one. Version 0.3.5-beta.1 has code 6.
+- `aimbuddy.versionCode` in `gradle.properties` goes up by one with every release, whatever the name. Android refuses to put a lower code over a higher one, and the app's updater only offers a build with a higher code than the installed one. Version 0.3.5-beta.1 has code 6 and 0.3.5-beta.2 has code 7.
 - The name is written in two places that have to match: `aimbuddy.versionName` in `gradle.properties` and the heading `## [0.3.5-beta.1] - YYYY-MM-DD` at the top of the released part of `CHANGELOG.md`. The workflow stops when they differ.
 
 ## Cutting a release
