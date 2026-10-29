@@ -19,6 +19,11 @@ sealed interface TouchTest {
     data class Failed(val reason: Int, val detail: String) : TouchTest
 }
 
+private fun startFailed(error: Throwable): TouchHelper.Outcome.Failed {
+    Log.w(TAG, "The touch test could not start the helper: ${error.message}", error)
+    return TouchHelper.Outcome.Failed(TouchHelper.Reason.UNREACHABLE, error.message ?: error.javaClass.simpleName)
+}
+
 /**
  * Starts the touch helper once, by the route the player chose, to learn whether this phone lets AimBuddy
  * move the aim, and ends it again whatever happened, so the touchscreen is never left taken. Blocks
@@ -28,8 +33,9 @@ internal fun runTouchTest(preferred: Int, start: (Int) -> TouchHelper.Outcome, s
     val outcome = try {
         start(preferred)
     } catch (e: Exception) {
-        Log.w(TAG, "The touch test could not start the helper: ${e.message}", e)
-        TouchHelper.Outcome.Failed(TouchHelper.Reason.UNREACHABLE, e.message ?: e.javaClass.simpleName)
+        startFailed(e)
+    } catch (e: LinkageError) {
+        startFailed(e)   // a native library or a Shizuku API that is not the one this build was made for
     } finally {
         stop()
     }

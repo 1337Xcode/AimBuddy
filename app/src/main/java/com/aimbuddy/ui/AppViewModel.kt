@@ -354,7 +354,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Starts the touch helper once and stops it again, to say whether this phone lets AimBuddy move the aim. It is
      * not run while the assist is, which has the touchscreen. The helper is stopped even if the screen is left
-     * meanwhile: the work runs to its end, and Start waits for it (see [touchTest]).
+     * meanwhile: the work runs to its end, and a press of Start is refused until then (see [touchTest]). The result
+     * is dropped when the route was changed while the test ran, because it answers for a choice that is gone.
      */
     fun testTouchAccess() {
         if (_touchTest.value == TouchTest.Running) {
@@ -366,11 +367,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         _touchTest.value = TouchTest.Running
         viewModelScope.launch(Dispatchers.IO) {
-            settingsLoaded.join()
-            val helper = TouchHelper(context)
-            _touchTest.value = runTouchTest(NativeBridge.touchBackend(), helper::start, helper::stop)
-            // Root is known to be allowed, or not, only once it has been asked for.
-            _touchAccess.update { it.copy(root = RootShell.status()) }
+            // Whatever happens below, the state leaves Running: a test that never ended would keep Start refused for good.
+            var tested = -1
+            var result: TouchTest = TouchTest.Idle
+            try {
+                settingsLoaded.join()
+                tested = NativeBridge.touchBackend()
+                val helper = TouchHelper(context)
+                result = runTouchTest(tested, helper::start, helper::stop)
+            } finally {
+                val stillChosen = tested >= 0 && runCatching { NativeBridge.touchBackend() == tested }.getOrDefault(false)
+                _touchTest.value = if (stillChosen) result else TouchTest.Idle
+                // Root is known to be allowed, or not, only once it has been asked for.
+                _touchAccess.update { it.copy(root = RootShell.status()) }
+            }
         }
     }
 

@@ -415,7 +415,7 @@ class MainActivity : AppCompatActivity() {
         if (AssistState.state.value.phase != AssistState.Phase.IDLE) {
             return
         }
-        // The test has the touchscreen for a moment; a run that began now would find it taken.
+        // The test has the touchscreen for a moment; a run that began now would find it taken, so this press is refused.
         if (viewModel.touchTest.value == TouchTest.Running) {
             viewModel.post(UiMessage(R.string.touch_test_wait))
             return

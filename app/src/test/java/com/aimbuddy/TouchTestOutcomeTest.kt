@@ -43,6 +43,18 @@ class TouchTestOutcomeTest {
     }
 
     @Test
+    fun aLibraryThatIsNotTheOneThisBuildNeedsFailsTheTestToo() {
+        var stops = 0
+        val result = runTouchTest(
+            preferred = 1,
+            start = { throw NoSuchMethodError("rikka.shizuku.Shizuku.bindUserService") },
+            stop = { stops++ },
+        )
+        assertEquals(TouchTest.Failed(TouchHelper.Reason.UNREACHABLE, "rikka.shizuku.Shizuku.bindUserService"), result)
+        assertEquals(1, stops)
+    }
+
+    @Test
     fun theTestStartsTheHelperByTheRouteThePlayerChose() {
         val asked = mutableListOf<Int>()
         for (preferred in 0..2) {
