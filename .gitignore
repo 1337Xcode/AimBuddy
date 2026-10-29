@@ -91,3 +91,6 @@ training/**/*.param
 # Unnecessary MD files
 CLAU*.md
 LOO*.md
+
+# Local notes that are not published
+docs/deferred.md
