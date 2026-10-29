@@ -1,5 +1,7 @@
 """The dataset split keeps the frames of one video together, so that validation never holds near copies of training images."""
 
+import contextlib
+import io
 import sys
 import tempfile
 import unittest
@@ -65,6 +67,32 @@ class SplitDatasetTest(unittest.TestCase):
                 self.assertEqual(_split_of(dataset, f"video00_frame_{index:05d}"), before["video00_frame_00000"])
             new = {_split_of(dataset, f"video99_frame_{index:05d}") for index in range(10)}
             self.assertEqual(len(new), 1)
+
+
+    def test_one_video_that_leaves_valid_empty_is_an_error_that_says_so(self):
+        # A video whose name sends it to train: all of it goes there and valid stays empty.
+        name = next(n for n in ("clipA", "clipB", "clipC", "clipD") if split_dataset._bucket_for(n, 0.8, 0.15) == "train")
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / "frames"
+            dataset = Path(root) / "dataset"
+            _make_frames(source, {name: 30})
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = split_dataset.split(source, dataset, 0.8, 0.15, 0.05, move=False)
+            self.assertEqual(code, 3)
+            self.assertIn("validation split is empty", output.getvalue())
+            self.assertIn("--by-frame", output.getvalue())
+
+    def test_by_frame_fills_every_split_even_from_one_video(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / "frames"
+            dataset = Path(root) / "dataset"
+            _make_frames(source, {"onlyvideo": 400})
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = split_dataset.split(source, dataset, 0.8, 0.15, 0.05, move=False, by_frame=True)
+            self.assertEqual(code, 0)
+            used = {_split_of(dataset, f"onlyvideo_frame_{index:05d}") for index in range(400)}
+            self.assertEqual(used, {"train", "valid", "test"})
 
 
 if __name__ == "__main__":

@@ -13,6 +13,13 @@ The choice is deterministic, so re-running the script (with new images added)
 keeps already-assigned images in their original split and only assigns
 new ones. No image ever moves between splits.
 
+A handful of videos can leave the validation split empty (each video lands in
+one split, and valid gets 15% of them). The script then says so and stops
+with an error, because training needs a validation set. More videos fix it.
+`--by-frame` splits frame by frame instead, which fills every split with
+as few as one video, and which lets near copies of a training image into
+validation: the score is then optimistic.
+
 Output layout (in-place merge under `dataset_dir`):
     dataset_dir/train/images,  dataset_dir/train/labels
     dataset_dir/valid/images,  dataset_dir/valid/labels
@@ -74,6 +81,7 @@ def split(
     valid_ratio: float,
     test_ratio: float,
     move: bool,
+    by_frame: bool = False,
 ) -> int:
     total = train_ratio + valid_ratio + test_ratio
     if abs(total - 1.0) > 0.001:
@@ -94,7 +102,7 @@ def split(
     counts = {"train": 0, "valid": 0, "test": 0, "missing_label": 0, "skipped_existing": 0}
 
     for img_path, label_path in _iter_pairs(src_images, src_labels):
-        bucket = _bucket_for(clip_of(img_path.stem), train_ratio, valid_ratio)
+        bucket = _bucket_for(img_path.stem if by_frame else clip_of(img_path.stem), train_ratio, valid_ratio)
 
         dst_img = dataset_dir / bucket / "images" / img_path.name
         dst_label = dataset_dir / bucket / "labels" / (img_path.stem + ".txt")
@@ -140,6 +148,15 @@ def split(
     print(f"  test   : {counts['test']:>6}")
     print(f"  skipped (already in dataset): {counts['skipped_existing']}")
     print(f"  missing label files         : {counts['missing_label']}")
+
+    # What the dataset holds now, not only what this run added: an earlier run may have filled a split.
+    held = {name: sum(1 for item in (dataset_dir / name / "images").iterdir() if item.suffix.lower() in IMAGE_EXTS) for name in ("train", "valid", "test")}
+    if held["valid"] == 0:
+        print("ERROR: the validation split is empty, and training needs one. Each video goes to one split, so a few videos can leave a split out.")
+        print("       Add more videos, or run again with --by-frame to split frame by frame (the validation score is then optimistic).")
+        return 3
+    if held["test"] == 0:
+        print("WARNING: the test split is empty. More videos fill it; --by-frame does too, at the cost of an optimistic score.")
     return 0
 
 
@@ -151,8 +168,9 @@ def main() -> int:
     parser.add_argument("--valid", type=float, default=0.15)
     parser.add_argument("--test", type=float, default=0.05)
     parser.add_argument("--move", action="store_true", help="Move files instead of copying (saves disk space)")
+    parser.add_argument("--by-frame", action="store_true", help="Split frame by frame instead of video by video (near copies then land on both sides)")
     args = parser.parse_args()
-    return split(args.source, args.dataset, args.train, args.valid, args.test, args.move)
+    return split(args.source, args.dataset, args.train, args.valid, args.test, args.move, args.by_frame)
 
 
 if __name__ == "__main__":
