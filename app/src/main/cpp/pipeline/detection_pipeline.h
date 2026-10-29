@@ -223,7 +223,7 @@ private:
     std::atomic<float> frameAgeMs_{0.0f};
     std::atomic<float> detectionsPerSecond_{0.0f};
     std::atomic<const char*> backend_{""};
-    int64_t lastBatchNs_ = 0;
+    std::atomic<int64_t> lastBatchNs_{0};   ///< When the newest result came; read by stats() from another thread.
     int64_t lastLogNs_ = 0;
 };
 

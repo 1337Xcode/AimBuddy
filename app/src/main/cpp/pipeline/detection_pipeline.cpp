@@ -25,6 +25,10 @@ constexpr int64_t kCameraLookIntervalNs = 30'000'000;
 /// How often debug builds print the statistics to the log.
 constexpr int64_t kStatsLogIntervalNs = 5'000'000'000;
 
+/// No result for this long means the screen is not changing (the capture delivers a frame only when it does): the
+/// rate is shown as 0 then, not the last one, and the average starts again with the next results.
+constexpr int64_t kIdleAfterNs = 1'000'000'000;
+
 /// With a colour to look for there is no model to say how large the region should be: it is sized as for a model this big.
 constexpr int kColourModelSize = 256;
 
@@ -407,12 +411,17 @@ void DetectionPipeline::recordStats(const DetectionBatch& batch, int64_t finishe
                        std::memory_order_relaxed);
     const float ageMs = static_cast<float>(finishedNs - batch.captureNs) * 1e-6f;
     frameAgeMs_.store(smooth(frameAgeMs_.load(std::memory_order_relaxed), ageMs), std::memory_order_relaxed);
-    if (lastBatchNs_ > 0 && finishedNs > lastBatchNs_) {
-        const float perSecond = 1e9f / static_cast<float>(finishedNs - lastBatchNs_);
-        detectionsPerSecond_.store(smooth(detectionsPerSecond_.load(std::memory_order_relaxed), perSecond),
-                                   std::memory_order_relaxed);
+    const int64_t previousNs = lastBatchNs_.load(std::memory_order_relaxed);
+    if (previousNs > 0 && finishedNs > previousNs) {
+        if (finishedNs - previousNs > kIdleAfterNs) {
+            detectionsPerSecond_.store(0.0f, std::memory_order_relaxed);   // the rate over a pause says nothing about now
+        } else {
+            const float perSecond = 1e9f / static_cast<float>(finishedNs - previousNs);
+            detectionsPerSecond_.store(smooth(detectionsPerSecond_.load(std::memory_order_relaxed), perSecond),
+                                       std::memory_order_relaxed);
+        }
     }
-    lastBatchNs_ = finishedNs;
+    lastBatchNs_.store(finishedNs, std::memory_order_relaxed);
 
     if (finishedNs - lastLogNs_ >= kStatsLogIntervalNs) {
         const Stats snapshot = stats();
@@ -515,7 +524,9 @@ DetectionPipeline::Stats DetectionPipeline::stats() const {
     Stats stats;
     stats.inferenceMs = inferenceMs_.load(std::memory_order_relaxed);
     stats.frameAgeMs = frameAgeMs_.load(std::memory_order_relaxed);
-    stats.detectionsPerSecond = detectionsPerSecond_.load(std::memory_order_relaxed);
+    const int64_t lastNs = lastBatchNs_.load(std::memory_order_relaxed);
+    const bool idle = lastNs > 0 && steadyNowNs() - lastNs > kIdleAfterNs;
+    stats.detectionsPerSecond = idle ? 0.0f : detectionsPerSecond_.load(std::memory_order_relaxed);
     stats.replacedFrames = capture_.mailbox().overwrittenCount();
     stats.backend = backend_.load(std::memory_order_relaxed);
     return stats;
