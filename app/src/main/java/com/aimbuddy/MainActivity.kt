@@ -29,6 +29,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -220,6 +221,8 @@ class MainActivity : AppCompatActivity() {
         var screen by rememberSaveable { mutableStateOf(if (opensOnModels) Screen.MODELS else Screen.HOME) }
         // The touch access screen opens from Home and from Settings, and goes back to the one it came from.
         var touchReturn by rememberSaveable { mutableStateOf(Screen.HOME) }
+        // Settings is left for the touch access screen and comes back to where it was scrolled; from Home it opens at the top.
+        val settingsListState = rememberLazyStaggeredGridState()
         LaunchedEffect(Unit) {
             if (opensOnModels) {
                 markModelGuideShown()
@@ -281,7 +284,10 @@ class MainActivity : AppCompatActivity() {
                         },
                         onStop = { AssistService.stop(this@MainActivity) },
                         onOpenModels = { screen = Screen.MODELS },
-                        onOpenSettings = { screen = Screen.SETTINGS },
+                        onOpenSettings = {
+                            settingsListState.requestScrollToItem(0)
+                            screen = Screen.SETTINGS
+                        },
                         onTouchAccess = {
                             touchReturn = Screen.HOME
                             screen = Screen.TOUCH
@@ -320,6 +326,7 @@ class MainActivity : AppCompatActivity() {
                                 screen = Screen.TOUCH
                             },
                         ),
+                        listState = settingsListState,
                         onBack = { screen = Screen.HOME },
                     )
                     Screen.TOUCH -> TouchAccessScreen(

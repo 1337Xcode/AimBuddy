@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -101,12 +102,19 @@ fun SettingsScreen(
     updateStatus: UpdateStatus,
     autoUpdateCheck: Boolean,
     actions: SettingsActions,
+    listState: LazyStaggeredGridState,
     onBack: () -> Unit,
 ) {
     var confirmReset by remember { mutableStateOf(false) }
     var showNotices by remember { mutableStateOf(false) }
 
-    ScreenScaffold(title = stringResource(R.string.settings_title), onBack = onBack, columnWidth = 340.dp, maxWidth = 1200.dp) {
+    ScreenScaffold(
+        title = stringResource(R.string.settings_title),
+        onBack = onBack,
+        columnWidth = 340.dp,
+        maxWidth = 1200.dp,
+        gridState = listState,
+    ) {
         item { OverlayGroup(settings, actions) }
         item { DetectionGroup(settings, actions) }
         item { AimGroup(settings, actions) }

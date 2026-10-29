@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
@@ -90,7 +91,8 @@ fun screenPadding(): PaddingValues {
  * hairline appears under the bar once the content has moved beneath it.
  *
  * The content is laid out in columns at least [columnWidth] wide, as many as fit, up to [maxWidth]
- * across. A phone held upright gets one column and the same phone held sideways gets two.
+ * across. A phone held upright gets one column and the same phone held sideways gets two. The caller can hold
+ * the [gridState] to keep the scroll position when the screen is left and opened again.
  *
  * In a window too short for roomy rows (a phone held sideways) the rows sit closer together and the bar
  * slides away while the content scrolls forward, which gives the content back about a sixth of its height.
@@ -102,12 +104,12 @@ fun ScreenScaffold(
     modifier: Modifier = Modifier,
     columnWidth: Dp = ContentMaxWidth,
     maxWidth: Dp = ContentMaxWidth,
+    gridState: LazyStaggeredGridState = rememberLazyStaggeredGridState(),
     actions: @Composable RowScope.() -> Unit = {},
     content: LazyStaggeredGridScope.() -> Unit,
 ) {
     val insets = WindowInsets.safeDrawing.asPaddingValues()
     val direction = LocalLayoutDirection.current
-    val gridState = rememberLazyStaggeredGridState()
     val scrolled by remember { derivedStateOf { gridState.canScrollBackward } }
     val tight = LocalConfiguration.current.screenHeightDp < ShortWindowHeight.value
     val slide = remember { TopBarSlide(canHide = { gridState.canScrollForward }) }
