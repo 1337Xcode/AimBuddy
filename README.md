@@ -450,6 +450,8 @@ stateDiagram-v2
 
 The app carries no model: the APK is about 7 MB and a first run opens on the Models page, where AimBuddy General (9.2 MB) is one tap away. The store is a static `model/index.json` served from this repository, listing each model's files with their size and SHA-256. Every file is checked against those figures, a model replaces the old one only when it is complete, and a failed or cancelled download leaves the working model alone. A pair of `.param` and `.bin` files can be imported too, and is kept only if the detector can load it. See [model/README.md](model/README.md).
 
+AimBuddy General 2 is made for phones first. It learned from Free Fire and PUBG Mobile footage and from four PC shooters, and it has a class for the player's own character, which the app leaves out. It reads the same 256 px square as version 1 and takes as long (14.2 ms a frame against 15.2 ms on a laptop processor, the two run in turn). It was judged on 602 views from Free Fire and PUBG Mobile videos it never saw, with 57 players in them counted by eye. At the default confidence it found 30 of the players, where version 1 found 13 and sunxds 17. It boxed the player's own character in none of the views, where version 1 did in 111, and it drew 6 boxes on things that are not people (a pylon, a distant car and a figure painted on a car), where version 1 drew 2. On the test pictures of four PC sets, which come from the same games it trained on, it found 86% of the players in CS:GO, 78% in Apex Legends, 97% in Halo Infinite and 68% in Far Cry 6, where version 1 found 18%, 5%, 0% and 58%. [docs/Training.md](docs/Training.md#aimbuddy-general-one-model-for-every-shooter) says how it is built and judged.
+
 The app also reads the project's GitHub releases and offers a newer build of itself, and installs it only if it passes every check:
 
 ```mermaid
@@ -573,7 +575,7 @@ Each build generates its own launcher icon from a random seed; `-Paimbuddy.iconS
 
 ## Credits
 
-[NCNN](https://github.com/Tencent/ncnn) runs the model and [Dear ImGui](https://github.com/ocornut/imgui) draws the in-game menu. [Shizuku](https://github.com/RikkaApps/Shizuku) provides touch access without root. The app is built with Jetpack Compose and the Geist font. The detection models are made with [Ultralytics](https://github.com/ultralytics/ultralytics) YOLO. The full list, with licenses, is under Settings, About, Open source notices.
+[NCNN](https://github.com/Tencent/ncnn) runs the model and [Dear ImGui](https://github.com/ocornut/imgui) draws the in-game menu. [Shizuku](https://github.com/RikkaApps/Shizuku) provides touch access without root. The app is built with Jetpack Compose and the Geist font. The detection models are made with [Ultralytics](https://github.com/ultralytics/ultralytics) YOLO. AimBuddy General learned from video labelled by sunxds, a model from [sunone_aimbot](https://github.com/SunOner/sunone_aimbot) by SunOner, and from the CS:GO, Apex Legends, Halo Infinite and Far Cry 6 sets of [Roboflow 100](https://universe.roboflow.com/roboflow-100) (CC BY 4.0); [docs/Training.md](docs/Training.md#aimbuddy-general-one-model-for-every-shooter) lists every source. The full list, with licenses, is under Settings, About, Open source notices.
 
 ## License
 

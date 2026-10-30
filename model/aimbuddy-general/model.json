@@ -1,8 +1,8 @@
 {
   "title": "AimBuddy General",
-  "description": "Finds people in most 3D shooters without training for your game.",
+  "description": "Finds players in Android and PC shooters, first and third person, and leaves out your own character.",
   "author": "AimBuddy",
-  "version": 1,
-  "roles": ["body"],
+  "version": 2,
+  "roles": ["body", "head", "ignore"],
   "inputSize": 256
 }

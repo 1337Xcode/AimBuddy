@@ -4,23 +4,23 @@
     {
       "id": "aimbuddy-general",
       "title": "AimBuddy General",
-      "description": "Finds people in most 3D shooters without training for your game.",
+      "description": "Finds players in Android and PC shooters, first and third person, and leaves out your own character.",
       "author": "AimBuddy",
-      "version": 1,
+      "version": 2,
       "param": {
         "path": "aimbuddy-general/model.param",
-        "size": 26390,
-        "sha256": "15149911a4b27a2269038ac9d7de9620674dd6827f6fb76aeb4f6892adfa110c"
+        "size": 26381,
+        "sha256": "fcd5aa28c45e87c19f7187abfa44670c775432c6df52b3adc74d7f1e31190b08"
       },
       "bin": {
         "path": "aimbuddy-general/model.bin",
-        "size": 9652264,
-        "sha256": "c9258526b4c1ecccf919fc79ff2484eb21c7737e159bec3dca3938565916e0c5"
+        "size": 9577420,
+        "sha256": "535a497c27e72c3ae7a02c703a415e22b6e2a3d555bf5225af398f3c5797d1fd"
       },
       "profile": {
         "path": "aimbuddy-general/model.json",
-        "size": 200,
-        "sha256": "16f5c87ff8872a401cc6d0cd76d6807dac1c2c74f758380c445a57c5fd6151b6"
+        "size": 254,
+        "sha256": "431fc039ddad148f9042284de64cd7198b27054918e1074ce60467571551b0ed"
       }
     }
   ]
