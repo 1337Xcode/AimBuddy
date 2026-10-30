@@ -117,30 +117,34 @@ bool makeCandidate(float cx, float cy, float w, float h, float score, int classI
     return box->right - box->left >= kMinBoxSidePx && box->bottom - box->top >= kMinBoxSidePx;
 }
 
-/// Reads rows of [x1, y1, x2, y2, score, class] that the model already filtered.
+/// Reads rows of [x1, y1, x2, y2, score, class] that the model already filtered. Boxes of ignored classes go to
+/// `ignored`: they are never reported, but a surer one takes out a body box on the same figure (see decodeDetections).
 void collectEndToEnd(const float* data, int rows, int cols, const DecodeSpec& spec,
-                     const DecodeParams& params, const ModelProfile& profile, CandidateList& list) {
+                     const DecodeParams& params, const ModelProfile& profile, CandidateList& list,
+                     CandidateList& ignored) {
     const float scale = spec.normalized ? static_cast<float>(params.modelSize) : 1.0f;
     const float size = static_cast<float>(params.modelSize);
     for (int i = 0; i < rows; ++i) {
         const float* row = data + i * cols;
         const float score = row[4];
         const int classId = static_cast<int>(row[5] + 0.5f);
-        if (!(score >= params.minScore) || profile.roleOf(classId) == ClassRole::kIgnore) {
+        if (!(score >= params.minScore)) {
             continue;
         }
         ModelBox box;
         const float w = row[2] - row[0];
         const float h = row[3] - row[1];
         if (makeCandidate((row[0] + row[2]) * 0.5f, (row[1] + row[3]) * 0.5f, w, h, score, classId, scale, size, &box)) {
-            list.add(box);
+            (profile.roleOf(classId) == ClassRole::kIgnore ? ignored : list).add(box);
         }
     }
 }
 
-/// Reads the raw export: every anchor carries a centre-form box and one score per class.
+/// Reads the raw export: every anchor carries a centre-form box and one score per class. Anchors whose best class is
+/// ignored go to `ignored`, as for collectEndToEnd.
 void collectAnchors(const float* data, int rows, int cols, const DecodeSpec& spec,
-                    const DecodeParams& params, const ModelProfile& profile, CandidateList& list) {
+                    const DecodeParams& params, const ModelProfile& profile, CandidateList& list,
+                    CandidateList& ignored) {
     const bool channelsFirst = spec.layout == OutputLayout::kChannelsFirst;
     const int anchors = channelsFirst ? cols : rows;
     const float scale = spec.normalized ? static_cast<float>(params.modelSize) : 1.0f;
@@ -157,7 +161,7 @@ void collectAnchors(const float* data, int rows, int cols, const DecodeSpec& spe
                 bestClass = c;
             }
         }
-        if (bestScore < params.minScore || profile.roleOf(bestClass) == ClassRole::kIgnore) {
+        if (bestScore < params.minScore) {
             continue;
         }
         float cx, cy, w, h;
@@ -174,9 +178,20 @@ void collectAnchors(const float* data, int rows, int cols, const DecodeSpec& spe
         }
         ModelBox box;
         if (makeCandidate(cx, cy, w, h, bestScore, bestClass, scale, size, &box)) {
-            list.add(box);
+            (profile.roleOf(bestClass) == ClassRole::kIgnore ? ignored : list).add(box);
         }
     }
+}
+
+/// True when a box of an ignored class, surer than this body box, lies on the same figure: the model took the figure
+/// for, say, the player's own character more than for an enemy, and the weaker reading must not make it a target.
+bool coveredByIgnored(const ModelBox& body, CandidateList& ignored, float overlap) {
+    for (const ModelBox& other : ignored) {
+        if (other.score > body.score && cornerIou(other, body) > overlap) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace
@@ -229,13 +244,16 @@ int decodeDetections(const float* data, int rows, int cols, const DecodeSpec& sp
     }
 
     CandidateList candidates;
+    CandidateList ignored;
     if (spec.layout == OutputLayout::kEndToEnd) {
-        collectEndToEnd(data, rows, cols, spec, params, profile, candidates);
+        collectEndToEnd(data, rows, cols, spec, params, profile, candidates, ignored);
     } else {
-        collectAnchors(data, rows, cols, spec, params, profile, candidates);
+        collectAnchors(data, rows, cols, spec, params, profile, candidates, ignored);
     }
 
-    // Strongest first, then keep a box unless a stronger box of the same class covers it.
+    // Strongest first, then keep a box unless a stronger box of the same class covers it, or, for a body, a stronger
+    // box of an ignored class: neighbouring anchors on the player's own character can disagree on its class, and
+    // merging class by class kept the weaker body box among them.
     std::sort(candidates.begin(), candidates.end(),
               [](const ModelBox& a, const ModelBox& b) { return a.score > b.score; });
     int written = 0;
@@ -245,12 +263,12 @@ int decodeDetections(const float* data, int rows, int cols, const DecodeSpec& sp
         }
         bool duplicate = false;
         if (spec.layout != OutputLayout::kEndToEnd) {
-            for (int k = 0; k < written; ++k) {
-                if (out[k].classId == candidate.classId && cornerIou(out[k], candidate) > params.nmsIou) {
-                    duplicate = true;
-                    break;
-                }
+            for (int k = 0; k < written && !duplicate; ++k) {
+                duplicate = out[k].classId == candidate.classId && cornerIou(out[k], candidate) > params.nmsIou;
             }
+        }
+        if (!duplicate && profile.roleOf(candidate.classId) == ClassRole::kBody) {
+            duplicate = coveredByIgnored(candidate, ignored, params.nmsIou);
         }
         if (!duplicate) {
             out[written++] = candidate;

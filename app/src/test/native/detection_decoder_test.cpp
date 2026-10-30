@@ -1,3 +1,4 @@
+#include <cmath>
 #include <vector>
 
 #include "core/detection_decoder.h"
@@ -115,6 +116,24 @@ TEST(decoder_drops_classes_the_profile_ignores) {
                                    DecodeParams(), profile, out, 8);
     CHECK(n == 1);
     CHECK(n == 1 && out[0].classId == 0);
+}
+
+TEST(decoder_drops_a_body_box_that_a_surer_ignored_box_covers) {
+    // Neighbouring anchors on the player's own character disagree: most call it the own character, one an enemy.
+    // The weaker enemy reading must not become a target; an enemy beside it and one the model is surer of stay.
+    RawTensor tensor(3, 40);
+    tensor.setAnchor(2, 100, 150, 60, 180, 2, 0.85f);  // the own character
+    tensor.setAnchor(3, 102, 152, 58, 176, 0, 0.55f);  // the same figure read as a body, less sure
+    tensor.setAnchor(9, 200, 100, 30, 80, 0, 0.6f);    // an enemy beside it
+    tensor.setAnchor(20, 40, 150, 50, 160, 2, 0.5f);   // a teammate marked ignore...
+    tensor.setAnchor(21, 41, 151, 50, 160, 0, 0.7f);   // ...that the model is surer is an enemy
+    const ModelProfile profile = ModelProfile::parseRoles("body,head,ignore", 3);
+    ModelBox out[8];
+    const int n = decodeDetections(tensor.data.data(), tensor.rows(), tensor.anchors, specFor(tensor),
+                                   DecodeParams(), profile, out, 8);
+    CHECK(n == 2);
+    CHECK(n == 2 && out[0].classId == 0 && out[1].classId == 0);
+    CHECK(n == 2 && std::fabs(out[0].score - 0.7f) < 1e-4f && std::fabs(out[1].score - 0.6f) < 1e-4f);
 }
 
 TEST(decoder_scales_normalised_coordinates_to_pixels) {

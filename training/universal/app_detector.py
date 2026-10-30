@@ -1,7 +1,8 @@
 """An exported model run the way the app runs it: the square resized to the model's input with bilinear filtering,
 RGB, scaled to 0..1, through NCNN on the processor. raw() gives the output tensor, for the app's own decoder
 (clip_replay.cpp reads it). detect() decodes it as the app does: for each anchor its best class, a minimum score,
-then per-class merging of boxes that overlap by more than 0.5; classes whose role is ignore are dropped.
+then per-class merging of boxes that overlap by more than 0.5; classes whose role is ignore are dropped, after taking
+out any body box that a surer ignored box overlaps by more than 0.5 (the same figure, read as the own character).
 """
 import json
 import pathlib
@@ -47,13 +48,13 @@ class AppDetector:
         best = scores.argmax(axis=1)
         best_score = scores[np.arange(len(best)), best]
         scale = self.size if np.abs(boxes).max() <= 2.0 else 1.0   # some exports give fractions of the input
-        found = []
-        for i in np.argsort(-best_score):
+        found, ignored = [], []
+        for i in np.argsort(-best_score):   # strongest first, so an ignored box seen before a body box is surer
             score = float(best_score[i])
             if score < min_score:
                 break
             role = self.roles[best[i]] if best[i] < len(self.roles) else "ignore"
-            if role != "body":
+            if role not in ("body", "ignore"):
                 continue
             cx, cy, w, h = boxes[i] * scale
             x0, y0 = max(0.0, cx - w / 2), max(0.0, cy - h / 2)
@@ -61,7 +62,9 @@ class AppDetector:
             if x1 - x0 < 2 or y1 - y0 < 2:
                 continue
             box = (x0 / self.size, y0 / self.size, x1 / self.size, y1 / self.size, score)
-            if all(iou(kept, box) <= merge_iou for kept in found):
+            if role == "ignore":
+                ignored.append(box)
+            elif all(iou(kept, box) <= merge_iou for kept in found + ignored):
                 found.append(box)
         return found
 
