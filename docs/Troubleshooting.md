@@ -18,7 +18,7 @@ The Home screen says what is wrong in a sentence. What each one means:
 |---------|---------------|
 | Display over other apps is not allowed. | Open Settings, find AimBuddy in the list of apps that may display over other apps, and turn it on. Then press Start. |
 | Screen capture was not allowed. | Press Start again and accept the system's screen capture question. The assist needs to see the whole screen to see the game. |
-| Screen capture ended. | The system stopped the screen capture. Press Start again. |
+| Screen capture ended. | The system stopped the screen capture. Android lets one app capture the screen at a time, so starting a screen recording or a cast stops AimBuddy, and so does locking the screen or stopping the sharing from the status bar. Press Start again once the recording is over. |
 | The detection model could not be loaded. | The chosen model's files are missing or are not a valid NCNN model. Download AimBuddy General again under Models, or import the model again. |
 | Get a model first. | The app carries no model: the first one comes from the Store tab of the Models page (a small download) or from files you import. Press Start again once it is there. |
 | AimBuddy could not start. | Something unexpected failed. Run `adb logcat -s AssistService:W AimBuddy_Native:E` and look for the first error. |
@@ -75,7 +75,8 @@ Other things you may notice:
 | The aim goes up when the target is below | Switch on Invert vertical. |
 | The assist's finger keeps lifting and landing again | The game does not answer it. The touch area is probably on something that does not turn the view, such as a button. Move it in the in-game menu to where a finger would turn the camera, away from your own thumbs. |
 | The assist turns towards my own weapon or character | The detector takes it for an enemy. A box that stays put on the screen while the camera turns past it can never be reached, so after about half a second the assist gives up on it for a few seconds, longer each time, and the box is no longer drawn. A model trained on your game stops it for good, see [Training](Training.md). |
-| It jumps between two targets | Choose another Target pick. The assist already keeps its target until another is clearly better. |
+| The gun fires by itself | The touch area is over the fire button, or another button, in your game's layout, and the extra finger presses it whenever it touches down. Move the touch area to an empty part of the screen that you swipe to look around: in-game menu, second tab, Touch area, Move or resize on screen. |
+| It jumps between two targets | Choose another Pick target by, or Sticky under Switching targets. The assist already keeps its target until another is clearly better. The model cannot tell teammates from enemies yet, so a teammate near the crosshair can take the target. |
 | It aims at the wrong part | Change Aim at. A model that detects heads is aimed at exactly; for one that does not, the point is worked out from the shape of the box. |
 
 ## The overlay

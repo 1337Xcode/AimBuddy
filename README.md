@@ -270,8 +270,8 @@ The overlay is a window of marks over the game: where the people are, what the c
 | Aim point | A small diamond on the point the controller steers toward |
 | Blue square | The area the detector reads, drawn just outside it so the outline is never part of what the detector sees |
 | Red circle | How far steering reaches. It is dimmer while steering is off |
-| Touch area | The circle where the extra finger rests, so the player can keep a thumb away from it |
-| Line to the nearest target | A line from the crosshair to the target nearest it |
+| Touch area | The circle where the extra finger rests, so the player can keep a thumb and the game's buttons away from it: over the fire button, the finger fires |
+| Line to the nearest target | A line to the target nearest the crosshair, from the crosshair or from the middle of the top or bottom edge of the screen |
 | Target count | How many targets are in view |
 | Performance readout | Detections a second, the age of a result, and whether the CPU, the GPU or the colour finder produced it |
 
