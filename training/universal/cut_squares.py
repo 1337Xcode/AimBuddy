@@ -221,17 +221,20 @@ def square_round(box, width, height, rng):
 
 
 def frames_of(path, indices):
-    """Yields (index, frame) for the wanted frame indices of a video, in order."""
+    """Yields (index, frame) for the wanted frame indices of a video, in order. Stops the build if one cannot be read:
+    the graphics card's decoder can fail when several programs use it, and a frame left out would leave the labels of
+    the two passes over the video out of step."""
     capture = cv2.VideoCapture(str(path), cv2.CAP_FFMPEG, [cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY])
     wanted, index, last = set(indices), -1, max(indices) if indices else -1
     while index < last:
         index += 1
         if not capture.grab():
-            break
+            raise SystemExit(f"{path}: frame {index} could not be read")
         if index in wanted:
             ok, frame = capture.retrieve()
-            if ok:
-                yield index, frame
+            if not ok:
+                raise SystemExit(f"{path}: frame {index} could not be decoded")
+            yield index, frame
     capture.release()
 
 

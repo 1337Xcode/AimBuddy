@@ -71,6 +71,9 @@ def label_video(path, every_s, broadcast, models, device):
             grey_out_broadcast(frame)
         frames.append({"index": index, "boxes": teacher_boxes(frame, models, device)})
     capture.release()
+    if not frames:
+        # the graphics card's decoder can refuse a video while other programs use it
+        raise SystemExit(f"{path}: no frame could be read")
     return size, frames
 
 
