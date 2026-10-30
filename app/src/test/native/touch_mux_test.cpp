@@ -437,6 +437,21 @@ TEST(mux_keeps_ids_apart_when_the_screen_gives_a_new_finger_the_id_the_extra_fin
     CHECK(rig.reader.problems().empty());
 }
 
+TEST(mux_keeps_ids_apart_on_a_screen_that_declares_no_range_of_ids) {
+    // The driver declares ids 0 to 0 but numbers its fingers 0, 1, 2 and so on. With two fingers down the extra one
+    // still needs an id of its own.
+    TouchDeviceInfo info = makeDeviceInfo();
+    info.axis(kAbsMtTrackingId) = {true, 0, 0};
+    Rig rig(info);
+    rig.screen.down(0, 0, 100, 100);
+    rig.screen.down(1, 1, 300, 300);
+    rig.mux.aimDown(4000, 9000);
+
+    const SeenFrame& last = rig.reader.lastFrame();
+    CHECK(last.contacts.size() == 3);
+    CHECK(rig.reader.problems().empty());
+}
+
 TEST(mux_gives_the_extra_finger_a_new_id_each_time) {
     Rig rig;
     rig.mux.aimDown(500, 500);

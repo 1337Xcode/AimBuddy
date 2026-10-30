@@ -293,11 +293,9 @@ int VirtualTouchscreen::create(const TouchscreenInfo& real, int slotCount) {
         description.absfuzz[code] = range.fuzz;
         description.absflat[code] = range.flat;
     }
-    // Some drivers give the tracking id no range at all; a contact id needs one.
-    if (description.absmax[ABS_MT_TRACKING_ID] <= description.absmin[ABS_MT_TRACKING_ID]) {
-        description.absmin[ABS_MT_TRACKING_ID] = 0;
-        description.absmax[ABS_MT_TRACKING_ID] = 65535;
-    }
+    // The merged screen's contact ids are its own (TouchMux gives them out), in a range of their own.
+    description.absmin[ABS_MT_TRACKING_ID] = 0;
+    description.absmax[ABS_MT_TRACKING_ID] = kMaxContactId;
 
     if (write(fd, &description, sizeof(description)) != static_cast<ssize_t>(sizeof(description)) ||
         ioctl(fd, UI_DEV_CREATE) < 0) {

@@ -92,9 +92,8 @@ bool TouchMux::outputIdInUse(int32_t id) const {
 }
 
 int32_t TouchMux::nextFreeOutputId(int32_t avoid) {
-    const int32_t maximum = std::max(info_.axis(kAbsMtTrackingId).maximum, 1);
     for (int attempt = 0; attempt <= kMaxRealSlots + 1; ++attempt) {
-        lastPickedId_ = (lastPickedId_ + 1) % (maximum + 1);
+        lastPickedId_ = (lastPickedId_ + 1) % (kMaxContactId + 1);
         if (lastPickedId_ != avoid && !outputIdInUse(lastPickedId_)) {
             break;
         }

@@ -11,6 +11,10 @@ namespace aimbuddy::touch {
 /// Most contacts a touchscreen can report. Android itself stops at 16 pointers.
 constexpr int kMaxRealSlots = 32;
 
+/// Largest contact id on the merged screen, which declares ids 0 to this whatever the real screen declares: some
+/// drivers give the id no range at all, or one too small for all their fingers and the extra one.
+constexpr int32_t kMaxContactId = 65535;
+
 /// Value range of one axis of the touchscreen.
 struct AxisRange {
     bool present = false;
