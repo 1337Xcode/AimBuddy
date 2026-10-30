@@ -371,24 +371,26 @@ The video uploaders state no license, so check that you may use the videos befor
 
 Every picture is brought to what the app feeds the model:
 
-- A square round the screen centre, 0.44 to 0.78 of the frame height on a side, resized to 320 px. The app reads 1 to 1.75 times the model's input size from a capture usually 720 px tall and shrinks it to the input, so a player has the same size in pixels in training as on the phone, whichever input size the model ships with. A second square per frame sits a little aside, as if the player looked away from the target.
+- A square round the screen centre, 0.44 to 0.78 of the frame height on a side, resized to 320 px. The app reads 1 to 1.75 times the model's input size from a capture usually 720 px tall and shrinks it to the input, so a player has the same size in pixels in training as on the phone, whichever input size the model ships with. A second square per frame sits a little aside, as if the player looked away from the target. Every player at least 5% of the frame tall gets a third square with the player 15 to 60% of its height and anywhere in it, so near and far players are both common.
 - The PC sets were stretched to 640 by 640 by their publisher. They are put back to 16:9 before squares are cut, so a player is as wide as in the game.
 - Three classes: 0 body (any player who is not the player), 1 head (of such a body), 2 self (the player's own character). `model.json` maps them to `body`, `head` and `ignore`.
-- What no source vouches for is painted grey (114) and taught as neither a target nor background: a person only one teacher half believes in, and a box cut to a sliver by the square's edge.
+- What no source vouches for is painted grey (114) and taught as neither a target nor background: a person the teachers cannot vouch for, a figure a broadcast paints in one flat colour, a person-like thing that stays at one place on the screen through a video (crouch buttons, gun icons, a broadcast's player cards: five frames and 3% of the video at the same place), and a box cut to a sliver by the square's edge. Grey never covers a labelled player.
 - Broadcast overlays (team lists, player cameras, scoreboards) are painted grey before anything looks at the frame, and a PUBG Mobile square that still shows a face on a broadcast panel is left out.
 - A frame that differs from the last one kept by less than 3 grey levels on average is skipped, and only 35% of the squares with nobody in them are kept, so near copies and empty scenery do not outweigh the players.
+- Players are seen in motion and behind cover: 15% of the training squares are smeared along a random direction, as by a fast turn, and in another 15% one player is partly covered by a piece of empty scenery from the same square, from one side or from below, with its label cut to what stays in view.
 
-The built set has 17,156 training squares (7,864 Free Fire, 2,764 PUBG Mobile, 6,528 PC) and 2,588 validation squares. The training squares hold 7,429 bodies, 1,423 heads and 8,294 own characters.
+General 2 was built by the first version of these rules (`build_dataset.py` and `teachers.py` at commit 9c568cd): one square at the centre and one aside per frame, frames every 3 s of Free Fire, two teachers, and every tall person low in the middle taken for the own character. Its set had 17,156 training squares (7,864 Free Fire, 2,764 PUBG Mobile, 6,528 PC) and 2,588 validation squares.
 
 ### Teacher labels for the videos
 
-Nobody labelled the videos, so two models label them (`training/universal/teachers.py`):
+Nobody labelled the videos, so four models label them. `training/universal/label_frames.py` runs them over the sampled frames (one a second of Free Fire, two a second of the PUBG Mobile broadcasts, four a second of the short highlights) and keeps every box in a cache; `training/universal/cut_squares.py` decides the labels from the cache:
 
-- sunxds 0.8.0 from [sunone_aimbot](https://github.com/SunOner/sunone_aimbot) by SunOner, a YOLO12n trained on PC shooters with the classes player and head, runs on the whole frame at 1.25 times its width, with flips and three scales. A player it scores 0.25 or more is a body. One scored 0.12 to 0.25 is a body only when a COCO person covers it (overlap 0.4 or more), and unsure otherwise.
-- YOLO11x trained on COCO adds people sunxds missed, as unsure only, because it also finds people who are not players.
-- A person low in the frame, round the middle and tall (its box reaches below 0.72 of the height, is at least 0.18 of it tall, and has its centre between 0.28 and 0.66 of the width) is the own character, whichever model found it.
+- sunxds 0.8.0 from [sunone_aimbot](https://github.com/SunOner/sunone_aimbot) by SunOner, a YOLO12n trained on PC shooters with the classes player and head, on the whole frame at 1.25 times its width, with flips and three scales.
+- YOLO11x trained on COCO, people only.
+- AimBuddy General 2, and sunxds fine-tuned on General 2's squares, on the whole frame at its width with flips and three scales. They find mobile players that the first two score low.
+- A person is a player when sunxds scores it 0.25 or more, when both fine-tuned models score it 0.45 or more, when one of them scores it 0.40 and the COCO model 0.35, or when sunxds scores it 0.12 and the COCO model 0.35 or a fine-tuned model 0.40. Less than that, down to sunxds 0.12, COCO 0.35 or a fine-tuned model 0.25, makes it unsure (grey). A head of 0.25 or more from sunxds or a fine-tuned model inside a player is its head; the PC sets without heads take sunxds's heads of 0.30 or more inside a labelled body.
 
-sunxds scores players in mobile games low, from 0.25 to 0.6, so on its own at the app's default of 0.5 it misses many of them. As a teacher it is trusted from 0.25.
+The own character is decided per video (`own_character.py`). A third-person camera follows the player, so the own character stands low in the middle of the frame (its box reaches below 0.72 of the height, is at least 0.18 of it tall, and has its centre between 0.26 and 0.68 of the width) and looks the same from frame to frame. A person there is the own character when at least 6 other frames of the video, and 4% of those with someone there, show the same look: the colours of the upper and the lower half of the figure. A teammate the camera follows after the player is knocked out counts as the own character too, since the app never has to aim at the figure the camera follows. A person there who looks different is a player when the frame also shows the own character apart from them, and unsure when it does not, since it may be the own character greyed out after a knock-down or half hidden by a kill banner. A box that is mostly a piece of the own character is left to the own character's label. General 2's teacher took every tall person low in the middle for the own character, and on the judged views General 2 called 7 close players the own character.
 
 ### Training and export
 
@@ -428,14 +430,14 @@ hf download amer224/freefire-realgame-ds --repo-type dataset --include "videos/*
 Move-Item sources\freefire-ds\videos sources\freefire
 hf download oreo2000/pubgm-videos --repo-type dataset --include "*.mp4" --local-dir sources\pubgm
 hf download LibreYOLO/csgo-videogame --repo-type dataset --local-dir sources\pc\csgo-videogame
-python training\universal\build_dataset.py --only videos --videos sources --pc sources\pc --out training\outputs\universal\dataset --sunxds sunxds_0.8.0.pt --coco yolo11x.pt
-python training\universal\build_dataset.py --only pc --videos sources --pc sources\pc --out training\outputs\universal\dataset --sunxds sunxds_0.8.0.pt --coco yolo11x.pt
+python training\universal\label_frames.py --videos sources --pc sources\pc --cache training\outputs\universal\cache --sunxds sunxds_0.8.0.pt --coco yolo11x.pt --gen2 general2.pt --sunft sunxds-ft.pt
+python training\universal\cut_squares.py --cache training\outputs\universal\cache --videos sources --pc sources\pc --out training\outputs\universal\dataset
 python training\universal\train.py --base yolo26n.pt --data training\outputs\universal\dataset\data.yaml
-python training\universal\export.py training\outputs\universal\runs\universal\weights\best.pt training\outputs\universal\export 256 2
+python training\universal\export.py training\outputs\universal\runs\universal\weights\best.pt training\outputs\universal\export 256 <model version>
 python training\universal\score_pc_tests.py sources\pc training\outputs\universal\export
 ```
 
-Download the other three PC sets the same way. `build_dataset.py` reads `<videos>\freefire\<id>.mp4` and `<videos>\pubgm\<name>.mp4`, named as on Hugging Face. `yolo26n.pt` and `yolo11x.pt` are the Ultralytics COCO weights, and `sunxds_0.8.0.pt` is in the `models` folder of sunone_aimbot. The published set was built in these two passes, each starting the random squares afresh, so one pass with `--only all` cuts other squares. Labelling, which runs both teachers on every sampled frame, is the slow step.
+Download the other three PC sets the same way. `label_frames.py` reads `<videos>\freefire\<id>.mp4` and `<videos>\pubgm\<name>.mp4`, named as on Hugging Face. `yolo26n.pt` and `yolo11x.pt` are the Ultralytics COCO weights, `sunxds_0.8.0.pt` is in the `models` folder of sunone_aimbot, `general2.pt` is General 2's training output, and `sunxds-ft.pt` is `train.py --base sunxds_0.8.0.pt` on General 2's set. Running the teachers is the slow step, a few hours on a laptop graphics card. It skips what its cache already holds, so it can be stopped and run again, and `cut_squares.py` can be changed and rerun without running the teachers again.
 
 ## Common Issues
 
