@@ -169,26 +169,40 @@ class ModelStoreRepository(
         if (file.isFile) {
             return file
         }
-        // Through a temporary file, so a download that was cut short is never taken for the picture.
-        val temporary = File(file.path + ".part")
+        // Through a temporary file of its own, so a download that was cut short is never taken for the picture, and two
+        // visits to the store that fetch the same picture at once do not write into one file.
+        var temporary: File? = null
         return try {
             file.parentFile?.mkdirs()
-            download(icon, temporary, { false }) { }
-            if (temporary.renameTo(file)) file else null
+            temporary = File.createTempFile("${model.id}-", ".part", file.parentFile)
+            download(icon, temporary, { false }, abortable = false) { }
+            if (temporary.renameTo(file) || file.isFile) file else null
         } catch (e: IOException) {
             Log.w(TAG, "The icon of ${model.id} could not be fetched: ${e.message}")
-            temporary.delete()
             null
+        } finally {
+            temporary?.delete()
         }
     }
 
-    /** Downloads one file to [destination] and checks it against the size and SHA-256 the index gave. */
-    private fun download(file: StoreFile, destination: File, isCancelled: () -> Boolean, onBytes: (Long) -> Unit) {
+    /**
+     * Downloads one file to [destination] and checks it against the size and SHA-256 the index gave. An [abortable]
+     * download is the one [abort] closes; a picture fetched alongside it must not take that place from it.
+     */
+    private fun download(
+        file: StoreFile,
+        destination: File,
+        isCancelled: () -> Boolean,
+        abortable: Boolean = true,
+        onBytes: (Long) -> Unit,
+    ) {
         val digest = MessageDigest.getInstance("SHA-256")
         var received = 0L
         try {
             openFile(file.url).use { input ->
-                reading = input
+                if (abortable) {
+                    reading = input
+                }
                 destination.outputStream().use { output ->
                     val buffer = ByteArray(BUFFER_BYTES)
                     while (true) {
@@ -215,7 +229,9 @@ class ModelStoreRepository(
                 }
             }
         } finally {
-            reading = null
+            if (abortable) {
+                reading = null
+            }
         }
         if (received != file.sizeBytes || toHex(digest.digest()) != file.sha256) {
             throw IOException("${destination.name} does not match the store's checksum")

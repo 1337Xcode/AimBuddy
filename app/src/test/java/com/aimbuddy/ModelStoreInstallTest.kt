@@ -125,6 +125,48 @@ class ModelStoreInstallTest {
     }
 
     @Test
+    fun aStalledDownloadIsStillEndedByAbortWhenAPictureWasFetchedMeanwhile() {
+        // The store's pictures load while a model downloads. A picture that finished used to clear the stream abort()
+        // closes, so a download stuck on a quiet connection went on until the connection's timeout.
+        val target = File(folder.root, "models/test")
+        val iconBytes = ByteArray(2_000) { (it % 199).toByte() }
+        val withIcon = model.copy(icon = storeFile("icon.png", iconBytes))
+        val reading = CountDownLatch(1)
+        val stalled = object : InputStream() {
+            private val closed = CountDownLatch(1)
+            override fun read(): Int = throw UnsupportedOperationException()
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                reading.countDown()
+                closed.await()
+                throw IOException("Socket closed")
+            }
+            override fun close() = closed.countDown()
+        }
+        val repository = ModelStoreRepository(baseUrl, folder.newFolder("cache"), { url ->
+            if (url.endsWith("icon.png")) ByteArrayInputStream(iconBytes) else stalled
+        }) { error("no index") }
+        var cancelled = false
+        var outcome: Throwable? = null
+        val install = thread {
+            outcome = try {
+                repository.install(withIcon, target, isCancelled = { cancelled }) { _, _ -> }
+                null
+            } catch (e: Throwable) {
+                e
+            }
+        }
+        assertTrue(reading.await(5, TimeUnit.SECONDS))
+
+        assertTrue(repository.iconFor(withIcon)?.isFile == true)
+        cancelled = true
+        repository.abort()
+        install.join(5_000)
+
+        assertFalse("the install should have ended", install.isAlive)
+        assertTrue("it ended with $outcome", outcome is DownloadCancelledException)
+    }
+
+    @Test
     fun aFileThatDoesNotMatchItsChecksumIsRefusedAndNothingIsInstalled() {
         val target = File(folder.root, "models/test")
         val damaged = serving { url -> if (url.endsWith("model.bin")) ByteArray(binBytes.size) { 7 } else paramBytes }
