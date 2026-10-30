@@ -62,6 +62,9 @@ std::once_flag g_settingsOnce;
 std::atomic<bool> g_settingsReady{false};   ///< The path is known and the file has been read; set once, after both.
 bool g_modelLoaded = false;
 int g_displayRotation = -1;   ///< The rotation the display was last configured with; main thread only.
+/// Held while a model loads. A Stop during Start cannot interrupt the load, so a Start right after it could
+/// otherwise load into the same detector at the same time from another thread.
+std::mutex g_loadMutex;
 
 /// Copies a Java string, or returns an empty one for null.
 std::string toStdString(JNIEnv* env, jstring text) {
@@ -331,6 +334,7 @@ JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_resetSettings(JNIEnv* /* e
 JNIEXPORT jboolean JNICALL
 Java_com_aimbuddy_NativeBridge_loadModel(JNIEnv* env, jclass /* clazz */, jstring paramPath, jstring binPath,
                                          jstring roles, jboolean endToEnd, jint inputSize) {
+    std::lock_guard<std::mutex> lock(g_loadMutex);
     if (g_pipeline.isRunning()) {
         LOGE("Cannot load a model while running");
         return JNI_FALSE;
