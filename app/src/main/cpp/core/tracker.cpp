@@ -23,6 +23,11 @@ constexpr float kNanosecondsPerSecond = 1e9f;
 /// A pause between two results longer than this (the app was in the background) says nothing about how often they come.
 constexpr int64_t kMaxArrivalGapNs = 1'000'000'000;
 
+/// A box that first shows in the update right after a target of its kind was last seen, and lies within this many box
+/// heights of that target's path, is that target (see takeOverJumpedTargets()). Wider than the reach of a target
+/// recalled after cover: the box jumped at once rather than coming out of hiding.
+constexpr float kJumpReachPerBox = 1.5f;
+
 /// A missed target is held for this many times the gap between results, if that is longer than the configured time,
 /// and forgotten after this many. Results that come every 200 ms leave 300 ms to hold a target that one of them missed.
 constexpr int64_t kHoldGaps = 3;       // in halves: 1.5 gaps
@@ -103,6 +108,7 @@ void Tracker::reset() {
     hasArrival_ = false;
     latestArrivalNs_ = 0;
     arrivalGapNs_ = 0;
+    lastUpdateNs_ = 0;
 }
 
 void Tracker::noteArrival(int64_t captureNs, int64_t arrivalNs) {
@@ -263,6 +269,8 @@ void Tracker::startTrack(const Detection& detection, int64_t captureNs) {
     track.classId = detection.classId;
     track.phase = TrackPhase::kTentative;
     track.stateNs = captureNs;
+    track.bornNs = captureNs;
+    track.bornAfterNs = lastUpdateNs_;
 
     const float positionSigma =
         std::max(config_.minPositionSigmaPx, config_.positionSigmaPerBox * detection.height);
@@ -464,7 +472,8 @@ void Tracker::update(const Detection* detections, int count, int64_t captureNs, 
                 continue;
             }
             for (int i = 0; i < lostCount_; ++i) {
-                const float distance = lostTaken[i] ? -1.0f : pathDistance(lost_[i], detections[d], captureNs);
+                const float distance =
+                    lostTaken[i] ? -1.0f : pathDistance(lost_[i], detections[d], captureNs, config_.recallReachPerBox);
                 if (distance >= 0.0f && (bestLost < 0 || distance < bestDistance)) {
                     bestLost = i;
                     bestDetection = d;
@@ -497,7 +506,65 @@ void Tracker::update(const Detection* detections, int count, int64_t captureNs, 
         }
     }
 
+    takeOverJumpedTargets(captureNs);
     removeDuplicates();
+    lastUpdateNs_ = captureNs;
+}
+
+/// A target drawn for the first time in this update that first showed in the update right after another target of its
+/// kind was last seen, within reach of that target's path, is that target: its box jumped further than any match
+/// allows (a quick move, a zoom, the detector boxing it another way). It takes the missing target's identity, so an aim
+/// locked on it stays on the player, and the missing one is dropped instead of fading on where the player was. Someone
+/// who shows up beside a person missed for a while, or beside one still seen, is someone else. Pairs are made nearest
+/// first.
+void Tracker::takeOverJumpedTargets(int64_t captureNs) {
+    int fresh = -1;
+    int missing = -1;
+    while (findJumpedTarget(captureNs, &fresh, &missing)) {
+        tracks_[fresh].id = tracks_[missing].id;
+        tracks_[fresh].hits += tracks_[missing].hits;
+        tracks_[fresh].phase = TrackPhase::kTracked;   // a box drawn at once may still be tentative
+        removeTrackAt(missing);
+    }
+}
+
+/// The nearest pair for takeOverJumpedTargets(), as indices into the targets; false when there is none.
+bool Tracker::findJumpedTarget(int64_t captureNs, int* freshIndex, int* missingIndex) const {
+    float bestDistance = 0.0f;
+    *freshIndex = -1;
+    for (int n = 0; n < trackCount_; ++n) {
+        const Track& fresh = tracks_[n];
+        if (!fresh.matchedNow || !isFirstDrawn(fresh)) {
+            continue;
+        }
+        Detection box;
+        box.x = fresh.x.position - fresh.width.value * 0.5f;
+        box.y = fresh.y.position - fresh.height.value * 0.5f;
+        box.width = fresh.width.value;
+        box.height = fresh.height.value;
+        box.classId = fresh.classId;
+        for (int m = 0; m < trackCount_; ++m) {
+            const Track& missing = tracks_[m];
+            const bool leftJustBefore = missing.lastSeenNs >= fresh.bornAfterNs && missing.lastSeenNs < fresh.bornNs;
+            if (m == n || missing.matchedNow || missing.phase == TrackPhase::kTentative || !leftJustBefore) {
+                continue;
+            }
+            const float distance = pathDistance(lostEntryFor(missing), box, captureNs, kJumpReachPerBox);
+            if (distance >= 0.0f && (*freshIndex < 0 || distance < bestDistance)) {
+                *freshIndex = n;
+                *missingIndex = m;
+                bestDistance = distance;
+            }
+        }
+    }
+    return *freshIndex >= 0;
+}
+
+/// True for a target drawn for the first time in this update: confirmed by it, or new and sure enough to be drawn at once.
+bool Tracker::isFirstDrawn(const Track& track) const {
+    const bool justConfirmed = track.phase == TrackPhase::kTracked && track.hits == config_.confirmHits;
+    const bool drawnAtOnce = track.hits == 1 && track.score >= config_.showTentativeScore;
+    return justConfirmed || drawnAtOnce;
 }
 
 void Tracker::removeDuplicates() {
@@ -534,17 +601,7 @@ void Tracker::rememberLost(const Track& track, int64_t nowNs) {
     if (track.phase == TrackPhase::kTentative || track.hits < config_.confirmHits) {
         return;
     }
-    LostTrack entry;
-    entry.id = track.id;
-    entry.classId = track.classId;
-    entry.hits = track.hits;
-    entry.seenNs = track.lastSeenNs;
-    entry.seenX = track.seenX;
-    entry.seenY = track.seenY;
-    entry.velocityX = track.seenVelocityX;
-    entry.velocityY = track.seenVelocityY;
-    entry.width = track.width.value;
-    entry.height = track.height.value;
+    const LostTrack entry = lostEntryFor(track);
     if (lostCount_ < kMaxTracks) {
         lost_[lostCount_++] = entry;
         return;
@@ -556,7 +613,24 @@ void Tracker::rememberLost(const Track& track, int64_t nowNs) {
     lost_[oldest] = entry;
 }
 
-float Tracker::pathDistance(const LostTrack& lost, const Detection& detection, int64_t captureNs) const {
+/// What is kept of a target when it is forgotten: where and how fast it was last seen, and its size.
+Tracker::LostTrack Tracker::lostEntryFor(const Track& track) {
+    LostTrack entry;
+    entry.id = track.id;
+    entry.classId = track.classId;
+    entry.hits = track.hits;
+    entry.seenNs = track.lastSeenNs;
+    entry.seenX = track.seenX;
+    entry.seenY = track.seenY;
+    entry.velocityX = track.seenVelocityX;
+    entry.velocityY = track.seenVelocityY;
+    entry.width = track.width.value;
+    entry.height = track.height.value;
+    return entry;
+}
+
+float Tracker::pathDistance(const LostTrack& lost, const Detection& detection, int64_t captureNs,
+                            float reachPerBox) const {
     const int64_t gapNs = captureNs - lost.seenNs;
     const float sizeRatio = detection.height / std::max(lost.height, 1.0f);
     if (lost.classId != detection.classId || gapNs <= 0 || gapNs > config_.recallNs || sizeRatio < 0.5f ||
@@ -581,7 +655,7 @@ float Tracker::pathDistance(const LostTrack& lost, const Detection& detection, i
     const float along =
         pathSq > 0.0f ? std::clamp(((centerX - startX) * pathX + (centerY - startY) * pathY) / pathSq, 0.0f, 1.0f) : 0.0f;
     const float distance = std::hypot(centerX - startX - along * pathX, centerY - startY - along * pathY);
-    const float reach = config_.recallReachPerBox * std::max(detection.height, lost.height);
+    const float reach = reachPerBox * std::max(detection.height, lost.height);
     return distance <= reach ? distance : -1.0f;
 }
 

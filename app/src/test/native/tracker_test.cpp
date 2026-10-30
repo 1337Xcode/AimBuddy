@@ -621,6 +621,48 @@ TEST(tracker_thresholds_follow_the_confidence_setting) {
     CHECK(aimbuddy::TrackerConfig::forConfidence(-1.0f).birthScore >= 0.20f);
 }
 
+TEST(tracker_keeps_the_identity_of_a_target_whose_box_jumps_away) {
+    // The detector's box on a player jumps 140 px, more than a box height, between two updates, and stays there: a
+    // quick move, or the detector boxing the player another way. When the box there is first drawn it is the same
+    // target, under the same identity, and nothing is left fading where the player was. A second target there, beside
+    // the first one coasting on, moved an aim locked on the player to the empty spot for a third of a second.
+    Tracker tracker;
+    for (int frame = 0; frame < 10; ++frame) {
+        Detection d = box(868.0f, 463.0f, 45.0f, 123.0f, 0.83f);
+        tracker.update(&d, 1, frame * 33 * kMs, nullptr);
+    }
+    TrackView before;
+    CHECK(viewNear(tracker, 9 * 33 * kMs, 868.0f, 463.0f, &before));
+    for (int frame = 10; frame < 13; ++frame) {
+        Detection d = box(969.0f, 564.0f, 50.0f, 107.0f, 0.80f);
+        tracker.update(&d, 1, frame * 33 * kMs, nullptr);
+    }
+    TrackView views[aimbuddy::kMaxTracks];
+    CHECK(tracker.snapshot(12 * 33 * kMs, views, aimbuddy::kMaxTracks) == 1);
+    CHECK(views[0].id == before.id);
+    CHECK_NEAR(views[0].centerX, 969.0, 5.0);
+    CHECK_NEAR(views[0].centerY, 564.0, 5.0);
+}
+
+TEST(tracker_keeps_a_target_whose_box_jumps_away_when_the_next_frame_misses_it) {
+    // The jumped box is sure enough to be drawn at once, so it takes the identity on its first sighting. It is then
+    // the confirmed target it took over: one missed frame keeps it, where a new target is dropped at its first miss.
+    Tracker tracker;
+    for (int frame = 0; frame < 10; ++frame) {
+        Detection d = box(868.0f, 463.0f, 45.0f, 123.0f, 0.83f);
+        tracker.update(&d, 1, frame * 33 * kMs, nullptr);
+    }
+    TrackView before;
+    CHECK(viewNear(tracker, 9 * 33 * kMs, 868.0f, 463.0f, &before));
+    Detection jumped = box(969.0f, 564.0f, 50.0f, 107.0f, 0.93f);
+    tracker.update(&jumped, 1, 10 * 33 * kMs, nullptr);
+    tracker.update(nullptr, 0, 11 * 33 * kMs, nullptr);
+    TrackView views[aimbuddy::kMaxTracks];
+    CHECK(tracker.snapshot(11 * 33 * kMs, views, aimbuddy::kMaxTracks) == 1);
+    CHECK(views[0].id == before.id);
+    CHECK(views[0].phase != TrackPhase::kTentative);
+}
+
 TEST(tracker_does_not_slide_onto_a_neighbour_when_its_own_box_is_missed) {
     Tracker tracker;
     // Two people stand side by side, 80 px apart, boxes 60 px wide (a 20 px gap between them).

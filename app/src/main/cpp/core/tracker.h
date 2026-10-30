@@ -198,6 +198,8 @@ private:
         int hits = 0;
         int64_t stateNs = 0;      ///< The instant the filters describe.
         int64_t lastSeenNs = 0;   ///< Capture time of the last matched detection.
+        int64_t bornNs = 0;       ///< Capture time of its first detection...
+        int64_t bornAfterNs = 0;  ///< ...and of the update before that one (0 for none).
         float seenX = 0.0f;       ///< Where the box centre was then, screen pixels.
         float seenY = 0.0f;
         float seenVelocityX = 0.0f; ///< Its own speed then, screen pixels per second, before any fading.
@@ -260,7 +262,11 @@ private:
     void removeDuplicates();
     void removeTrackAt(int index);
     void rememberLost(const Track& track, int64_t nowNs);
-    float pathDistance(const LostTrack& lost, const Detection& detection, int64_t captureNs) const;
+    float pathDistance(const LostTrack& lost, const Detection& detection, int64_t captureNs, float reachPerBox) const;
+    void takeOverJumpedTargets(int64_t captureNs);
+    bool findJumpedTarget(int64_t captureNs, int* freshIndex, int* missingIndex) const;
+    bool isFirstDrawn(const Track& track) const;
+    static LostTrack lostEntryFor(const Track& track);
     void recall(Track& track, const LostTrack& lost, const Detection& detection) const;
     void restartVelocityFromGap(Track& track, const Gap& gap) const;
 
@@ -280,6 +286,7 @@ private:
     int nextId_ = 1;
     bool hasArrival_ = false;
     int64_t latestArrivalNs_ = 0;   ///< When the newest result arrived.
+    int64_t lastUpdateNs_ = 0;      ///< Capture time of the latest update (0 before the first).
     int64_t arrivalGapNs_ = 0;      ///< Smoothed time between two results; 0 until there have been two.
     mutable std::mutex mutex_;
 };
