@@ -349,7 +349,7 @@ The GPU is shared with the game, so it has to be clearly faster. It also has to 
 
 `Tracker` moves every target forward to the instant a frame was captured, pairs boxes with targets, refines each pair with a Kalman filter that smooths the box and measures its speed, and starts and retires targets. Pairing is done in the manner of ByteTrack: confident detections (0.40 and above) are matched first, by overlap or, for boxes that do not overlap, by distance in standard deviations of where the target is expected; weaker ones (0.12 to 0.40) then keep targets that would otherwise be lost. Two targets that overlap by 85% are the same target.
 
-Speed is measured with the camera's own movement taken out: the camera slide between two frames comes from `CameraMotion`, is added to the prediction as a known shift, and widens the position uncertainty by a fraction of itself, so that a slide that is slightly wrong is corrected from the measurement and not read as the target running. The motion model is scaled by the box height, so a far target and a near one are treated alike. Each axis runs two filters side by side and blends them by how well each explains the boxes (an interacting multiple model filter): a steady one that smooths a target standing still or running straight, so its box does not wander, and an agile one that finds the new speed of a target that turns, stops or starts within a frame or two. A box much further off than even a sharp turn explains is trusted less the further off it is, so one box that belongs to something else cannot fling a target across the screen. In the simulated game, against a target strafing at 400 px/s and turning every half second, this took the aim's RMS error from 50.5 to 46.2 px at 60 detections a second and from 81.6 to 76.8 px at 15; a target running at 300 px/s with 15 detections a second had its head under the crosshair 36% of the time instead of 9% (`sh app/src/test/native/bench/run.sh follow`).
+Speed is measured with the camera's own movement taken out: the camera slide between two frames comes from `CameraMotion`, is added to the prediction as a known shift, and widens the position uncertainty by a fraction of itself, so that a slide that is slightly wrong is corrected from the measurement and not read as the target running. The motion model is scaled by the box height, so a far target and a near one are treated alike. Each axis runs two filters side by side and blends them by how well each explains the boxes (an interacting multiple model filter): a steady one that smooths a target standing still or running straight, so its box does not wander, and an agile one that finds the new speed of a target that turns, stops or starts within a frame or two. A box much further off than even a sharp turn explains is trusted less the further off it is, so one box that belongs to something else cannot fling a target across the screen. In the simulated game, against a target strafing at 400 px/s and turning every half second, this took the aim's RMS error from 50.5 to 46.2 px at 60 detections a second and from 81.6 to 76.8 px at 15; a target running at 300 px/s with 15 detections a second had its head under the crosshair 36% of the time instead of 9% (`sh app/src/test/native/bench/run.sh follow`). On a still target the agile filter costs a little: in the simulated cameras below, the aim settles 0.02 to 0.04 s later at most camera gains and 0.10 s later with a 110 ms delay.
 
 ```mermaid
 stateDiagram-v2
@@ -486,25 +486,25 @@ Apart from the detector, which depends on the model and the phone, the camera lo
 
 ### Learning an unknown camera, in simulation
 
-The aim controller runs against the simulated game that the tests use: a still target 260 to 280 px from the crosshair, a detector at 30 Hz with 2 px of noise, 10% dropouts and 15 ms of latency, and a camera measurement with 0.7 px of noise. The controller is told 1.5 px of slide per finger pixel and a 50 ms delay, and the simulated game uses the gain and delay in the first two columns. "Guess kept" is the same controller with Calibrate automatically off. Settling is the first moment the error stays under 8 px for good, within a run of 4 s, and overshoot is how far the aim went past the target. The run is seeded, so the same command prints the same table.
+The aim controller runs against the simulated game that the tests use: a still target 260 to 280 px from the crosshair, a detector at 30 Hz with 2 px of noise, 10% dropouts and 15 ms of latency, and a camera measurement with 0.7 px of noise. The controller is told 1.5 px of slide per finger pixel and a 50 ms delay, and the simulated game uses the gain and delay in the first two columns. "Guess kept" is the same controller with Calibrate automatically off. Settling is the first moment the error stays under 8 px for good, within a run of 4 s, and overshoot is how far the aim went past the target. Each row is five runs with different detector noise: settling and what was learned are their averages, "2 of 5" says how many runs settled at all, and overshoot is the largest of the five. The runs are seeded, so `sh app/src/test/native/bench/run.sh camera` prints the same table every time.
 
 | True gain | True delay | Settles, learning | Overshoot | Learned gain | Learned delay | Settles, guess kept | Overshoot |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 0.4 | 50 ms | 1.01 s | 0 px | 0.40 | 53 ms | 3.35 s | 0 px |
-| 0.6 | 50 ms | 0.90 s | 0 px | 0.60 | 53 ms | 2.08 s | 0 px |
-| 1.5 | 50 ms | 0.69 s | 0 px | 1.54 | 53 ms | 0.56 s | 0 px |
-| 2.5 | 50 ms | 0.65 s | 0 px | 2.57 | 53 ms | 0.52 s | 67 px |
-| 4.0 | 50 ms | 0.64 s | 0 px | 4.08 | 52 ms | 1.13 s | 228 px |
-| 6.0 | 50 ms | 0.62 s | 0 px | 6.09 | 52 ms | 1.51 s | 456 px |
-| 8.0 | 50 ms | 0.60 s | 0 px | 8.08 | 52 ms | never | 997 px |
-| 12.0 | 50 ms | 0.60 s | 0 px | 12.11 | 52 ms | never | 1168 px |
-| 4.0 | 15 ms | 0.52 s | 0 px | 3.89 | 17 ms | 0.35 s | 77 px |
-| 4.0 | 30 ms | 0.58 s | 0 px | 3.98 | 34 ms | 0.59 s | 150 px |
-| 4.0 | 80 ms | 0.58 s | 0 px | 3.83 | 84 ms | 2.04 s | 409 px |
-| 4.0 | 110 ms | 0.74 s | 0 px | 3.80 | 115 ms | 2.89 s | 577 px |
-| 4.0 | 150 ms | 0.53 s | 0 px | 3.97 | 156 ms | 3.98 s | 670 px |
+| 0.4 | 50 ms | 1.00 s | 0 px | 0.40 | 53 ms | 3.36 s | 0 px |
+| 0.6 | 50 ms | 0.88 s | 0 px | 0.60 | 53 ms | 1.99 s | 0 px |
+| 1.5 | 50 ms | 0.75 s | 0 px | 1.52 | 53 ms | 0.63 s | 0 px |
+| 2.5 | 50 ms | 0.74 s | 0 px | 2.53 | 52 ms | 0.55 s | 67 px |
+| 4.0 | 50 ms | 0.72 s | 0 px | 4.05 | 52 ms | 0.96 s | 228 px |
+| 6.0 | 50 ms | 0.70 s | 0 px | 6.05 | 52 ms | 1.53 s | 462 px |
+| 8.0 | 50 ms | 0.69 s | 0 px | 8.01 | 52 ms | 2.10 s, 2 of 5 | 997 px |
+| 12.0 | 50 ms | 0.62 s | 0 px | 11.97 | 52 ms | never | 1184 px |
+| 4.0 | 15 ms | 0.60 s | 0 px | 3.94 | 17 ms | 0.36 s | 96 px |
+| 4.0 | 30 ms | 0.61 s | 0 px | 4.00 | 33 ms | 0.51 s | 151 px |
+| 4.0 | 80 ms | 0.65 s | 0 px | 3.91 | 84 ms | 1.84 s | 419 px |
+| 4.0 | 110 ms | 0.87 s | 0 px | 3.85 | 115 ms | 2.69 s | 782 px |
+| 4.0 | 150 ms | 0.71 s | 160 px | 3.96 | 155 ms | 3.91 s, 2 of 5 | 990 px |
 
-With learning, the aim settles in 0.5 to 1.0 s without overshoot across a 30-fold range of gains and a 10-fold range of delays. The learned gain is within 5% of the true one and the learned delay is 2 to 6 ms above the true one. A controller that keeps its guess overshoots by 67 to 1168 px in every row where the real gain is 2.5 or more, never settles at gains of 8 and 12, crawls (2.1 and 3.4 s) at gains of 0.6 and 0.4, and needs 2 to 4 s when the delay is 80 ms or more. When the guess happens to be right (gain 1.5, delay 50 ms) learning costs 0.13 s, because the first moves are small on purpose. This is a simulation: it shows the controller and the estimator doing what they are built to do, and not how any game behaves.
+With learning, the aim settles in 0.6 to 1.0 s across a 30-fold range of gains and a 10-fold range of delays, without overshoot up to a delay of 110 ms; at 150 ms the worst of the five runs overshoots by 160 px. The learned gain is within 4% of the true one and the learned delay is 2 to 5 ms above the true one. A controller that keeps its guess overshoots by 67 to 1184 px in every row where the real gain is 2.5 or more, settles in only 2 of 5 runs at a gain of 8 and never at 12, crawls (2.0 and 3.4 s) at gains of 0.6 and 0.4, and needs 1.8 to 3.9 s when the delay is 80 ms or more. When the guess happens to be right (gain 1.5, delay 50 ms) learning costs 0.12 s, because the first moves are small on purpose. This is a simulation: it shows the controller and the estimator doing what they are built to do, and not how any game behaves.
 
 ### Changes that were measured
 

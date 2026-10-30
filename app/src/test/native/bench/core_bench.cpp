@@ -2,7 +2,7 @@
 //  - what each step of a frame costs (colour finder, camera look, tracker, aim step, touch merger, overlay fingerprint);
 //  - how the aim controller copes with a camera it was not told about, in the simulated game the tests use;
 //  - how closely the aim follows targets that strafe, run and stop, on phones that detect 60, 30 and 15 times a second.
-// Build and run: sh app/src/test/native/bench/run.sh [runs], or with "follow" for the moving targets only.
+// Build and run: sh app/src/test/native/bench/run.sh [runs], or with "camera" or "follow" for one simulation only.
 // The timings are for this machine's processor, not a phone's, and the simulation is not a real game.
 #include <algorithm>
 #include <chrono>
@@ -285,44 +285,70 @@ void benchFingerprint(int runs) {
     }
 }
 
-/// What one run of the simulated game ended with: how the aim behaved and what the controller learned of the camera.
-struct CameraCase {
-    simulation::Outcome outcome;
-    CameraResponse learned;
+/// Seeds each simulated case is run with. One seed's detector noise can make a run settle a tenth of a second early or
+/// late, which is as large as most changes worth measuring, so the figures printed are over all of them.
+constexpr uint32_t kSeeds[] = {1, 2, 3, 4, 5};
+
+/// What the runs of one simulated camera ended with over all seeds: the average settling time of the runs that settled
+/// and how many did, the largest overshoot, and the average of what the controller learned of the camera.
+struct CameraRow {
+    float settleSeconds = -1.0f;
+    int settled = 0;
+    float maxOvershoot = 0.0f;
+    float learnedGain = 0.0f;
+    float learnedDelayS = 0.0f;
 };
 
-/// Runs the simulated game for four seconds with a still target (startX, startY) pixels from the crosshair.
-/// The controller is told 1.5 px of slide per finger px and 50 ms of delay, and with `learn` it may measure better.
-CameraCase runCameraCase(float trueGain, float trueDelayS, float startX, float startY, bool learn) {
+/// Runs the simulated game for four seconds with a still target (startX, startY) pixels from the crosshair, once per
+/// seed. The controller is told 1.5 px of slide per finger px and 50 ms of delay, and with `learn` it may measure better.
+CameraRow runCameraRow(float trueGain, float trueDelayS, float startX, float startY, bool learn) {
     simulation::SimulatedGame::Belief belief;
     belief.learn = learn;
-    simulation::SimulatedGame game({trueGain, trueDelayS}, simulation::baseSettings(), simulation::stationary(startX, startY), 1, belief);
-    CameraCase result;
-    result.outcome = simulation::measure(game, 4.0f, startX);
-    result.learned = game.camera().response();
-    return result;
+    CameraRow row;
+    float settleTotal = 0.0f;
+    for (const uint32_t seed : kSeeds) {
+        simulation::SimulatedGame game({trueGain, trueDelayS}, simulation::baseSettings(), simulation::stationary(startX, startY), seed, belief);
+        const simulation::Outcome outcome = simulation::measure(game, 4.0f, startX);
+        if (outcome.settleSeconds >= 0.0f) {
+            settleTotal += outcome.settleSeconds;
+            ++row.settled;
+        }
+        row.maxOvershoot = std::max(row.maxOvershoot, outcome.maxOvershoot);
+        row.learnedGain += game.camera().response().gainX;
+        row.learnedDelayS += game.camera().response().delayS;
+    }
+    const float seeds = static_cast<float>(std::size(kSeeds));
+    if (row.settled > 0) {
+        row.settleSeconds = settleTotal / static_cast<float>(row.settled);
+    }
+    row.learnedGain /= seeds;
+    row.learnedDelayS /= seeds;
+    return row;
 }
 
-/// The time a run took to settle as text, or "never" for a run that did not.
-void describeSettling(const simulation::Outcome& outcome, char* text, size_t size) {
-    if (outcome.settleSeconds < 0.0f) {
+/// The average settling time as text, with how many runs settled when some never did, or "never" when none did.
+void describeSettling(const CameraRow& row, char* text, size_t size) {
+    const int seeds = static_cast<int>(std::size(kSeeds));
+    if (row.settled == 0) {
         std::snprintf(text, size, "never");
-        return;
+    } else if (row.settled < seeds) {
+        std::snprintf(text, size, "%.2f s, %d of %d", row.settleSeconds, row.settled, seeds);
+    } else {
+        std::snprintf(text, size, "%.2f s", row.settleSeconds);
     }
-    std::snprintf(text, size, "%.2f s", outcome.settleSeconds);
 }
 
 /// Prints one row of the table of simulated cameras.
 void printCameraRow(float trueGain, float trueDelayS, float startX, float startY) {
-    const CameraCase learning = runCameraCase(trueGain, trueDelayS, startX, startY, true);
-    const CameraCase fixed = runCameraCase(trueGain, trueDelayS, startX, startY, false);
-    char learningSettle[16];
-    char fixedSettle[16];
-    describeSettling(learning.outcome, learningSettle, sizeof(learningSettle));
-    describeSettling(fixed.outcome, fixedSettle, sizeof(fixedSettle));
+    const CameraRow learning = runCameraRow(trueGain, trueDelayS, startX, startY, true);
+    const CameraRow fixed = runCameraRow(trueGain, trueDelayS, startX, startY, false);
+    char learningSettle[24];
+    char fixedSettle[24];
+    describeSettling(learning, learningSettle, sizeof(learningSettle));
+    describeSettling(fixed, fixedSettle, sizeof(fixedSettle));
     std::printf("| %4.1f | %3.0f ms | %7s | %4.0f px | %5.2f | %4.0f ms | %7s | %4.0f px |\n", trueGain, trueDelayS * 1000.0f,
-                learningSettle, learning.outcome.maxOvershoot, learning.learned.gainX, learning.learned.delayS * 1000.0f,
-                fixedSettle, fixed.outcome.maxOvershoot);
+                learningSettle, learning.maxOvershoot, learning.learnedGain, learning.learnedDelayS * 1000.0f, fixedSettle,
+                fixed.maxOvershoot);
 }
 
 /// The aim controller against simulated games whose camera differs from what it was told.
@@ -343,9 +369,6 @@ constexpr float kHeadRadiusPx = 12.0f;
 /// Moving targets are judged from this far into a run, once the aim has had time to reach them, to the end of the run.
 constexpr float kFollowFromS = 1.5f;
 constexpr float kFollowRunS = 8.0f;
-
-/// Seeds each moving-target case is run with; the figures printed are their average.
-constexpr uint32_t kFollowSeeds[] = {1, 2, 3, 4, 5};
 
 /// A target that runs at `speedPxS` and turns back every `legSeconds`: a player strafing left and right.
 simulation::SimulatedGame::Path strafingLegs(float speedPxS, float legSeconds) {
@@ -386,7 +409,7 @@ struct FollowScore {
 /// Runs one moving-target case with each seed and averages what the aim did.
 FollowScore runFollowCase(const simulation::SimulatedGame::Truth& truth, const simulation::SimulatedGame::Path& path) {
     FollowScore total;
-    for (const uint32_t seed : kFollowSeeds) {
+    for (const uint32_t seed : kSeeds) {
         simulation::SimulatedGame game(truth, simulation::baseSettings(), path, seed);
         double squares = 0.0;
         int samples = 0;
@@ -403,7 +426,7 @@ FollowScore runFollowCase(const simulation::SimulatedGame::Truth& truth, const s
         total.rmsPx += std::sqrt(squares / samples);
         total.onHeadShare += static_cast<double>(onHead) / samples;
     }
-    const double seeds = static_cast<double>(std::size(kFollowSeeds));
+    const double seeds = static_cast<double>(std::size(kSeeds));
     total.rmsPx /= seeds;
     total.onHeadShare /= seeds;
     return total;
@@ -455,8 +478,13 @@ void benchMovingTargets() {
 
 }  // namespace
 
-/// Runs the step timings, then the simulated cameras and the moving targets. With "follow" only the moving targets run.
+/// Runs the step timings, then the simulated cameras and the moving targets. With "camera" or "follow" only that
+/// simulation runs.
 int main(int argc, char** argv) {
+    if (argc > 1 && std::string(argv[1]) == "camera") {
+        benchUnknownCamera();
+        return 0;
+    }
     if (argc > 1 && std::string(argv[1]) == "follow") {
         benchMovingTargets();
         return 0;
