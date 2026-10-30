@@ -61,6 +61,7 @@ std::string g_settingsPath;
 std::once_flag g_settingsOnce;
 std::atomic<bool> g_settingsReady{false};   ///< The path is known and the file has been read; set once, after both.
 bool g_modelLoaded = false;
+int g_displayRotation = -1;   ///< The rotation the display was last configured with; main thread only.
 
 /// Copies a Java string, or returns an empty one for null.
 std::string toStdString(JNIEnv* env, jstring text) {
@@ -385,7 +386,10 @@ Java_com_aimbuddy_NativeBridge_configureDisplay(JNIEnv* /* env */, jclass /* cla
     geometry.captureHeight = captureHeight;
     const aimbuddy::CaptureGeometry before = g_pipeline.capture().geometry();
     g_pipeline.capture().configure(geometry);
-    const bool turned = before.isValid() && (before.screenWidth != displayWidth || before.screenHeight != displayHeight);
+    // A half turn (landscape one way to landscape the other) keeps the size and puts every target where its mirror image was.
+    const bool turned = before.isValid() && (before.screenWidth != displayWidth || before.screenHeight != displayHeight ||
+                                             (g_displayRotation >= 0 && g_displayRotation != rotation));
+    g_displayRotation = rotation;
     if (turned) {
         g_pipeline.forgetScene();
     }
