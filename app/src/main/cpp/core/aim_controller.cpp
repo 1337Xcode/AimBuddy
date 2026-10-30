@@ -101,7 +101,11 @@ constexpr float kAnswerWindowS = 1.5f;
 constexpr float kIgnoredFor = 0.3f;
 
 /// With the finger set to hands off, the crosshair must have stayed on the target this long before the correction counts as made.
+/// It is on a still target when it is within the dead zone. Round a moving target the dead zone shrinks to a couple of pixels,
+/// which following a strafing target hardly ever stays within, so the one correction was never counted as made: there it is
+/// on the target within this share of the target's height, about the size of a head, as far as the target is sure to be moving.
 constexpr float kLandedHoldS = 0.04f;
+constexpr float kLandedBoxFraction = 0.06f;
 
 /// After the first lift the finger waits this long before touching again; each further failure doubles it, to this limit.
 constexpr float kRetryFirstS = 0.25f;
@@ -271,7 +275,7 @@ bool AimController::hasLanded(int64_t nowNs, const Pursuit& pursuit) {
     if (landedId_ == pursuit.body->id) {
         return true;
     }
-    if (!pursuit.onTarget()) {
+    if (pursuit.distance > std::max(pursuit.deadzone, kLandedBoxFraction * pursuit.body->height * pursuit.movingShare)) {
         onTargetSinceNs_ = 0;
         return false;
     }

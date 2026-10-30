@@ -540,6 +540,26 @@ TEST(aim_hands_off_does_not_follow_a_target_that_moves_on) {
     CHECK(rmsError(lifting, 5.0f, 1.5f) > 80.0);
 }
 
+TEST(aim_hands_off_lets_go_soon_after_reaching_a_strafing_target) {
+    // Round a target that moves the dead zone shrinks to a couple of pixels, so waiting for the crosshair to stay
+    // inside it kept the finger on a strafing target for 3.5 s, following it as if hands off were not set. Within a
+    // head's size of the aim point it lets go after 1.2 s.
+    AimSettings handsOff = baseSettings();
+    handsOff.afterLanding = AfterLanding::kHandsOff;
+    SimulatedGame game({1.5f, 0.05f}, handsOff, strafingPath(0.5f, 140.0f));
+    float liftedAt = -1.0f;
+    bool touched = false;
+    game.run(5.0f, [&](float t, float, float) {
+        const bool touching = game.controller().isTouching();
+        touched = touched || touching;
+        if (touched && !touching && liftedAt < 0.0f) {
+            liftedAt = t;
+        }
+    });
+    CHECK(liftedAt > 0.0f);
+    CHECK(liftedAt < 1.5f);
+}
+
 TEST(aim_hands_off_makes_a_new_correction_when_the_target_has_been_let_go_of) {
     // The assist lands on a target. The player then turns the camera 700 px away, past the reach of the assist,
     // so that the lock is let go of, and 665 px back, to within 35 px of the same target. It is a new
