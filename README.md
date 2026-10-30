@@ -294,7 +294,7 @@ From Android 12 the system drops every touch that goes through another app's ove
 <details>
 <summary>Drawing only the frames that changed</summary>
 
-The screen capture delivers a frame only when the screen changes, and the overlay is part of the screen. An overlay that redrew itself 60 times a second made the screen change 60 times a second, so the detector ran on every one of those frames even when the game showed a still picture. `drawFrame` now takes a 64-bit fingerprint of what ImGui would draw (the commands, vertices and indices) and, when it equals the fingerprint of the last frame drawn and the backend has no texture work, returns without drawing, and the render thread does not swap buffers. Fingerprinting 60 kB of draw data takes about 10 µs. On the emulator, with AimBuddy running over the app's own home screen, the app's threads used 214% and 203% of a core in two runs before the change and 46.6% and 2.6% in two runs after it.
+The screen capture delivers a frame only when the screen changes, and the overlay is part of the screen. An overlay that redrew itself 60 times a second made the screen change 60 times a second, so the detector ran on every one of those frames even when the game showed a still picture. `drawFrame` now takes a 64-bit fingerprint of what ImGui would draw (the commands, vertices and indices) and, when it equals the fingerprint of the last frame drawn and the backend has no texture work, returns without drawing, and the render thread does not swap buffers. Fingerprinting 60 kB of draw data takes about 13 µs on a laptop processor. On the emulator, with AimBuddy running over the app's own home screen, the app's threads used 214% and 203% of a core in two runs before the change and 46.6% and 2.6% in two runs after it.
 
 </details>
 
@@ -470,21 +470,22 @@ Three kinds of figure follow, and each says where it was measured. No phone has 
 
 ### Per-frame steps on a computer
 
-`sh app/src/test/native/bench/run.sh` builds the core with the Android build's optimisation flags (`-O3 -fno-math-errno -funroll-loops`) through `zig c++` 0.16.0 and times each step on one thread. These figures are from an Intel Core i5-12500H laptop, x86-64, so they show the work a step does and not how long a phone takes. The median and the 95th percentile of 200 runs; the medians moved by up to 15% between repeated runs, so read them as sizes.
+`sh app/src/test/native/bench/run.sh` builds the core with the Android build's optimisation flags (`-O3 -fno-math-errno -funroll-loops`) through `zig c++` 0.16.0 and times each step on one thread. These figures are from an Intel Core i5-12500H laptop, x86-64, so they show the work a step does and not how long a phone takes. Each figure is the middle of three runs of 200, median and 95th percentile; a median moved by up to 13% between the three runs and by up to 26% against a set taken on another day, so read them as sizes.
 
 | Step | Median | 95th percentile |
 |---|---:|---:|
-| Colour finder, 256 px square, 3 people | 0.42 ms | 0.53 ms |
-| Colour finder, 448 px square, 3 people | 1.2 ms | 1.7 ms |
-| Camera look, 256 px square | 0.95 ms | 1.5 ms |
-| Camera look, 448 px square | 1.0 ms | 1.3 ms |
-| Tracker update, 6 detections | 0.57 µs | 0.72 µs |
-| Tracker snapshot, 6 targets | 0.06 µs | 0.07 µs |
-| Aim controller step, 3 targets | 0.39 µs | 0.60 µs |
-| Touch merger, one report of a finger move and a move of the extra finger | 0.024 µs | 0.026 µs |
-| Overlay fingerprint of 60 kB of draw data | 10 µs | 10 µs |
+| Colour finder, 256 px square, 3 people | 0.47 ms | 0.52 ms |
+| Colour finder, 448 px square, 3 people | 1.2 ms | 1.4 ms |
+| Decoding a model's output, 256 px, 3 classes | 4.8 µs | 5.3 µs |
+| Camera look, 256 px square | 0.92 ms | 1.6 ms |
+| Camera look, 448 px square | 1.0 ms | 1.4 ms |
+| Tracker update, 6 detections | 1.3 µs | 1.5 µs |
+| Tracker snapshot, 6 targets | 0.07 µs | 0.08 µs |
+| Aim controller step, 3 targets | 0.43 µs | 0.52 µs |
+| Touch merger, one report of a finger move and a move of the extra finger | 0.029 µs | 0.031 µs |
+| Overlay fingerprint of 60 kB of draw data | 13 µs | 13 µs |
 
-Apart from the detector, which depends on the model and the phone, the camera look is the one step that takes a noticeable share of a frame (16.7 ms at 60 Hz). It runs after the frame has been handed to the detector, and at most about 30 times a second.
+Apart from the detector, which depends on the model and the phone, the camera look is the one step that takes a noticeable share of a frame (16.7 ms at 60 Hz). It runs after the frame has been handed to the detector, and at most about 30 times a second. The tracker update costs about twice what it did with one filter per axis (0.57 µs), because each axis now runs two filters and mixes them. Within the detector, on this processor through NCNN's Python binding with three threads, running AimBuddy General 2 takes about 14 ms, turning the square into the model's input 0.3 to 0.6 ms, and decoding the output 5 µs, so the model is nearly all of it.
 
 ### Learning an unknown camera, in simulation
 
@@ -527,7 +528,7 @@ Each change below was measured when it was made, and the figures are in the [cha
 | Capture to detector | One copy of the square (at most 448 by 448 pixels, about 0.8 MB) and a hand-over through the mailbox. An unread frame is replaced, never queued |
 | Detector | One run of the model on that square, the biggest cost. The readout shows it for the phone in hand |
 | Tracker and aim | Microseconds (table above). The aim loop steps every 8 ms, so a result waits for the next step |
-| Finger to game | One read, one merge (0.024 µs) and one write in the helper, then the game's own delay, which the controller learns |
+| Finger to game | One read, one merge (0.029 µs) and one write in the helper, then the game's own delay, which the controller learns |
 | Marks | Drawn 20 ms ahead of now, so they land on the target and not behind it |
 
 ## Install
