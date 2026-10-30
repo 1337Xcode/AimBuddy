@@ -23,7 +23,9 @@ SAME_LOOK = 0.45             # histogram intersection, 0..1, of two looks of one
 MIN_SAME_LOOKS = 6           # a person is the own character when this many other frames show the same look in its place...
 MIN_SAME_SHARE = 0.04        # ...and at least this share of the frames with someone in the place do
 PART_INSIDE = 0.2            # a box with this share of its area inside the own character's box...
-PART_MIN_AREA = 0.2          # ...and an area this share of the own character's or more is a piece of the own character
+PART_MIN_AREA = 0.2          # ...and an area this share of the own character's or more is a piece of the own character,
+PART_WITHIN = 0.9            # ...and so is a box of any size this much inside it (its gun, an arm, a flame effect)
+MOSTLY_OVER = 0.6            # a box this much inside it may be its gun as well as a player far behind it: unsure
 
 
 def in_own_place(box, width, height):
@@ -68,16 +70,29 @@ def own_candidates(looks):
     return decisions
 
 
+def share_inside(outer, box):
+    """The share of a box's area that lies inside another box."""
+    w = min(outer[2], box[2]) - max(outer[0], box[0])
+    h = min(outer[3], box[3]) - max(outer[1], box[1])
+    if w <= 0 or h <= 0:
+        return 0.0
+    return w * h / max((box[2] - box[0]) * (box[3] - box[1]), 1e-6)
+
+
 def is_part_of(own_box, box):
     """True for a box that is a piece of the own character rather than someone beside it: the part a kill banner leaves
-    in view, or a second box a teacher put on it. A far player seen over the own character's shoulder is too small."""
-    w = min(own_box[2], box[2]) - max(own_box[0], box[0])
-    h = min(own_box[3], box[3]) - max(own_box[1], box[1])
-    if w <= 0 or h <= 0:
-        return False
+    in view, a second box a teacher put on it, or its gun or a flame round its hand, which the teachers sometimes take
+    for a person (a tenth of the players labelled in two Free Fire videos were). A far player seen over the own
+    character's shoulder is too small for the first two and sticks out of its box."""
+    inside = share_inside(own_box, box)
     area = (box[2] - box[0]) * (box[3] - box[1])
     own_area = (own_box[2] - own_box[0]) * (own_box[3] - own_box[1])
-    return w * h >= PART_INSIDE * area and area >= PART_MIN_AREA * own_area
+    return inside >= PART_WITHIN or (inside >= PART_INSIDE and area >= PART_MIN_AREA * own_area)
+
+
+def is_mostly_over(own_box, box):
+    """True for a box that lies mostly over the own character's box without being clearly a piece of it."""
+    return share_inside(own_box, box) >= MOSTLY_OVER
 
 
 def usual_place(own_boxes):

@@ -31,7 +31,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))   # python -I leaves the 
 from flat_marks import is_flat_mark  # noqa: E402
 from fusion import heads_in, people_in  # noqa: E402
 from hud import fixed_on_screen  # noqa: E402
-from own_character import in_own_place, is_part_of, look_of, own_candidates, usual_place  # noqa: E402
+from own_character import (in_own_place, is_mostly_over, is_part_of, look_of, own_candidates,  # noqa: E402
+                           usual_place)
 from sources import (GREY, PC_SETS, VIDEOS, grey_out_broadcast, has_heads, pc_pictures,  # noqa: E402
                      read_names, read_pc_picture)
 
@@ -275,7 +276,7 @@ def frame_labels(index, found, flat, own, placed, fixed, usual, boxes):
             labels.own.append(person.box)
         elif any(is_part_of(box, person.box) for box in own_here):
             continue   # its own character's box covers it
-        elif flat[k] or (index, k) in fixed:
+        elif flat[k] or (index, k) in fixed or any(is_mostly_over(box, person.box) for box in own_here):
             labels.grey.append(person.box)
         elif not own_here and ((index, k) in placed or (usual is not None and centre_inside(person.box, usual))):
             # the own character is not seen, and this one stands where it stands: it may be the own character changed

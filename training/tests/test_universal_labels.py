@@ -49,8 +49,15 @@ class OwnCharacterTest(unittest.TestCase):
     def test_a_piece_of_the_own_character_is_part_of_it_and_a_far_player_over_its_shoulder_is_not(self):
         own = [500, 300, 620, 700]
         self.assertTrue(own_character.is_part_of(own, [500, 520, 620, 700]))    # what a kill banner leaves in view
-        self.assertFalse(own_character.is_part_of(own, [560, 310, 580, 350]))   # small, far behind it
+        self.assertFalse(own_character.is_part_of(own, [590, 290, 625, 350]))   # small, far behind it, sticking out
         self.assertFalse(own_character.is_part_of(own, [640, 300, 760, 700]))   # beside it
+        self.assertTrue(own_character.is_part_of(own, [585, 450, 615, 520]))    # its gun, taken for a person
+
+    def test_a_far_player_sticking_out_over_the_own_characters_box_is_unsure(self):
+        own = [500, 300, 620, 700]
+        far = [590, 290, 625, 350]   # 71% of it over the box, the rest above and beside it
+        self.assertFalse(own_character.is_part_of(own, far))
+        self.assertTrue(own_character.is_mostly_over(own, far))
 
 
 @unittest.skipUnless(HAS_OPENCV, "the universal pipeline needs opencv and numpy")
