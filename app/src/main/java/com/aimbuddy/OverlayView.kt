@@ -163,28 +163,40 @@ private class EglSession(texture: SurfaceTexture) {
         val version = IntArray(2)
         check(EGL14.eglInitialize(display, version, 0, version, 1)) { "eglInitialize failed" }
 
-        val attributes = intArrayOf(
-            EGL14.EGL_RENDERABLE_TYPE, EGLExt.EGL_OPENGL_ES3_BIT_KHR,
-            EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT,
-            EGL14.EGL_RED_SIZE, 8,
-            EGL14.EGL_GREEN_SIZE, 8,
-            EGL14.EGL_BLUE_SIZE, 8,
-            EGL14.EGL_ALPHA_SIZE, 8,   // the overlay is see-through, so the surface needs alpha
-            EGL14.EGL_NONE,
-        )
-        val configs = arrayOfNulls<EGLConfig>(1)
-        val count = IntArray(1)
-        check(EGL14.eglChooseConfig(display, attributes, 0, configs, 0, 1, count, 0) && count[0] > 0) {
-            "No OpenGL ES 3 configuration with alpha"
-        }
-        val config = checkNotNull(configs[0])
+        var madeContext: EGLContext = EGL14.EGL_NO_CONTEXT
+        var madeSurface: EGLSurface = EGL14.EGL_NO_SURFACE
+        try {
+            val attributes = intArrayOf(
+                EGL14.EGL_RENDERABLE_TYPE, EGLExt.EGL_OPENGL_ES3_BIT_KHR,
+                EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT,
+                EGL14.EGL_RED_SIZE, 8,
+                EGL14.EGL_GREEN_SIZE, 8,
+                EGL14.EGL_BLUE_SIZE, 8,
+                EGL14.EGL_ALPHA_SIZE, 8,   // the overlay is see-through, so the surface needs alpha
+                EGL14.EGL_NONE,
+            )
+            val configs = arrayOfNulls<EGLConfig>(1)
+            val count = IntArray(1)
+            check(EGL14.eglChooseConfig(display, attributes, 0, configs, 0, 1, count, 0) && count[0] > 0) {
+                "No OpenGL ES 3 configuration with alpha"
+            }
+            val config = checkNotNull(configs[0])
 
-        val contextAttributes = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
-        context = EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT, contextAttributes, 0)
-        check(context != EGL14.EGL_NO_CONTEXT) { "eglCreateContext failed" }
-        surface = EGL14.eglCreateWindowSurface(display, config, texture, intArrayOf(EGL14.EGL_NONE), 0)
-        check(surface != EGL14.EGL_NO_SURFACE) { "eglCreateWindowSurface failed" }
-        check(EGL14.eglMakeCurrent(display, surface, surface, context)) { "eglMakeCurrent failed" }
+            val contextAttributes = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
+            madeContext = EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT, contextAttributes, 0)
+            check(madeContext != EGL14.EGL_NO_CONTEXT) { "eglCreateContext failed" }
+            madeSurface = EGL14.eglCreateWindowSurface(display, config, texture, intArrayOf(EGL14.EGL_NONE), 0)
+            check(madeSurface != EGL14.EGL_NO_SURFACE) { "eglCreateWindowSurface failed" }
+            check(EGL14.eglMakeCurrent(display, madeSurface, madeSurface, madeContext)) { "eglMakeCurrent failed" }
+        } catch (e: RuntimeException) {
+            // release() is only reached with a whole session, so what was made before the failure is let go here.
+            if (madeSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(display, madeSurface)
+            if (madeContext != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(display, madeContext)
+            EGL14.eglTerminate(display)
+            throw e
+        }
+        context = madeContext
+        surface = madeSurface
         // The frame rate is set by the drawing code, not by waiting on the display.
         EGL14.eglSwapInterval(display, 0)
     }
