@@ -513,15 +513,17 @@ void AimController::giveUpOn(int64_t nowNs, const TrackView& seen) {
             }
         }
     }
+    bool sameBox = slot != nullptr && slot->trackId >= 0;
     if (slot == nullptr) {
-        slot = &givenUp_[0];   // all taken: the oldest slot is as good as any
+        slot = &givenUp_[0];   // all taken: the oldest slot is as good as any, but its count is another box's
         for (GivenUp& entry : givenUp_) {
             if (entry.untilNs < slot->untilNs) {
                 slot = &entry;
             }
         }
+        sameBox = false;
     }
-    const int times = slot->trackId >= 0 ? slot->times + 1 : 1;
+    const int times = sameBox ? slot->times + 1 : 1;
     const float waitS = std::min(kGiveUpLongestS, kGiveUpFirstS * static_cast<float>(1 << std::min(times - 1, 5)));
     slot->trackId = seen.id;
     slot->centerX = seen.centerX;
