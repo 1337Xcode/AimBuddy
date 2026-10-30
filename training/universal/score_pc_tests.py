@@ -11,13 +11,14 @@ boxes per square at those scores, and the average precision at IoU 0.5 over all 
 
 Usage: score_pc_tests.py <folder with the PC sets> <model folder> [<model folder> ...]
 """
-import json
 import pathlib
 import sys
 
 import cv2
-import ncnn
 import numpy as np
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent))   # python -I leaves the script's folder off the path
+from app_detector import AppDetector, iou  # noqa: E402
 
 SETS = {
     "csgo": ("csgo-videogame", {0, 1}),                   # CT, T
@@ -27,67 +28,6 @@ SETS = {
 }
 SQUARE = 0.6
 SHIFTS = (0.0, -0.25, 0.25)   # square centre, as a share of the picture width from its middle
-
-
-class AppDetector:
-    """An exported model run and decoded the way the app runs and decodes it."""
-
-    def __init__(self, folder, threads=4):
-        folder = pathlib.Path(folder)
-        self.net = ncnn.Net()
-        self.net.opt.use_vulkan_compute = False
-        self.net.opt.num_threads = threads
-        self.net.load_param(str(folder / "model.param"))
-        self.net.load_model(str(folder / "model.bin"))
-        profile = json.loads((folder / "model.json").read_text(encoding="utf-8"))
-        self.size = int(profile["inputSize"])
-        self.roles = profile.get("roles", ["body"])
-
-    def detect(self, bgr_square, min_score=0.05, merge_iou=0.5):
-        """Body boxes as (x0, y0, x1, y1, score) in fractions of the square, strongest first."""
-        rgb = cv2.cvtColor(cv2.resize(bgr_square, (self.size, self.size), interpolation=cv2.INTER_LINEAR), cv2.COLOR_BGR2RGB)
-        mat = ncnn.Mat.from_pixels(np.ascontiguousarray(rgb), ncnn.Mat.PixelType.PIXEL_RGB, self.size, self.size)
-        mat.substract_mean_normalize([0, 0, 0], [1 / 255.0] * 3)
-        extractor = self.net.create_extractor()
-        extractor.input("in0", mat)
-        _, out = extractor.extract("out0")
-        out = np.array(out)
-        if out.ndim == 3:
-            out = out[0]
-        if out.shape[0] < out.shape[1]:   # channels first: (4 + classes) x anchors
-            boxes, scores = out[:4].T, out[4:].T
-        else:
-            boxes, scores = out[:, :4], out[:, 4:]
-        best = scores.argmax(axis=1)
-        best_score = scores[np.arange(len(best)), best]
-        scale = self.size if np.abs(boxes).max() <= 2.0 else 1.0   # some exports give fractions of the input
-        found = []
-        for i in np.argsort(-best_score):
-            score = float(best_score[i])
-            if score < min_score:
-                break
-            role = self.roles[best[i]] if best[i] < len(self.roles) else "ignore"
-            if role != "body":
-                continue
-            cx, cy, w, h = boxes[i] * scale
-            x0, y0 = max(0.0, cx - w / 2), max(0.0, cy - h / 2)
-            x1, y1 = min(self.size, cx + w / 2), min(self.size, cy + h / 2)
-            if x1 - x0 < 2 or y1 - y0 < 2:
-                continue
-            box = (x0 / self.size, y0 / self.size, x1 / self.size, y1 / self.size, score)
-            if all(iou(kept, box) <= merge_iou for kept in found):
-                found.append(box)
-        return found
-
-
-def iou(a, b):
-    """Intersection over union of two (x0, y0, x1, y1, ...) boxes."""
-    w = min(a[2], b[2]) - max(a[0], b[0])
-    h = min(a[3], b[3]) - max(a[1], b[1])
-    if w <= 0 or h <= 0:
-        return 0.0
-    inter = w * h
-    return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter)
 
 
 def squares_of(image_path, person_classes):
