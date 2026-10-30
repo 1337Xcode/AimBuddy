@@ -332,6 +332,12 @@ void drawColourLearning(ImDrawList* list, const ImVec2& windowSize) {
     const bool hasAnswer = g_learnStage == LearnStage::kResult;
     switch (g_learnStage) {
         case LearnStage::kPicking:
+            if (!g_picking.load(std::memory_order_relaxed)) {
+                // The menu was closed from outside (the floating button, the notification), which ends the picking
+                // too; the prompt's Cancel could no longer be reached.
+                g_learnStage = LearnStage::kIdle;
+                return;
+            }
             std::snprintf(text, sizeof(text), "%s", T(Key::PickTheColour));
             withCancel = true;
             break;
