@@ -55,11 +55,13 @@ def label_video(path, every_s, broadcast, models, device):
     while True:
         index += 1
         if not capture.grab():
+            ends_here(path, index)
             break
         if index % step:
             continue
         ok, frame = capture.retrieve()
         if not ok:
+            ends_here(path, index)
             break
         height, width = frame.shape[:2]
         size = [width, height]
@@ -75,6 +77,18 @@ def label_video(path, every_s, broadcast, models, device):
         # the graphics card's decoder can refuse a video while other programs use it
         raise SystemExit(f"{path}: no frame could be read")
     return size, frames
+
+
+def ends_here(path, index):
+    """Stops the run unless the video really has no frame at `index`: the graphics card's decoder can fail part of the
+    way through while other programs use it, which would leave the rest of the video out without a word. The
+    processor's decoder, which does not fail that way, has the last word."""
+    capture = cv2.VideoCapture(str(path))
+    capture.set(cv2.CAP_PROP_POS_FRAMES, index)
+    ok, _ = capture.read()
+    capture.release()
+    if ok:
+        raise SystemExit(f"{path}: frame {index} could not be decoded on the graphics card")
 
 
 def teacher_boxes(frame, models, device):
