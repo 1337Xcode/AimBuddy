@@ -372,3 +372,35 @@ TEST(global_motion_does_not_call_a_frame_unchanged_because_only_a_mover_moved) {
     const GlobalShift result = estimator.push(second.rgba.data(), kSide, kSide * 4, after, 1);
     CHECK(result.unchanged);
 }
+
+TEST(global_motion_reads_a_turn_after_the_camera_stood_still_while_something_moved) {
+    // The camera stands still for three seconds while something nobody boxed runs to and fro (a teammate, smoke,
+    // a muzzle flash). The scene stayed the same only because the camera did: it must still count when the camera
+    // then turns, from the turn's second frame on. A finely textured scene: with few flat pixels to fall back on,
+    // a scene left out is a camera nobody can read.
+    const Texture texture(16, 900);
+    GlobalMotionEstimator estimator;
+    int moverX = 20;
+    int step = 10;
+    const auto frameAt = [&](float shiftX, float shiftY) {
+        Frame image = renderScene(texture, shiftX, shiftY);
+        drawStaticOverlay(image);
+        drawMover(image, moverX, 60);
+        moverX += step;
+        if (moverX < 10 || moverX > kSide - 60) {
+            step = -step;
+        }
+        return estimator.push(image.rgba.data(), kSide, kSide * 4);
+    };
+    for (int frame = 0; frame < 90; ++frame) {
+        frameAt(0.0f, 0.0f);
+    }
+    int read = 0;
+    for (int frame = 1; frame <= 6; ++frame) {
+        const GlobalShift result = frameAt(9.0f * static_cast<float>(frame), -5.0f * static_cast<float>(frame));
+        if (frame >= 2 && std::fabs(result.dx - 9.0f) < 1.2f && std::fabs(result.dy + 5.0f) < 1.2f && result.quality > 0.4f) {
+            ++read;
+        }
+    }
+    CHECK(read == 5);
+}

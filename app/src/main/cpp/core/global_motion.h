@@ -104,6 +104,7 @@ private:
     std::array<float, kGrid * kGrid> grey_{};         ///< The current frame, reduced.
     std::array<float, kGrid * kGrid> previousGrey_{};
     std::array<uint8_t, kGrid * kGrid> staticScore_{}; ///< How sure each pixel is not to move with the scene.
+    std::array<int8_t, kGrid * kGrid> staticEvidence_{}; ///< This comparison: 1 a textured pixel stayed, -1 it changed.
     std::array<float, kGrid * kGrid> moverMask_{};     ///< 1 where something in this frame moves by itself, 0 elsewhere.
     std::array<float, kGrid * kGrid> previousMoverMask_{};
     std::array<float, kGrid * kGrid> leftOut_{};       ///< The two masks together: what is left out of this comparison.

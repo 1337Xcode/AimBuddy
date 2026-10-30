@@ -26,15 +26,17 @@ constexpr float kChangedLevel = 4.0f;
 /// is mostly flat (sky, plain ground) from looking unchanged when its few edges slide.
 constexpr float kUnchangedShare = 0.003f;
 
-/// When more than this share of the pixels changed the picture has really moved, and the pixels
-/// that did not change are noted as not belonging to the moving scene.
-constexpr float kMotionShare = 0.012f;
-
 /// A pixel with an edge or texture (a grey step of at least this much per grid pixel) that differs
-/// by less than the second value between two such frames did not move with the scene. Flat pixels
-/// say nothing either way, because they do not change however the scene slides.
+/// by less than the second value between two frames in which the scene slid did not move with it.
+/// Flat pixels say nothing either way, because they do not change however the scene slides.
 constexpr float kStaticMinGradient = 4.0f;
 constexpr float kStaticMaxDifference = 3.0f;
+
+/// The scene slid when at least this share of the textured pixels changed. A share of all pixels would also count a
+/// still camera with something moving in the view, and the still scene would then be noted as not moving with itself.
+/// Not a half: the own character seen from behind can hold half the texture of the region and stays put as the scene
+/// slides (on the tuning clips a half left more targets where players had been: 2.18 a second against 1.88).
+constexpr float kSceneSlidShare = 0.3f;
 
 /// How a pixel's "does not move with the scene" score grows and falls, and where it is ignored.
 constexpr int kStaticGain = 3;
@@ -242,17 +244,32 @@ void GlobalMotionEstimator::transform(Grid& grid, bool inverse) const {
 }
 
 void GlobalMotionEstimator::learnStaticPixels() {
+    // Only when the scene slid: a good share of the textured pixels changed.
+    int textured = 0;
+    int changed = 0;
     for (int y = 1; y < kGrid - 1; ++y) {
         for (int x = 1; x < kGrid - 1; ++x) {
             const int i = y * kGrid + x;
+            staticEvidence_[i] = 0;
             const float gradient = 0.5f * (std::fabs(grey_[i + 1] - grey_[i - 1]) + std::fabs(grey_[i + kGrid] - grey_[i - kGrid]));
             if (gradient < kStaticMinGradient || leftOut_[i] > 0.0f) {
                 continue;   // flat pixels say nothing, and nor do those of something moving by itself
             }
-            const int score = staticScore_[i];
-            staticScore_[i] = static_cast<uint8_t>(std::fabs(grey_[i] - previousGrey_[i]) < kStaticMaxDifference
-                                                       ? std::min(255, score + kStaticGain)
-                                                       : std::max(0, score - kStaticLoss));
+            const bool same = std::fabs(grey_[i] - previousGrey_[i]) < kStaticMaxDifference;
+            staticEvidence_[i] = same ? 1 : -1;
+            ++textured;
+            changed += same ? 0 : 1;
+        }
+    }
+    if (textured == 0 || static_cast<float>(changed) < kSceneSlidShare * static_cast<float>(textured)) {
+        return;
+    }
+    for (int i = 0; i < kCells; ++i) {
+        const int score = staticScore_[i];
+        if (staticEvidence_[i] > 0) {
+            staticScore_[i] = static_cast<uint8_t>(std::min(255, score + kStaticGain));
+        } else if (staticEvidence_[i] < 0) {
+            staticScore_[i] = static_cast<uint8_t>(std::max(0, score - kStaticLoss));
         }
     }
 }
@@ -541,10 +558,8 @@ GlobalShift GlobalMotionEstimator::compareWithPrevious(int side) {
         result.quality = textureEvidence(measureFrameTexture());
         return result;
     }
-    // When the picture as a whole has clearly moved, whatever stayed the same is not part of the scene.
-    if (static_cast<float>(changedPixels) > kMotionShare * kCells) {
-        learnStaticPixels();
-    }
+    // When the scene slid, whatever stayed the same is not part of it.
+    learnStaticPixels();
     computeWeights();
 
     // The scene covers most of the picture, so the shift that explains the picture best is the
