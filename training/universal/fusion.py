@@ -58,7 +58,7 @@ class Person:
 def people_in(boxes):
     """Joins the people boxes of all models (sunxds player, COCO person, trained models' body and own character) into
     one list, surest first."""
-    found = []
+    found, voters = [], []
     for model, cls_ok in (("sunxds", (0,)), ("gen2", (0, 2)), ("sunft", (0, 2)), ("coco", (0,))):
         for b in boxes.get(model, []):
             if b[5] not in cls_ok:
@@ -67,10 +67,13 @@ def people_in(boxes):
             if match is None or iou(match.box, b) < MERGE_IOU:
                 match = Person(box=list(b[:4]))
                 found.append(match)
+                voters.append(set())
             if b[4] > match.score(model):
                 match.scores[model] = b[4]
             if model in ("gen2", "sunft") and b[5] == 2 and b[4] >= 0.5:
-                match.own_votes += 1
+                voters[found.index(match)].add(model)   # two boxes of one model on one person are one vote
+    for person, models in zip(found, voters, strict=True):
+        person.own_votes = len(models)
     return sorted(found, key=lambda p: -max(p.scores.values()))
 
 

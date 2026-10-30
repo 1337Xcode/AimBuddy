@@ -81,6 +81,11 @@ class TeacherEvidenceTest(unittest.TestCase):
         self.assertFalse(people[0].is_player())
         self.assertTrue(people[0].is_unsure())
 
+    def test_two_own_character_boxes_of_one_model_are_one_vote(self):
+        people = fusion.people_in({"gen2": [[100, 100, 140, 200, 0.70, 2], [104, 108, 144, 212, 0.60, 2]]})
+        self.assertEqual(len(people), 1)
+        self.assertEqual(people[0].own_votes, 1)
+
     def test_both_trained_models_calling_it_the_own_character_are_two_votes(self):
         people = fusion.people_in({"gen2": [[100, 100, 140, 200, 0.70, 2]], "sunft": [[101, 100, 140, 201, 0.60, 2]]})
         self.assertEqual(people[0].own_votes, 2)
