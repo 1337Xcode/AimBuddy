@@ -553,7 +553,7 @@ sh app/src/test/native/bench/run.sh     # the benchmarks above
 
 - `app/src/test/native` holds C++ tests of the parts that perform no input or output: the tracker, camera motion, the touch merger, the detector's decoding, the colour finder, the menu's drag scroller, the overlay's fingerprint and the settings. The aim controller is run against a simulated game with a known camera gain and delay, and has to settle for gains and delays it was not told.
 - `app/src/test/java` holds Kotlin tests of the update logic, the model store (downloads, cancelling, failures), the touch access checks and the thermal limits.
-- `training/tests` holds tests of the training pipeline's dataset split.
+- `training/tests` holds tests of the training pipeline's dataset split and of the labelling rules of the universal model's pipeline (`training/universal`).
 - Debug builds include a stand-in first-person game with a known camera response, used to run the whole loop on an emulator.
 
 Each build generates its own launcher icon from a random seed; `-Paimbuddy.iconSeed=<number>` repeats one. Releases are described in [docs/Releasing.md](docs/Releasing.md).
