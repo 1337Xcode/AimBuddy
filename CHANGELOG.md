@@ -7,6 +7,8 @@ Dates are in ISO-8601 (YYYY-MM-DD).
 ## [Unreleased]
 
 ### Added
+- `training/universal/`, the scripts that build AimBuddy General 2: they cut squares from gameplay video and PC screenshots the way the app cuts them, label the videos with two teacher models, train, export to NCNN and score the result on the PC sets' test pictures. Six tests in `training/tests` hold the labelling rules: where a third-person game draws the player, and which broadcast squares show a face card.
+- The benchmark times one more step of a frame, decoding a three-class model's output: about 5 µs on a laptop processor, where running the model takes about 14 ms.
 - Two more benchmark runs. `sh app/src/test/native/bench/run.sh follow` measures how closely the aim follows targets that strafe, run and stop, on phones that detect 60, 30 and 15 times a second. `sh app/src/test/native/bench/run.sh camera` runs the simulated cameras alone, and each row of that table is now the average of five runs: with one run per row, the tracker change below looked like it cost 0.14 s of settling at a camera gain of 1.5, where five runs show 0.02 s.
 
 ### Changed
@@ -14,6 +16,9 @@ Dates are in ISO-8601 (YYYY-MM-DD).
 - Targets that turn, stop or start are followed more closely. Each target is now tracked by two filters side by side, a steady one for a target standing still or running straight and an agile one that finds a new speed within a frame or two, blended by how well each explains the boxes. A box much further off than even a sharp turn explains is trusted less, so one stray box cannot fling a target across the screen. In the simulated game the aim's error on a target strafing at 400 px/s and turning every half second went from 50.5 to 46.2 px at 60 detections a second and from 81.6 to 76.8 px at 15, and a target running at 300 px/s seen 15 times a second was under the crosshair 36% of the time instead of 9%. On a still target the aim settles 0.02 to 0.04 s later at most camera gains and 0.10 s later with a 110 ms delay.
 
 ### Fixed
+- A touch that the system took back (another window or a system gesture claimed it) reached the in-game menu as a finger lifting, so it could press the control under it, Stop AimBuddy included. Such a touch now lets go of whatever it pressed without a click, in the menu and in the touch area editor.
+- Closing the in-game menu with the floating button or the notification while AimBuddy asked for a colour to learn left the request on screen for good, over the game and in the picture the colour finder reads, with a Cancel button that no longer answered. The request now goes away with the menu.
+- When the overlay's drawing surface could not be set up, what had been made for it before the failure was never released, once for each try.
 - With "Once on target" set to one correction, steering did not let go of a target that kept moving. The correction counted as done only within 2 px of the target, which a strafing target never allows, so the finger stayed down. It now counts as done within a share of the target's size that grows with its speed, and in the simulation the finger lifted 1.2 s after reaching a strafing target instead of 3.5 s.
 - A setting changed while AimBuddy was still reading its settings file, and a colour or camera response learned at that moment, were queued as references to values that no longer existed when the change was applied, so the setting could end up with a garbage value. The queued change keeps a copy now.
 - Frames captured in the screen's old shape, which arrive for a moment after the phone turns between portrait and landscape, were mapped with the new screen size, so marks and the aim point were placed for the wrong shape. Such frames are left out now.
