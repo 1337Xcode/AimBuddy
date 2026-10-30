@@ -1,5 +1,6 @@
 // Benchmarks of the pure C++ core on the development machine. Three kinds:
-//  - what each step of a frame costs (colour finder, camera look, tracker, aim step, touch merger, overlay fingerprint);
+//  - what each step of a frame costs (colour finder, output decoding, camera look, tracker, aim step, touch merger,
+//    overlay fingerprint);
 //  - how the aim controller copes with a camera it was not told about, in the simulated game the tests use;
 //  - how closely the aim follows targets that strafe, run and stop, on phones that detect 60, 30 and 15 times a second.
 // Build and run: sh app/src/test/native/bench/run.sh [runs], or with "camera" or "follow" for one simulation only.
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "core/colour_blobs.h"
+#include "core/detection_decoder.h"
 #include "core/fingerprint.h"
 #include "core/global_motion.h"
 #include "core/touch_mux.h"
@@ -114,6 +116,61 @@ std::vector<uint8_t> makeTexture(int side, int dx, int dy) {
         }
     }
     return rgba;
+}
+
+/// What a 256 px model with three classes (body, head, own character) hands the decoder: 1344 anchors, channels first,
+/// background everywhere except a dozen strong anchors round each of six players and round the own character.
+std::vector<float> makeDetectorOutput() {
+    constexpr int kAnchors = 1344;
+    constexpr int kClasses = 3;
+    std::vector<float> tensor(static_cast<size_t>(4 + kClasses) * kAnchors);
+    testing::Random random(11);
+    auto at = [&](int row, int anchor) -> float& { return tensor[static_cast<size_t>(row) * kAnchors + anchor]; };
+    for (int anchor = 0; anchor < kAnchors; ++anchor) {
+        at(0, anchor) = static_cast<float>(random.uniform() * 256.0);
+        at(1, anchor) = static_cast<float>(random.uniform() * 256.0);
+        at(2, anchor) = static_cast<float>(8.0 + random.uniform() * 40.0);
+        at(3, anchor) = static_cast<float>(16.0 + random.uniform() * 80.0);
+        for (int cls = 0; cls < kClasses; ++cls) {
+            at(4 + cls, anchor) = static_cast<float>(random.uniform() * 0.05);
+        }
+    }
+    for (int person = 0; person < 7; ++person) {
+        const bool own = person == 6;   // low in the middle, where a third-person game draws the player
+        const float cx = own ? 128.0f : 24.0f + 34.0f * static_cast<float>(person);
+        const float cy = own ? 210.0f : 110.0f;
+        for (int k = 0; k < 12; ++k) {
+            const int anchor = 100 + 150 * person + k;
+            at(0, anchor) = cx + static_cast<float>(random.gaussian(0.5));
+            at(1, anchor) = cy + static_cast<float>(random.gaussian(0.5));
+            at(2, anchor) = (own ? 60.0f : 20.0f) + static_cast<float>(random.gaussian(0.5));
+            at(3, anchor) = (own ? 90.0f : 50.0f) + static_cast<float>(random.gaussian(0.5));
+            at(4 + (own ? 2 : 0), anchor) = 0.55f + 0.03f * static_cast<float>(k);
+        }
+    }
+    return tensor;
+}
+
+/// Decoding a model's output into boxes, at the default confidence's lowest score, for a 256 px model with three classes.
+void benchDecoder(int runs) {
+    const std::vector<float> tensor = makeDetectorOutput();
+    DecodeSpec spec;
+    spec.layout = OutputLayout::kChannelsFirst;
+    spec.classCount = 3;
+    DecodeParams params;
+    params.minScore = TrackerConfig::forConfidence(0.5f).lowScore;
+    params.modelSize = 256;
+    const ModelProfile profile = ModelProfile::parseRoles("body,head,ignore", 3);
+    ModelBox boxes[kMaxDetections];
+    int count = 0;
+    measure("detector output decoding, 256 px, 3 classes", runs, 100, [&] {
+        for (int i = 0; i < 100; ++i) {
+            count = decodeDetections(tensor.data(), 7, 1344, spec, params, profile, boxes, kMaxDetections);
+        }
+    });
+    if (count != 6) {
+        std::printf("  (the decoder kept %d boxes, not the 6 players)\n", count);
+    }
 }
 
 /// The colour finder on a square picture with three outlined people in it.
@@ -492,6 +549,7 @@ int main(int argc, char** argv) {
     const int runs = argc > 1 ? std::atoi(argv[1]) : 200;
     std::printf("| step | median (us) | 95th percentile (us) | runs |\n| --- | ---: | ---: | ---: |\n");
     benchColourFinder(runs);
+    benchDecoder(runs);
     benchCameraLook(runs);
     benchTracker(runs);
     benchAimStep(runs);
