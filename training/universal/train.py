@@ -1,4 +1,4 @@
-"""Trains the universal detector on the squares build_dataset.py made: enemy body, enemy head and own character, at 320 px.
+"""Trains the universal detector on the squares cut_squares.py made: enemy body, enemy head and own character, at 320 px.
 
 The base is the COCO YOLO26n, which keeps what it learned where the shapes allow; the class layer is new.
 """
