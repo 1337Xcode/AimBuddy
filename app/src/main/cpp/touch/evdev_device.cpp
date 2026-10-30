@@ -290,7 +290,10 @@ int VirtualTouchscreen::create(const TouchscreenInfo& real, int slotCount) {
         ioctl(fd, UI_SET_ABSBIT, code);
         description.absmin[code] = range.minimum;
         description.absmax[code] = range.maximum;
-        description.absfuzz[code] = range.fuzz;
+        // No fuzz: the kernel holds back or averages moves within the fuzz of the last value. The real screen's moves
+        // reach this device already filtered by its own kernel, and the extra finger's are exact, so filtering again
+        // would make both lag and swallow the extra finger's small steps.
+        description.absfuzz[code] = 0;
         description.absflat[code] = range.flat;
     }
     // The merged screen's contact ids are its own (TouchMux gives them out), in a range of their own.
