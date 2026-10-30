@@ -47,12 +47,46 @@ void TouchMux::writeAxis(int slot, uint16_t code, int32_t value) {
     contact.known[axisIndex(code)] = true;
 }
 
-void TouchMux::writeTrackingId(int slot, int32_t trackingId) {
-    selectSlot(slot);
-    emit(kEvAbs, kAbsMtTrackingId, trackingId);
+void TouchMux::startContact(int slot, int32_t realId) {
     Contact& contact = contacts_[slot];
-    contact.active = trackingId >= 0;
-    contact.trackingId = trackingId;
+    // A new contact in a slot that held one is a new pointer, so it never keeps the id the slot had.
+    const int32_t previous = contact.active ? contact.outputId : -1;
+    contact.active = false;
+    const bool ownIdFree = slot != aimSlot() && realId != previous && !outputIdInUse(realId);
+    contact.outputId = ownIdFree ? realId : nextFreeOutputId(previous);
+    contact.active = true;
+    contact.trackingId = realId;
+    selectSlot(slot);
+    emit(kEvAbs, kAbsMtTrackingId, contact.outputId);
+}
+
+void TouchMux::endContact(int slot) {
+    selectSlot(slot);
+    emit(kEvAbs, kAbsMtTrackingId, -1);
+    Contact& contact = contacts_[slot];
+    contact.active = false;
+    contact.trackingId = -1;
+    contact.outputId = -1;
+}
+
+bool TouchMux::outputIdInUse(int32_t id) const {
+    for (int slot = 0; slot <= info_.slotCount; ++slot) {
+        if (contacts_[slot].active && contacts_[slot].outputId == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int32_t TouchMux::nextFreeOutputId(int32_t avoid) {
+    const int32_t maximum = std::max(info_.axis(kAbsMtTrackingId).maximum, 1);
+    for (int attempt = 0; attempt <= kMaxRealSlots + 1; ++attempt) {
+        lastPickedId_ = (lastPickedId_ + 1) % (maximum + 1);
+        if (lastPickedId_ != avoid && !outputIdInUse(lastPickedId_)) {
+            break;
+        }
+    }
+    return lastPickedId_;
 }
 
 int TouchMux::activeContactCount() const {
@@ -119,7 +153,11 @@ void TouchMux::applyRealAxis(uint16_t code, int32_t value) {
         if ((lifting && !contact.active) || (!lifting && contact.active && contact.trackingId == value)) {
             return;  // nothing changes: the same fact reported twice
         }
-        writeTrackingId(slot, value);
+        if (lifting) {
+            endContact(slot);
+        } else {
+            startContact(slot, value);
+        }
         return;
     }
     learnContactStyle(code, value);
@@ -161,7 +199,7 @@ void TouchMux::resync(const ContactSnapshot& snapshot) {
         const Contact& known = contacts_[slot];
         const bool replaced = known.active && now.trackingId >= 0 && known.trackingId != now.trackingId;
         if (known.active && (now.trackingId < 0 || replaced)) {
-            writeTrackingId(slot, -1);
+            endContact(slot);
             lifted = true;
         }
     }
@@ -176,7 +214,7 @@ void TouchMux::resync(const ContactSnapshot& snapshot) {
             continue;
         }
         if (!contacts_[slot].active) {
-            writeTrackingId(slot, now.trackingId);
+            startContact(slot, now.trackingId);
             changed = true;
         }
         for (uint16_t code = kMtAxisFirst; code <= kMtAxisLast; ++code) {
@@ -265,28 +303,13 @@ void TouchMux::applyAim(const AimCommand& command) {
     }
 }
 
-int32_t TouchMux::pickAimTrackingId() {
-    const int32_t maximum = std::max(info_.axis(kAbsMtTrackingId).maximum, 1);
-    for (int attempt = 0; attempt <= kMaxRealSlots; ++attempt) {
-        lastAimTrackingId_ = (lastAimTrackingId_ + 1) % (maximum + 1);
-        bool inUse = false;
-        for (int slot = 0; slot < info_.slotCount; ++slot) {
-            inUse = inUse || (contacts_[slot].active && contacts_[slot].trackingId == lastAimTrackingId_);
-        }
-        if (!inUse) {
-            break;
-        }
-    }
-    return lastAimTrackingId_;
-}
-
 void TouchMux::applyAimDown(int32_t x, int32_t y) {
     if (isAimDown()) {
         applyAimMove(x, y);
         return;
     }
     const int slot = aimSlot();
-    writeTrackingId(slot, pickAimTrackingId());
+    startContact(slot, 0);
     for (const uint16_t code : kStyleAxes) {
         if (info_.axis(code).present) {
             writeAxis(slot, code, contactStyle_[axisIndex(code)]);
@@ -327,7 +350,7 @@ void TouchMux::applyAimUp() {
     if (!isAimDown()) {
         return;
     }
-    writeTrackingId(aimSlot(), -1);
+    endContact(aimSlot());
     finishFrame();
 }
 
@@ -341,7 +364,7 @@ void TouchMux::releaseAll() {
     bool lifted = false;
     for (int slot = 0; slot <= info_.slotCount; ++slot) {
         if (contacts_[slot].active) {
-            writeTrackingId(slot, -1);
+            endContact(slot);
             lifted = true;
         }
     }

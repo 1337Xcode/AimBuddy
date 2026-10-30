@@ -75,6 +75,10 @@ struct ContactSnapshot {
  *    hovering otherwise, so the button is derived here, never copied.
  *  - The extra finger's events must not cut into the middle of a group of events from the real
  *    screen, so they wait for its next SYN_REPORT, or for resync() when the group was lost.
+ *  - No two contacts on the merged screen may share a tracking id: Android takes them for one pointer
+ *    and one of the fingers vanishes. The extra finger takes an id no contact has, and a real finger is
+ *    passed on with its own id unless that id is taken there (a screen that numbers its fingers 0 to 9
+ *    can give a new finger the id the extra finger holds), in which case it gets a free one.
  *
  * Not thread safe: call everything from one thread.
  */
@@ -120,7 +124,8 @@ public:
 private:
     struct Contact {
         bool active = false;
-        int32_t trackingId = -1;
+        int32_t trackingId = -1;   ///< The id the real screen gave the contact; not used for the extra finger.
+        int32_t outputId = -1;     ///< The id it has on the merged screen, which no other contact there has.
         std::array<int32_t, evdev::kMtAxisCount> values{};
         std::array<bool, evdev::kMtAxisCount> known{};   ///< Whether the value has been written for this contact.
     };
@@ -138,7 +143,12 @@ private:
     void emit(uint16_t type, uint16_t code, int32_t value) { sink_->emit(type, code, value); }
     void selectSlot(int slot);
     void writeAxis(int slot, uint16_t code, int32_t value);
-    void writeTrackingId(int slot, int32_t trackingId);
+    /// Starts a contact in `slot` (a real one with the id the real screen gave it) and writes the id it gets on the merged screen.
+    void startContact(int slot, int32_t realId);
+    /// Lifts the contact in `slot` on the merged screen.
+    void endContact(int slot);
+    bool outputIdInUse(int32_t id) const;
+    int32_t nextFreeOutputId(int32_t avoid);
     void finishFrame();
     int activeContactCount() const;
 
@@ -154,7 +164,6 @@ private:
     void applyAimDown(int32_t x, int32_t y);
     void applyAimMove(int32_t x, int32_t y);
     void applyAimUp();
-    int32_t pickAimTrackingId();
     int32_t clampToAxis(uint16_t code, int32_t value) const;
 
     TouchDeviceInfo info_;
@@ -168,7 +177,7 @@ private:
     bool outputTouching_ = false;  ///< BTN_TOUCH as last written.
     bool inRealFrame_ = false;     ///< Part of a group of real events has been seen but not its SYN_REPORT.
     bool needsResync_ = false;
-    int32_t lastAimTrackingId_ = 0;
+    int32_t lastPickedId_ = 0;     ///< The last id given out by nextFreeOutputId(); the next search starts after it.
 
     static constexpr int kMaxQueuedAim = 16;
     std::array<AimCommand, kMaxQueuedAim> queuedAim_{};

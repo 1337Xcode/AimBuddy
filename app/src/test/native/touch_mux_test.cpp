@@ -222,7 +222,8 @@ private:
 
 /// A multiplexer with a reader on its output and a fake screen on its input.
 struct Rig {
-    Rig() : reader(kRealSlots + 1), mux(makeDeviceInfo(), &reader), screen(&mux) {}
+    Rig() : Rig(makeDeviceInfo()) {}
+    explicit Rig(const TouchDeviceInfo& info) : reader(kRealSlots + 1), mux(info, &reader), screen(&mux) {}
 
     StreamReader reader;
     TouchMux mux;
@@ -409,6 +410,30 @@ TEST(mux_gives_the_extra_finger_an_id_no_real_finger_uses) {
     rig.screen.down(0, 1, 100, 100);
     rig.mux.aimDown(500, 500);
     CHECK(rig.reader.lastFrame().idIn(kAimSlot) != 1);
+    CHECK(rig.reader.problems().empty());
+}
+
+TEST(mux_keeps_ids_apart_when_the_screen_gives_a_new_finger_the_id_the_extra_finger_holds) {
+    // Some touchscreens number fingers 0 to 9 instead of counting up. The extra finger took id 1 while it was free;
+    // the player's next finger then came with id 1 too, and two contacts with one id are one pointer to Android.
+    TouchDeviceInfo info = makeDeviceInfo();
+    info.axis(kAbsMtTrackingId) = {true, 0, 9};
+    Rig rig(info);
+    rig.mux.aimDown(500, 500);
+    const int aimId = rig.reader.lastFrame().idIn(kAimSlot);
+    rig.screen.down(0, aimId, 100, 100);
+    CHECK(rig.reader.lastFrame().contacts.size() == 2);
+    CHECK(rig.reader.lastFrame().idIn(0) != aimId);
+    CHECK(rig.reader.lastFrame().idIn(kAimSlot) == aimId);
+
+    // The finger moves and lifts as one pointer, and a finger that comes back with the same id is a new one again.
+    const int fingerId = rig.reader.lastFrame().idIn(0);
+    rig.screen.move(0, 120, 130);
+    CHECK(rig.reader.lastFrame().idIn(0) == fingerId);
+    rig.screen.up(0);
+    CHECK(rig.reader.lastFrame().contacts.size() == 1);
+    rig.screen.down(0, aimId, 100, 100);
+    CHECK(rig.reader.lastFrame().idIn(0) != aimId);
     CHECK(rig.reader.problems().empty());
 }
 
