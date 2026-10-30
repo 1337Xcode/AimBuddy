@@ -248,7 +248,8 @@ void YoloDetector::chooseBackend(const std::function<bool()>& shouldStop) {
     }
     if (gpuLoaded_) {
         gpuMs = medianLatencyMs(gpuNet_, shouldStop);
-        if (gpuMs < 0.0f) {
+        // A stop cuts the timing short, which is no failure: the GPU net, slow to load on some phones, stays loaded.
+        if (gpuMs < 0.0f && !shouldStop()) {
             gpuNet_.clear();
             gpuLoaded_ = false;
         }
