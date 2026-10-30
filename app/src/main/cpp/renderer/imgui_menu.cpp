@@ -1081,6 +1081,7 @@ bool drawAimTab(Settings& s) {
     changed |= ImGui::Checkbox(T(Key::InvertVertical), &s.invertY);
 
     ImGui::SeparatorText(T(Key::TouchAreaTitle));
+    ImGui::TextWrapped("%s", T(Key::TouchAreaHint));
     const ImVec2 buttonSize(menu::ContentWidth(), kPageButtonEm * ImGui::GetFontSize());
     ImGui::BeginDisabled(s.streamerMode);   // the editor draws over the game
     if (menu::PillButton(T(Key::MoveTouchArea), buttonSize, menu::PillStyle::kTinted)) {
