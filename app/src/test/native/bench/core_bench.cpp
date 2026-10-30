@@ -1,14 +1,18 @@
-// Benchmarks of the pure C++ core on the development machine. Two kinds:
+// Benchmarks of the pure C++ core on the development machine. Three kinds:
 //  - what each step of a frame costs (colour finder, camera look, tracker, aim step, touch merger, overlay fingerprint);
-//  - how the aim controller copes with a camera it was not told about, in the simulated game the tests use.
-// Build and run: sh app/src/test/native/bench/run.sh [runs]
+//  - how the aim controller copes with a camera it was not told about, in the simulated game the tests use;
+//  - how closely the aim follows targets that strafe, run and stop, on phones that detect 60, 30 and 15 times a second.
+// Build and run: sh app/src/test/native/bench/run.sh [runs], or with "follow" for the moving targets only.
 // The timings are for this machine's processor, not a phone's, and the simulation is not a real game.
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <iterator>
+#include <string>
 #include <vector>
 
 #include "core/colour_blobs.h"
@@ -333,10 +337,130 @@ void benchUnknownCamera() {
     }
 }
 
+/// A head this far from the crosshair still counts as under it: about the radius of the head of the simulated 180 px figure.
+constexpr float kHeadRadiusPx = 12.0f;
+
+/// Moving targets are judged from this far into a run, once the aim has had time to reach them, to the end of the run.
+constexpr float kFollowFromS = 1.5f;
+constexpr float kFollowRunS = 8.0f;
+
+/// Seeds each moving-target case is run with; the figures printed are their average.
+constexpr uint32_t kFollowSeeds[] = {1, 2, 3, 4, 5};
+
+/// A target that runs at `speedPxS` and turns back every `legSeconds`: a player strafing left and right.
+simulation::SimulatedGame::Path strafingLegs(float speedPxS, float legSeconds) {
+    return [=](float t, float* x, float* y) {
+        const float period = 2.0f * legSeconds;
+        const float phase = std::fmod(t, period);
+        const float travelled = phase < legSeconds ? phase * speedPxS : (period - phase) * speedPxS;
+        *x = 1200.0f - 0.5f * speedPxS * legSeconds + travelled;
+        *y = 540.0f;
+    };
+}
+
+/// A target that runs at `speedPxS` for `legSeconds`, stands for as long, and runs on.
+simulation::SimulatedGame::Path stopAndGo(float speedPxS, float legSeconds) {
+    return [=](float t, float* x, float* y) {
+        const float period = 2.0f * legSeconds;
+        const float laps = std::floor(t / period);
+        const float phase = t - laps * period;
+        *x = 1150.0f + speedPxS * (laps * legSeconds + std::min(phase, legSeconds));
+        *y = 540.0f;
+    };
+}
+
+/// A target running one way at `speedPxS`.
+simulation::SimulatedGame::Path running(float speedPxS) {
+    return [=](float t, float* x, float* y) {
+        *x = 1150.0f + speedPxS * t;
+        *y = 540.0f;
+    };
+}
+
+/// How closely the aim stayed on a moving target: the RMS distance from the head to the crosshair, and the share of the time it was under it.
+struct FollowScore {
+    double rmsPx = 0.0;
+    double onHeadShare = 0.0;
+};
+
+/// Runs one moving-target case with each seed and averages what the aim did.
+FollowScore runFollowCase(const simulation::SimulatedGame::Truth& truth, const simulation::SimulatedGame::Path& path) {
+    FollowScore total;
+    for (const uint32_t seed : kFollowSeeds) {
+        simulation::SimulatedGame game(truth, simulation::baseSettings(), path, seed);
+        double squares = 0.0;
+        int samples = 0;
+        int onHead = 0;
+        game.run(kFollowRunS, [&](float t, float errorX, float errorY) {
+            if (t < kFollowFromS) {
+                return;
+            }
+            const double distanceSq = static_cast<double>(errorX) * errorX + static_cast<double>(errorY) * errorY;
+            squares += distanceSq;
+            ++samples;
+            onHead += distanceSq <= kHeadRadiusPx * kHeadRadiusPx ? 1 : 0;
+        });
+        total.rmsPx += std::sqrt(squares / samples);
+        total.onHeadShare += static_cast<double>(onHead) / samples;
+    }
+    const double seeds = static_cast<double>(std::size(kFollowSeeds));
+    total.rmsPx /= seeds;
+    total.onHeadShare /= seeds;
+    return total;
+}
+
+/// A phone that detects `perSecond` times a second, each result ready `latencyMs` after its frame, with the camera looked at 30 times a second.
+simulation::SimulatedGame::Truth phoneDetecting(int periodMs, int latencyMs, float noisePx) {
+    simulation::SimulatedGame::Truth truth;
+    truth.detectionPeriodMs = periodMs;
+    truth.detectionLatencyMs = latencyMs;
+    truth.noisePx = noisePx;
+    truth.dropoutRate = 0.10f;
+    truth.cameraPeriodMs = 33;
+    return truth;
+}
+
+/// The aim controller following targets that move, on phones that detect at three rates.
+void benchMovingTargets() {
+    struct Phone {
+        const char* name;
+        simulation::SimulatedGame::Truth truth;
+    };
+    const Phone phones[] = {
+        {"60/s, 20 ms", phoneDetecting(16, 20, 2.0f)},
+        {"30/s, 40 ms", phoneDetecting(33, 40, 2.5f)},
+        {"15/s, 70 ms", phoneDetecting(66, 70, 3.0f)},
+    };
+    struct Motion {
+        const char* name;
+        simulation::SimulatedGame::Path path;
+    };
+    const Motion motions[] = {
+        {"still, 160 px off", simulation::stationary(150.0f, -50.0f)},
+        {"strafe 0.5 Hz, 150 px", simulation::strafingPath(0.5f, 150.0f)},
+        {"strafe 1 Hz, 100 px", simulation::strafingPath(1.0f, 100.0f)},
+        {"strafe 400 px/s, turns every 0.5 s", strafingLegs(400.0f, 0.5f)},
+        {"run 300 px/s", running(300.0f)},
+        {"run 400 px/s, stop 0.6 s", stopAndGo(400.0f, 0.6f)},
+    };
+    std::printf("\n| target | detections | RMS error | head under the crosshair |\n");
+    std::printf("| --- | --- | ---: | ---: |\n");
+    for (const Motion& motion : motions) {
+        for (const Phone& phone : phones) {
+            const FollowScore score = runFollowCase(phone.truth, motion.path);
+            std::printf("| %-36s | %-11s | %6.1f px | %5.1f%% |\n", motion.name, phone.name, score.rmsPx, 100.0 * score.onHeadShare);
+        }
+    }
+}
+
 }  // namespace
 
-/// Runs the step timings, then the simulated cameras.
+/// Runs the step timings, then the simulated cameras and the moving targets. With "follow" only the moving targets run.
 int main(int argc, char** argv) {
+    if (argc > 1 && std::string(argv[1]) == "follow") {
+        benchMovingTargets();
+        return 0;
+    }
     const int runs = argc > 1 ? std::atoi(argv[1]) : 200;
     std::printf("| step | median (us) | 95th percentile (us) | runs |\n| --- | ---: | ---: | ---: |\n");
     benchColourFinder(runs);
@@ -346,5 +470,6 @@ int main(int argc, char** argv) {
     benchTouchMerger(runs);
     benchFingerprint(runs);
     benchUnknownCamera();
+    benchMovingTargets();
     return 0;
 }
