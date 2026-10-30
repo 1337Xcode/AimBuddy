@@ -217,7 +217,21 @@ private:
         float seenY = 0.0f;
         float velocityX = 0.0f;
         float velocityY = 0.0f;
+        float width = 0.0f;
         float height = 0.0f;
+    };
+
+    /// Two sightings of one target with a gap between them, from which its speed is measured again.
+    struct Gap {
+        float fromX = 0.0f;      ///< Box centre at the earlier sighting, screen pixels.
+        float fromY = 0.0f;
+        int64_t fromNs = 0;      ///< Capture time of the earlier sighting.
+        float toX = 0.0f;        ///< Box centre now.
+        float toY = 0.0f;
+        float varianceX = 0.0f;  ///< Variance of one box centre on each axis.
+        float varianceY = 0.0f;
+        bool keepX = true;       ///< The box kept its width: the change of its centre along x is movement.
+        bool keepY = true;
     };
 
     struct Match {
@@ -246,8 +260,9 @@ private:
     void removeDuplicates();
     void removeTrackAt(int index);
     void rememberLost(const Track& track, int64_t nowNs);
-    int findLost(const Detection& detection, int64_t captureNs) const;
-    void recall(Track& track, const LostTrack& lost, int64_t captureNs) const;
+    float pathDistance(const LostTrack& lost, const Detection& detection, int64_t captureNs) const;
+    void recall(Track& track, const LostTrack& lost, const Detection& detection) const;
+    void restartVelocityFromGap(Track& track, const Gap& gap) const;
 
     /// Learns how often results arrive (see update()).
     void noteArrival(int64_t captureNs, int64_t arrivalNs);

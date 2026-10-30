@@ -439,29 +439,79 @@ TEST(tracker_takes_up_a_runner_at_its_pace_when_it_comes_out_from_behind_cover) 
     }
 }
 
-TEST(tracker_knows_a_runner_again_after_cover_too_long_to_follow_it_through) {
-    // Hidden for 0.6 s, longer than a missed target is kept, the runner comes out where its path leads. It is the same
-    // target: drawn on its first detection, under its old identity, at its pace. A box far off that path is someone else.
-    Tracker tracker;
-    TrackView views[aimbuddy::kMaxTracks];
-    const auto runnerAt = [](int64_t t) { return 300.0f + 300.0f * static_cast<float>(t) * 1e-9f; };
+/// Feeds a runner at 300 px/s (box centre at x = 300 + 300 t, y = 400, 60 x 180 px) for 30 frames 16 ms apart, then
+/// nothing until frame 68, long after the tracker forgot it. Returns the runner's id.
+int forgetARunner(Tracker& tracker) {
     for (int frame = 0; frame < 30; ++frame) {
         const int64_t t = frame * 16 * kMs;
-        Detection d = box(runnerAt(t), 400.0f, 60.0f, 180.0f, 0.9f);
+        Detection d = box(300.0f + 300.0f * static_cast<float>(t) * 1e-9f, 400.0f, 60.0f, 180.0f, 0.9f);
         tracker.update(&d, 1, t, nullptr);
     }
+    TrackView views[aimbuddy::kMaxTracks];
     CHECK(tracker.snapshot(29 * 16 * kMs, views, aimbuddy::kMaxTracks) == 1);
-    const int id = views[0].id;
     for (int frame = 30; frame < 68; ++frame) {
         tracker.update(nullptr, 0, frame * 16 * kMs, nullptr);
     }
     CHECK(tracker.snapshot(67 * 16 * kMs, views, aimbuddy::kMaxTracks) == 0);   // forgotten by now
+    return views[0].id;
+}
+
+TEST(tracker_knows_a_runner_again_after_cover_too_long_to_follow_it_through) {
+    // Hidden for 0.6 s, longer than a missed target is kept, the runner comes out where its path leads. It is the same
+    // target: drawn on its first detection, under its old identity, at its pace. A box far off that path, listed
+    // first, is someone else.
+    Tracker tracker;
+    TrackView views[aimbuddy::kMaxTracks];
+    const int id = forgetARunner(tracker);
     const int64_t back = 68 * 16 * kMs;
-    const Detection both[2] = {box(runnerAt(back), 400.0f, 60.0f, 180.0f, 0.9f), box(1500.0f, 400.0f, 60.0f, 180.0f, 0.8f)};
+    const float runnerX = 300.0f + 300.0f * static_cast<float>(back) * 1e-9f;
+    const Detection both[2] = {box(1500.0f, 400.0f, 60.0f, 180.0f, 0.8f), box(runnerX, 400.0f, 60.0f, 180.0f, 0.9f)};
     tracker.update(both, 2, back, nullptr);
     CHECK(tracker.snapshot(back, views, aimbuddy::kMaxTracks) == 1);   // the stranger waits for its third sighting
     CHECK(views[0].id == id);
-    CHECK_NEAR(views[0].centerX, runnerAt(back), 10.0);
+    CHECK_NEAR(views[0].centerX, runnerX, 10.0);
+    CHECK_NEAR(views[0].velocityX, 300.0, 30.0);
+}
+
+TEST(tracker_does_not_give_a_forgotten_target_to_someone_far_off_its_path) {
+    // Only a stranger shows, far from where the forgotten runner could have got to: a new target, with a new identity.
+    Tracker tracker;
+    TrackView views[aimbuddy::kMaxTracks];
+    const int id = forgetARunner(tracker);
+    const int64_t back = 68 * 16 * kMs;
+    Detection stranger = box(1500.0f, 400.0f, 60.0f, 180.0f, 0.95f);   // sure enough to be drawn at once
+    tracker.update(&stranger, 1, back, nullptr);
+    CHECK(tracker.snapshot(back, views, aimbuddy::kMaxTracks) == 1);
+    CHECK(views[0].id != id);
+    CHECK(views[0].phase == aimbuddy::TrackPhase::kTentative);
+}
+
+TEST(tracker_gives_a_returning_target_to_the_box_nearest_its_path) {
+    // Two boxes come out within reach of the forgotten runner's path; the one listed first is further off it.
+    Tracker tracker;
+    const int id = forgetARunner(tracker);
+    const int64_t back = 68 * 16 * kMs;
+    const float runnerX = 300.0f + 300.0f * static_cast<float>(back) * 1e-9f;
+    const Detection both[2] = {box(runnerX, 540.0f, 60.0f, 180.0f, 0.95f), box(runnerX, 405.0f, 60.0f, 180.0f, 0.9f)};
+    tracker.update(both, 2, back, nullptr);
+    TrackView view;
+    CHECK(viewNear(tracker, back, runnerX, 405.0f, &view));
+    CHECK(view.id == id);
+}
+
+TEST(tracker_takes_no_speed_from_a_returning_target_that_shows_another_part) {
+    // The runner comes out crouched behind a low wall: its box is 110 px tall instead of 180, its top edge where it
+    // was. The centre moved up 35 px without the runner rising: no upward speed may come of it.
+    Tracker tracker;
+    TrackView views[aimbuddy::kMaxTracks];
+    const int id = forgetARunner(tracker);
+    const int64_t back = 68 * 16 * kMs;
+    const float runnerX = 300.0f + 300.0f * static_cast<float>(back) * 1e-9f;
+    Detection crouched = box(runnerX, 365.0f, 60.0f, 110.0f, 0.9f);
+    tracker.update(&crouched, 1, back, nullptr);
+    CHECK(tracker.snapshot(back, views, aimbuddy::kMaxTracks) == 1);
+    CHECK(views[0].id == id);
+    CHECK_NEAR(views[0].velocityY, 0.0, 10.0);
     CHECK_NEAR(views[0].velocityX, 300.0, 30.0);
 }
 

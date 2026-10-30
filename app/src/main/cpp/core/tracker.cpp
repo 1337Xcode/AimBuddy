@@ -200,7 +200,7 @@ void Tracker::correctTrack(Track& track, const Detection& detection) const {
     // the faded estimate left the aim trailing for a third of a second, and a target that stopped behind the cover is
     // not pushed on.
     const int64_t unseenNs = track.stateNs - track.lastSeenNs;
-    const bool returning = track.hits > 0 && track.missNs > holdNs() && unseenNs > 0;
+    const bool returning = track.hits > 0 && track.missNs > holdNs() && unseenNs > 0 && unseenNs <= config_.recallNs;
 
     // A sudden large size change means a different part of the target became visible (it peeked
     // out, ducked behind cover, or a leg or arm came into view). Follow it at once instead of
@@ -225,22 +225,18 @@ void Tracker::correctTrack(Track& track, const Detection& detection) const {
     }
 
     if (returning) {
-        float egoX = 0.0f;
-        float egoY = 0.0f;
-        if (egoMotion_ != nullptr) {
-            egoMotion_->shiftBetween(track.lastSeenNs, track.stateNs, &egoX, &egoY);
-        }
-        // Its doubt: the error of two box centres, and of the camera's turn over the gap, spread over the gap. A box
-        // that came back another size shows another part of the target, so its centre moved without the target.
-        const float gapS = nsToSeconds(unseenNs);
-        if (!widthChanged) {
-            track.x.restartVelocity((centerX - track.seenX - egoX) / gapS,
-                                    (2.0f * varianceX + square(config_.egoUncertainty * egoX)) / square(gapS));
-        }
-        if (!heightChanged) {
-            track.y.restartVelocity((centerY - track.seenY - egoY) / gapS,
-                                    (2.0f * varianceY + square(config_.egoUncertainty * egoY)) / square(gapS));
-        }
+        // a box that came back another size shows another part of the target: its centre moved without the target
+        Gap gap;
+        gap.fromX = track.seenX;
+        gap.fromY = track.seenY;
+        gap.fromNs = track.lastSeenNs;
+        gap.toX = centerX;
+        gap.toY = centerY;
+        gap.varianceX = varianceX;
+        gap.varianceY = varianceY;
+        gap.keepX = !widthChanged;
+        gap.keepY = !heightChanged;
+        restartVelocityFromGap(track, gap);
     }
 
     // A speed no person can reach is a matching mistake; keep it from flinging the box.
@@ -453,19 +449,51 @@ void Tracker::update(const Detection* detections, int count, int64_t captureNs, 
         }
     }
 
-    // Start new targets from strong, unclaimed detections that clear the stricter birth score. One that shows where a
-    // target forgotten a moment ago could have got to is that target, back from behind cover.
+    // A new box that shows where a target forgotten a moment ago could have got to is that target, back from behind
+    // cover. Pairs are made nearest first, so of two players coming out behind the same wall each keeps its own.
+    int recalledFrom[kMaxDetections];
+    std::fill(recalledFrom, recalledFrom + count, -1);
+    bool lostTaken[kMaxTracks] = {};
+    for (;;) {
+        int bestLost = -1;
+        int bestDetection = -1;
+        float bestDistance = 0.0f;
+        for (int s = 0; s < strongCount; ++s) {
+            const int d = strong[s];
+            if (detectionUsed[d] || recalledFrom[d] >= 0 || detections[d].score < config_.birthScore) {
+                continue;
+            }
+            for (int i = 0; i < lostCount_; ++i) {
+                const float distance = lostTaken[i] ? -1.0f : pathDistance(lost_[i], detections[d], captureNs);
+                if (distance >= 0.0f && (bestLost < 0 || distance < bestDistance)) {
+                    bestLost = i;
+                    bestDetection = d;
+                    bestDistance = distance;
+                }
+            }
+        }
+        if (bestLost < 0) {
+            break;
+        }
+        recalledFrom[bestDetection] = bestLost;
+        lostTaken[bestLost] = true;
+    }
+
+    // Start new targets from strong, unclaimed detections that clear the stricter birth score.
     for (int s = 0; s < strongCount && trackCount_ < kMaxTracks; ++s) {
         const Detection& detection = detections[strong[s]];
         if (detectionUsed[strong[s]] || detection.score < config_.birthScore) {
             continue;
         }
-        const int lost = findLost(detection, captureNs);
         startTrack(detection, captureNs);
         tracks_[trackCount_ - 1].matchedNow = true;
-        if (lost >= 0) {
-            recall(tracks_[trackCount_ - 1], lost_[lost], captureNs);
-            lost_[lost] = lost_[--lostCount_];
+        if (recalledFrom[strong[s]] >= 0) {
+            recall(tracks_[trackCount_ - 1], lost_[recalledFrom[strong[s]]], detection);
+        }
+    }
+    for (int i = lostCount_ - 1; i >= 0; --i) {
+        if (lostTaken[i]) {
+            lost_[i] = lost_[--lostCount_];
         }
     }
 
@@ -515,6 +543,7 @@ void Tracker::rememberLost(const Track& track, int64_t nowNs) {
     entry.seenY = track.seenY;
     entry.velocityX = track.seenVelocityX;
     entry.velocityY = track.seenVelocityY;
+    entry.width = track.width.value;
     entry.height = track.height.value;
     if (lostCount_ < kMaxTracks) {
         lost_[lostCount_++] = entry;
@@ -527,65 +556,86 @@ void Tracker::rememberLost(const Track& track, int64_t nowNs) {
     lost_[oldest] = entry;
 }
 
-int Tracker::findLost(const Detection& detection, int64_t captureNs) const {
-    const float centerX = detection.x + detection.width * 0.5f;
-    const float centerY = detection.y + detection.height * 0.5f;
-    int best = -1;
-    float bestDistance = 0.0f;
-    for (int i = 0; i < lostCount_; ++i) {
-        const LostTrack& lost = lost_[i];
-        const int64_t gapNs = captureNs - lost.seenNs;
-        const float sizeRatio = detection.height / std::max(lost.height, 1.0f);
-        if (lost.classId != detection.classId || gapNs <= 0 || gapNs > config_.recallNs || sizeRatio < 0.5f ||
-            sizeRatio > 2.0f) {
-            continue;
-        }
-        // Its path: from where it was last seen (moved with the camera since) to where its speed then would have taken
-        // it. It may have stopped anywhere along it, or kept going.
-        float egoX = 0.0f;
-        float egoY = 0.0f;
-        if (egoMotion_ != nullptr) {
-            egoMotion_->shiftBetween(lost.seenNs, captureNs, &egoX, &egoY);
-        }
-        const float gapS = nsToSeconds(gapNs);
-        const float startX = lost.seenX + egoX;
-        const float startY = lost.seenY + egoY;
-        const float pathX = lost.velocityX * gapS;
-        const float pathY = lost.velocityY * gapS;
-        const float pathSq = pathX * pathX + pathY * pathY;
-        const float along =
-            pathSq > 0.0f ? std::clamp(((centerX - startX) * pathX + (centerY - startY) * pathY) / pathSq, 0.0f, 1.0f) : 0.0f;
-        const float distance = std::hypot(centerX - startX - along * pathX, centerY - startY - along * pathY);
-        const float reach = config_.recallReachPerBox * std::max(detection.height, lost.height);
-        if (distance <= reach && (best < 0 || distance < bestDistance)) {
-            best = i;
-            bestDistance = distance;
-        }
+float Tracker::pathDistance(const LostTrack& lost, const Detection& detection, int64_t captureNs) const {
+    const int64_t gapNs = captureNs - lost.seenNs;
+    const float sizeRatio = detection.height / std::max(lost.height, 1.0f);
+    if (lost.classId != detection.classId || gapNs <= 0 || gapNs > config_.recallNs || sizeRatio < 0.5f ||
+        sizeRatio > 2.0f) {
+        return -1.0f;
     }
-    return best;
-}
-
-void Tracker::recall(Track& track, const LostTrack& lost, int64_t captureNs) const {
-    track.id = lost.id;
-    track.hits += lost.hits;
-    track.phase = TrackPhase::kTracked;
+    // Its path: from where it was last seen (moved with the camera since) to where its speed then would have taken
+    // it. It may have stopped anywhere along it, or kept going.
     float egoX = 0.0f;
     float egoY = 0.0f;
     if (egoMotion_ != nullptr) {
         egoMotion_->shiftBetween(lost.seenNs, captureNs, &egoX, &egoY);
     }
-    // the speed it covered the gap with, doubted as for a target that comes back before it is forgotten
-    const float gapS = nsToSeconds(captureNs - lost.seenNs);
-    const float variance = measurementVariance(track.height.value, track.score);
-    track.x.restartVelocity((track.seenX - lost.seenX - egoX) / gapS,
-                            (2.0f * variance + square(config_.egoUncertainty * egoX)) / square(gapS));
-    track.y.restartVelocity((track.seenY - lost.seenY - egoY) / gapS,
-                            (2.0f * variance + square(config_.egoUncertainty * egoY)) / square(gapS));
+    const float gapS = nsToSeconds(gapNs);
+    const float centerX = detection.x + detection.width * 0.5f;
+    const float centerY = detection.y + detection.height * 0.5f;
+    const float startX = lost.seenX + egoX;
+    const float startY = lost.seenY + egoY;
+    const float pathX = lost.velocityX * gapS;
+    const float pathY = lost.velocityY * gapS;
+    const float pathSq = pathX * pathX + pathY * pathY;
+    const float along =
+        pathSq > 0.0f ? std::clamp(((centerX - startX) * pathX + (centerY - startY) * pathY) / pathSq, 0.0f, 1.0f) : 0.0f;
+    const float distance = std::hypot(centerX - startX - along * pathX, centerY - startY - along * pathY);
+    const float reach = config_.recallReachPerBox * std::max(detection.height, lost.height);
+    return distance <= reach ? distance : -1.0f;
+}
+
+void Tracker::recall(Track& track, const LostTrack& lost, const Detection& detection) const {
+    track.id = lost.id;
+    track.hits += lost.hits;
+    track.phase = TrackPhase::kTracked;
+    // The speed it covered the gap with, doubted as for a target seen again before it is forgotten (correctTrack): a
+    // box cut off by the scanned region's edge has its centre further out, and one that came back another size shows
+    // another part of the target.
+    Gap gap;
+    gap.fromX = lost.seenX;
+    gap.fromY = lost.seenY;
+    gap.fromNs = lost.seenNs;
+    gap.toX = detection.x + detection.width * 0.5f;
+    gap.toY = detection.y + detection.height * 0.5f;
+    gap.varianceX = measurementVariance(track.height.value, detection.score);
+    gap.varianceY = gap.varianceX;
+    if (detection.clipFlags & (kClipLeft | kClipRight)) {
+        gap.varianceX *= kClippedVarianceScale;
+    }
+    if (detection.clipFlags & (kClipTop | kClipBottom)) {
+        gap.varianceY *= kClippedVarianceScale;
+    }
+    gap.keepX = std::fabs(detection.width - lost.width) <= config_.sizeSnapRatio * lost.width;
+    gap.keepY = std::fabs(detection.height - lost.height) <= config_.sizeSnapRatio * lost.height;
+    restartVelocityFromGap(track, gap);
     const float maxSpeed = config_.maxSpeedPerBox * track.height.value;
     track.x.clampVelocity(maxSpeed);
     track.y.clampVelocity(maxSpeed);
     track.seenVelocityX = track.x.velocity;
     track.seenVelocityY = track.y.velocity;
+}
+
+void Tracker::restartVelocityFromGap(Track& track, const Gap& gap) const {
+    // From one box centre to the other, with the camera's turn in between taken out. Its doubt: the error of the two
+    // centres, and of the camera's turn, spread over the gap.
+    const float gapS = nsToSeconds(track.stateNs - gap.fromNs);
+    if (!(gapS > 0.0f)) {
+        return;
+    }
+    float egoX = 0.0f;
+    float egoY = 0.0f;
+    if (egoMotion_ != nullptr) {
+        egoMotion_->shiftBetween(gap.fromNs, track.stateNs, &egoX, &egoY);
+    }
+    if (gap.keepX) {
+        track.x.restartVelocity((gap.toX - gap.fromX - egoX) / gapS,
+                                (2.0f * gap.varianceX + square(config_.egoUncertainty * egoX)) / square(gapS));
+    }
+    if (gap.keepY) {
+        track.y.restartVelocity((gap.toY - gap.fromY - egoY) / gapS,
+                                (2.0f * gap.varianceY + square(config_.egoUncertainty * egoY)) / square(gapS));
+    }
 }
 
 void Tracker::removeTrackAt(int index) {
