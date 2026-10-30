@@ -19,6 +19,7 @@ import android.provider.Settings
 import android.util.Log
 import android.view.Display
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import java.io.File
@@ -187,7 +188,11 @@ class AssistService : Service(), NativeBridge.StreamerModeListener, NativeBridge
         val shape = readDisplayShape()
         val session = try {
             CaptureSession(projection, resources.displayMetrics.densityDpi) {
-                mainHandler.post { shutdown(AssistState.Failure.CAPTURE_ENDED) }
+                mainHandler.post {
+                    shutdown(AssistState.Failure.CAPTURE_ENDED)
+                    // The player is in the game, not on the home screen that says why: say it over the game.
+                    Toast.makeText(this, R.string.capture_ended_short, Toast.LENGTH_LONG).show()
+                }
             }
         } catch (e: Exception) {
             projection.stop()   // nothing owns the projection yet, so it would otherwise stay shared

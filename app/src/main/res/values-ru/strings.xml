@@ -79,7 +79,8 @@
     <string name="overlay_denied">Показ поверх других приложений не разрешён.</string>
     <string name="model_failed">Не удалось загрузить модель обнаружения.</string>
     <string name="start_failed">AimBuddy не удалось запустить.</string>
-    <string name="capture_ended">Запись экрана завершена.</string>
+    <string name="capture_ended">Захват экрана завершён. Android разрешает захватывать экран только одному приложению, поэтому запись экрана или трансляция останавливает AimBuddy. Блокировка экрана или остановка показа тоже.</string>
+    <string name="capture_ended_short">AimBuddy остановлен: запись или трансляция экрана заняла захват.</string>
     <string name="shizuku_ask">Разрешите AimBuddy в запросе Shizuku.</string>
     <string name="shizuku_denied">Shizuku не разрешён. Цели по-прежнему подсвечиваются.</string>
     <string name="dialog_cancel">Отмена</string>

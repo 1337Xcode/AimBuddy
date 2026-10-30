@@ -80,7 +80,8 @@
     <string name="overlay_denied">Display over other apps is not allowed.</string>
     <string name="model_failed">The detection model could not be loaded.</string>
     <string name="start_failed">AimBuddy could not start.</string>
-    <string name="capture_ended">Screen capture ended.</string>
+    <string name="capture_ended">Screen capture ended. Android lets one app capture the screen at a time, so starting a screen recording or a cast stops AimBuddy. Locking the screen or stopping the sharing does too.</string>
+    <string name="capture_ended_short">AimBuddy stopped: a screen recording or cast took over the capture.</string>
     <string name="shizuku_ask">Allow AimBuddy in the Shizuku request.</string>
     <string name="shizuku_denied">Shizuku was not allowed. Targets are still highlighted.</string>
     <string name="dialog_cancel">Cancel</string>

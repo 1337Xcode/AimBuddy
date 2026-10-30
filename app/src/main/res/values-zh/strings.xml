@@ -79,7 +79,8 @@
     <string name="overlay_denied">未允许显示在其他应用上层。</string>
     <string name="model_failed">无法加载检测模型。</string>
     <string name="start_failed">AimBuddy 无法启动。</string>
-    <string name="capture_ended">屏幕录制已结束。</string>
+    <string name="capture_ended">屏幕捕获已结束。Android 一次只允许一个应用捕获屏幕，所以开始录屏或投屏会让 AimBuddy 停止。锁屏或停止共享也会如此。</string>
+    <string name="capture_ended_short">AimBuddy 已停止：录屏或投屏接管了屏幕捕获。</string>
     <string name="shizuku_ask">请在 Shizuku 的请求中允许 AimBuddy。</string>
     <string name="shizuku_denied">未允许 Shizuku。目标仍会高亮。</string>
     <string name="dialog_cancel">取消</string>
