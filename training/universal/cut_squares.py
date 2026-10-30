@@ -101,11 +101,22 @@ def cover_one(crop, lines, rng):
     share = rng.uniform(0.3, 0.6)
     side = rng.choice(("left", "right", "below"))
     if side == "below":
-        cover, kept = [a, d - share * (d - b), c, d], [a, b, c, d - share * (d - b)]
+        cover = [a, d - share * (d - b), c, d]
     elif side == "left":
-        cover, kept = [a, b, a + share * (c - a), d], [a + share * (c - a), b, c, d]
+        cover = [a, b, a + share * (c - a), d]
     else:
-        cover, kept = [c - share * (c - a), b, c, d], [a, b, c - share * (c - a), d]
+        cover = [c - share * (c - a), b, c, d]
+
+    def uncovered(box):
+        """What the cover leaves of a box, cut on the covered side only: a head that sticks out above its body stays
+        whole when the legs are hidden."""
+        if side == "below":
+            return [box[0], box[1], box[2], min(box[3], cover[1])]
+        if side == "left":
+            return [max(box[0], cover[2]), box[1], box[2], box[3]]
+        return [box[0], box[1], min(box[2], cover[0]), box[3]]
+
+    kept = uncovered(body)
     own_head = [j for j, (cls, part) in enumerate(lines) if cls == 1 and centre_inside(part, body)]
     if any(overlaps(cover, part) for j, (_, part) in enumerate(lines) if j != k and j not in own_head):
         return lines   # it would hide part of someone else too
@@ -127,7 +138,7 @@ def cover_one(crop, lines, rng):
             elif j not in own_head:
                 out.append((cls, part))
             elif centre_inside(part, kept):
-                out.append((1, [max(part[0], kept[0]), max(part[1], kept[1]), min(part[2], kept[2]), min(part[3], kept[3])]))
+                out.append((1, uncovered(part)))
         return out
     return lines
 
@@ -156,7 +167,7 @@ def write_square(frame, square, labels, out, name, rng, augment, drop_faces=Fals
     x0, y0, side = square
     source = frame[y0:y0 + side, x0:x0 + side]
     crop = source.copy()
-    lines, kept = [], []
+    lines = []
     for cls, boxes, needed in ((0, labels.bodies, MIN_VISIBLE_BODY), (2, labels.own, MIN_VISIBLE_SELF)):
         for box in boxes:
             part, visible = clip_to(box, x0, y0, side)
@@ -164,7 +175,6 @@ def write_square(frame, square, labels, out, name, rng, augment, drop_faces=Fals
                 continue
             if visible >= needed:
                 lines.append((cls, part))
-                kept.append(part)
             elif cls == 0:
                 paint(crop, part)
     body_parts = [p for c, p in lines if c == 0]
@@ -179,8 +189,8 @@ def write_square(frame, square, labels, out, name, rng, augment, drop_faces=Fals
         part, _ = clip_to(box, x0, y0, side)
         if part is not None:
             paint(crop, part)
-    # grey never covers a labelled person: an unsure box on someone's arm or gun leaves them whole
-    for a, b, c, d in (tuple(int(round(v)) for v in part) for part in kept):
+    # grey never covers a labelled person or head: an unsure box on someone's arm or gun leaves them whole
+    for a, b, c, d in (tuple(int(round(v)) for v in part) for _, part in lines):
         crop[b:d, a:c] = source[b:d, a:c]
     if drop_faces and shows_face(lines):
         return -1

@@ -162,6 +162,33 @@ class SquareTest(unittest.TestCase):
         self.assertGreater(picture[96:224, 88:152].mean(), 190)
         self.assertLess(abs(picture[128:192, 168:192].mean() - 114), 6)
 
+    def test_grey_paint_never_covers_a_labelled_head(self):
+        frame = np.full((400, 400, 3), 50, np.uint8)
+        frame[100:300, 100:200] = 200   # the body
+        frame[80:120, 130:170] = 230    # its head, sticking out above the body box
+        labels = cut_squares.Labels()
+        labels.bodies = [[100, 100, 200, 300]]
+        labels.heads = [[130, 80, 170, 120]]
+        labels.grey = [[60, 40, 240, 100]]   # an unsure box just above the player
+        with tempfile.TemporaryDirectory() as folder:
+            out = (Path(folder), Path(folder))
+            cut_squares.write_square(frame, (0, 0, 400), labels, out, "square", random.Random(1), augment=False)
+            picture = cv2.imread(str(Path(folder) / "square.jpg")).astype(np.float32)
+        # 400 px are written at 320: the head's part above the body is x 104-136, y 64-80
+        self.assertGreater(picture[66:78, 108:132].mean(), 215)
+
+    def test_a_cover_from_below_leaves_a_head_above_the_body_whole(self):
+        for seed in range(30):
+            crop = np.full((320, 320, 3), 50, np.uint8)
+            lines = [(0, [100, 60, 160, 260]), (1, [120, 54, 140, 80])]
+            covered = cut_squares.cover_one(crop, lines, random.Random(seed))
+            heads = [part for cls, part in covered if cls == 1]
+            body = [part for cls, part in covered if cls == 0][0]
+            if body[3] < 260 and body[0] == 100 and body[2] == 160:   # covered from below
+                self.assertEqual(heads, [[120, 54, 140, 80]])
+                return
+        self.fail("no seed covered the body from below")
+
     def test_a_covered_player_keeps_a_label_on_what_stays_in_view(self):
         for seed in range(12):
             crop = np.full((320, 320, 3), 50, np.uint8)
