@@ -137,6 +137,7 @@ void TouchMux::onRealEvent(uint16_t type, uint16_t code, int32_t value) {
             // The kernel ran out of room and lost events. Everything up to the next report is
             // stale; resync() reads the screen's true state instead.
             needsResync_ = true;
+            realFrameCut_ = realFrameCut_ || inRealFrame_;
             inRealFrame_ = false;
         } else if (code == kSynReport && !needsResync_) {
             endRealFrame();
@@ -204,6 +205,9 @@ void TouchMux::flushQueuedAim() {
 void TouchMux::resync(const ContactSnapshot& snapshot) {
     needsResync_ = false;
     inRealFrame_ = false;
+    // Part of a group that was passed on before events were lost waits for a report: a finger lifting, perhaps.
+    const bool frameCut = realFrameCut_;
+    realFrameCut_ = false;
     currentRealSlot_ = (snapshot.currentSlot >= 0 && snapshot.currentSlot < info_.slotCount) ? snapshot.currentSlot : -1;
     for (int slot = 0; slot < info_.slotCount; ++slot) {
         realValues_[slot] = snapshot.slots[slot].values;
@@ -248,7 +252,7 @@ void TouchMux::resync(const ContactSnapshot& snapshot) {
             }
         }
     }
-    if (changed) {
+    if (changed || (frameCut && !lifted)) {
         finishFrame();
     }
     // The extra finger's commands that waited for the catch up go out now, in the order they came.

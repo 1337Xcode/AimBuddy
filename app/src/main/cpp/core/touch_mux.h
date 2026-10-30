@@ -180,6 +180,7 @@ private:
     int outputSlot_ = -1;          ///< Slot last selected on the merged screen (-1 when unknown).
     bool outputTouching_ = false;  ///< BTN_TOUCH as last written.
     bool inRealFrame_ = false;     ///< Part of a group of real events has been seen but not its SYN_REPORT.
+    bool realFrameCut_ = false;    ///< Lost events cut a group short after part of it was passed on.
     bool needsResync_ = false;
     int32_t lastPickedId_ = 0;     ///< The last id given out by nextFreeOutputId(); the next search starts after it.
 

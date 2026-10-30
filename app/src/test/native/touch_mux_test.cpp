@@ -575,6 +575,26 @@ TEST(mux_gives_a_new_finger_the_values_its_slot_held_before_the_screen_was_taken
     CHECK(rig.reader.problems().empty());
 }
 
+TEST(mux_finishes_a_group_that_lost_events_cut_short) {
+    // A finger lifts, and events are lost before the group's report: the lift was passed on, and the catch up finds
+    // nothing else to change. The merged screen must still get a report, or the finger stays down for Android.
+    Rig rig;
+    rig.screen.down(0, 1, 100, 100);
+    rig.screen.select(0);
+    rig.screen.send(kEvAbs, kAbsMtTrackingId, -1);
+    rig.screen.send(kEvSyn, kSynDropped, 0);
+    ContactSnapshot snapshot;
+    snapshot.currentSlot = 0;
+    snapshot.slots[0].values[axisIndex(kAbsMtPositionX)] = 100;
+    snapshot.slots[0].values[axisIndex(kAbsMtPositionY)] = 100;
+    rig.mux.resync(snapshot);
+
+    const SeenFrame& last = rig.reader.lastFrame();
+    CHECK(last.contacts.empty());
+    CHECK(!last.buttonTouch);
+    CHECK(rig.reader.problems().empty());
+}
+
 TEST(mux_does_not_mistake_a_replaced_finger_for_a_moving_one) {
     Rig rig;
     rig.screen.down(0, 1, 100, 100);
