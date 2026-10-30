@@ -59,6 +59,10 @@ enum class Key : int {
     // Visuals tab
     ShowLabels,
     ShowSnapLine,
+    SnapLineFrom,
+    SnapLineCrosshair,
+    SnapLineTop,
+    SnapLineBottom,
     ShowAimPoint,
     ShowDetectionArea,
     ShowAimReach,
@@ -160,6 +164,10 @@ inline const char* kTranslations[static_cast<int>(Key::Count)][static_cast<int>(
 
     /* ShowLabels */           {"Confidence labels", "置信度标签", "Метки уверенности"},
     /* ShowSnapLine */         {"Line to nearest target", "指向最近目标的连线", "Линия к ближайшей цели"},
+    /* SnapLineFrom */         {"Line starts at", "连线起点", "Начало линии"},
+    /* SnapLineCrosshair */    {"Crosshair", "准星", "Прицел"},
+    /* SnapLineTop */          {"Top", "顶部", "Сверху"},
+    /* SnapLineBottom */       {"Bottom", "底部", "Снизу"},
     /* ShowAimPoint */         {"Aim point marker", "瞄准点标记", "Метка точки прицела"},
     /* ShowDetectionArea */    {"Detection area outline", "检测区域轮廓", "Контур области обнаружения"},
     /* ShowAimReach */         {"Aim reach circle", "瞄准范围圈", "Круг дальности прицеливания"},

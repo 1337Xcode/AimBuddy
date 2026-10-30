@@ -18,6 +18,7 @@ TEST(settings_survive_a_round_trip) {
     original.boxColor[2] = 0.75f;
     original.boxThickness = 4;
     original.showSnapLine = true;
+    original.snapLineFrom = 1;
     original.showAimPoint = false;
     original.showDetectionArea = false;
     original.showAimReach = false;
@@ -45,6 +46,7 @@ TEST(settings_survive_a_round_trip) {
     CHECK_NEAR(loaded.boxColor[2], 0.75, 1e-6);
     CHECK(loaded.boxThickness == 4);
     CHECK(loaded.showSnapLine && !loaded.showAimPoint);
+    CHECK(loaded.snapLineFrom == 1);
     CHECK(!loaded.showDetectionArea && !loaded.showAimReach);
     CHECK(!loaded.assistEnabled);   // the assist is never saved: it starts off every run
     CHECK(loaded.detector == 1 && loaded.colourLearned);
@@ -78,7 +80,7 @@ TEST(settings_keep_defaults_for_missing_and_unknown_names) {
 
 TEST(settings_are_clamped_when_read) {
     const Settings loaded = SettingsStore::parse(
-        "aimStrength=7\nconfidence=-3\nboxThickness=99\nsceneGain=0\nlanguage=42\nanchorRadius=9999\naimAfterLanding=5\naimSwitching=-1\n");
+        "aimStrength=7\nconfidence=-3\nboxThickness=99\nsceneGain=0\nlanguage=42\nanchorRadius=9999\naimAfterLanding=5\naimSwitching=-1\nsnapLineFrom=9\n");
     CHECK_NEAR(loaded.aimStrength, 1.0, 1e-6);
     CHECK_NEAR(loaded.confidence, 0.1, 1e-6);
     CHECK(loaded.boxThickness == 6);
@@ -87,6 +89,7 @@ TEST(settings_are_clamped_when_read) {
     CHECK_NEAR(loaded.anchorRadius, 500.0, 1e-6);
     CHECK(loaded.aimAfterLanding == 1);
     CHECK(loaded.aimSwitching == 0);
+    CHECK(loaded.snapLineFrom == 2);
 }
 
 TEST(a_value_that_is_not_a_number_keeps_the_default_when_read) {

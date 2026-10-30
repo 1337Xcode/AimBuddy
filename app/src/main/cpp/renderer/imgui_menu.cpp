@@ -494,8 +494,20 @@ void drawGameOverlay(const Settings& settings, const ImVec2& origin, int* bodyCo
     *bodyCountOut = bodies;
 
     if (settings.showSnapLine && nearest != nullptr) {
-        list->AddLine(crosshair, ImVec2(nearest->centerX - origin.x, nearest->centerY - origin.y),
-                      clearOfTarget(IM_COL32(255, 100, 50, static_cast<int>(255.0f * nearest->opacity)), settings), 2.0f);
+        // From the crosshair to the target's middle; from an edge of the screen to the side of the box facing it.
+        const float centerX = nearest->centerX - origin.x;
+        const float halfHeight = nearest->height * 0.5f;
+        ImVec2 from = crosshair;
+        ImVec2 to(centerX, nearest->centerY - origin.y);
+        if (settings.snapLineFrom == 1) {
+            from = ImVec2(displayWidth * 0.5f - origin.x, -origin.y);
+            to.y -= halfHeight;
+        } else if (settings.snapLineFrom == 2) {
+            from = ImVec2(displayWidth * 0.5f - origin.x, displayHeight - origin.y);
+            to.y += halfHeight;
+        }
+        list->AddLine(from, to, clearOfTarget(IM_COL32(255, 100, 50, static_cast<int>(255.0f * nearest->opacity)), settings),
+                      2.0f);
     }
 
     // The two fields of view: the area the detector looks at, and how far the assist reaches. They
@@ -1016,6 +1028,10 @@ bool drawVisualsTab(Settings& s) {
     bool changed = false;
     changed |= ImGui::Checkbox(T(Key::ShowLabels), &s.showLabels);
     changed |= ImGui::Checkbox(T(Key::ShowSnapLine), &s.showSnapLine);
+    if (s.showSnapLine) {
+        const char* lineStarts[] = {T(Key::SnapLineCrosshair), T(Key::SnapLineTop), T(Key::SnapLineBottom)};
+        changed |= menu::Choice(T(Key::SnapLineFrom), &s.snapLineFrom, lineStarts, 3);
+    }
     changed |= ImGui::Checkbox(T(Key::ShowAimPoint), &s.showAimPoint);
     changed |= ImGui::Checkbox(T(Key::ShowDetectionArea), &s.showDetectionArea);
     changed |= ImGui::Checkbox(T(Key::ShowAimReach), &s.showAimReach);

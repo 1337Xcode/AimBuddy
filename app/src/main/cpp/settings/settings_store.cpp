@@ -36,6 +36,7 @@ void visitFields(Settings_& s, Visitor&& visit) {
     visit("showLabels", s.showLabels);
     visit("showAimPoint", s.showAimPoint);
     visit("showSnapLine", s.showSnapLine);
+    visit("snapLineFrom", s.snapLineFrom);
     visit("showCount", s.showCount);
     visit("showPerformance", s.showPerformance);
     visit("showDetectionArea", s.showDetectionArea);
@@ -184,6 +185,7 @@ void Settings::clamp() {
         channel = clampTo(channel, 0.0f, 1.0f);
     }
     boxThickness = std::clamp(boxThickness, 1, 6);
+    snapLineFrom = std::clamp(snapLineFrom, 0, 2);
     confidence = clampTo(confidence, 0.1f, 0.95f);
     detectionZoneRadius = clampTo(detectionZoneRadius, 100.0f, 650.0f);
     detector = std::clamp(detector, 0, 1);

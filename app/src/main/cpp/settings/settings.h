@@ -29,7 +29,8 @@ struct Settings {
     int boxThickness = 2;                 ///< Pixels, 1 to 6.
     bool showLabels = true;               ///< Confidence next to each box.
     bool showAimPoint = true;             ///< A marker where the assist aims.
-    bool showSnapLine = false;            ///< A line from the crosshair to the nearest target.
+    bool showSnapLine = false;            ///< A line to the nearest target...
+    int snapLineFrom = 0;                 ///< ...from 0 the crosshair, 1 the middle of the top of the screen, 2 of its bottom.
     bool showCount = false;               ///< How many targets are in view.
     bool showPerformance = false;         ///< Detection rate and delay.
     bool showDetectionArea = true;        ///< A square around the area the detector looks at.
