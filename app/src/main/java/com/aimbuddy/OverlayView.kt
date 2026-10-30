@@ -80,8 +80,10 @@ class OverlayView(context: Context) : TextureView(context), TextureView.SurfaceT
         }
         val action = when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> 0
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> 1
+            MotionEvent.ACTION_UP -> 1
             MotionEvent.ACTION_MOVE -> 2
+            // The system took the gesture back (another window, a system gesture): not a lift, so nothing is clicked.
+            MotionEvent.ACTION_CANCEL -> 3
             else -> return true
         }
         val x = event.x

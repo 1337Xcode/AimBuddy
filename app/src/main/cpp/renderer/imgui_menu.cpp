@@ -555,6 +555,9 @@ struct TouchStep {
 // milliseconds, less than one frame, and ImGui only clicks what it has seen pressed during a frame.
 constexpr int kMinPressFrames = 2;
 
+/// Kotlin sends 0 for a finger down, 1 up, 2 moved, and this when the system takes the gesture back.
+constexpr int kTouchCancelled = 3;
+
 std::deque<TouchStep> g_touchSteps;   ///< What the finger did, not yet shown to ImGui. GL thread only.
 bool g_pressShown = false;            ///< ImGui has been told the button is down.
 int g_framesPressed = 0;              ///< Frames the button has been down.
@@ -665,12 +668,13 @@ void resetTouch() {
         return;
     }
     ImGuiIO& io = ImGui::GetIO();
+    g_touchSteps.clear();
+    // The pointer leaves the controls before the press is let go, so that letting go clicks nothing.
+    io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
     if (g_pressShown) {
         io.AddMouseButtonEvent(0, false);
         g_pressShown = false;
     }
-    g_touchSteps.clear();
-    io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -882,6 +886,13 @@ bool handleZoneTouch(int action, float x, float y) {
             g_grab = Grab::kMove;
             g_grabOffset = ImVec2(zone.centre.x - x, zone.centre.y - y);
         }
+        return true;
+    }
+    if (action == kTouchCancelled) {
+        if (g_grab == Grab::kToolbar) {
+            resetTouch();
+        }
+        g_grab = Grab::kNone;
         return true;
     }
     // The finger keeps what it took hold of until it lifts, wherever it travels.
@@ -1523,7 +1534,10 @@ Java_com_aimbuddy_OverlayNative_touch(JNIEnv* /* env */, jclass /* clazz */, jin
         case 2:   // finger moved
             deliverToMenu(g_scroller.move(x, y), action, x, y);
             break;
-        default:  // finger up or cancelled
+        case kTouchCancelled:   // the system took the touch back: whatever it pressed is let go without a click
+            resetTouch();
+            break;
+        default:  // finger up
             deliverToMenu(g_scroller.up(x, y), action, x, y);
             break;
     }

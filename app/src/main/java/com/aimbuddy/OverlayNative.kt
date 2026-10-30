@@ -37,7 +37,7 @@ object OverlayNative {
     @JvmStatic
     external fun detach()
 
-    /** Hands a touch (0 down, 1 up or cancelled, 2 moved) to the menu. GL thread. */
+    /** Hands a touch (0 down, 1 up, 2 moved, 3 cancelled by the system) to the menu. GL thread. */
     @JvmStatic
     external fun touch(action: Int, x: Float, y: Float): Boolean
 
