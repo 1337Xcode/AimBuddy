@@ -446,6 +446,8 @@ bool AimController::cannotCloseOn(int64_t nowNs, const Tracker& tracker, const T
         watchMinX_ = watchMaxX_ = seen->centerX;
         watchMinY_ = watchMaxY_ = seen->centerY;
         watchSweptPx_ = 0.0f;
+        watchCameraX_ = watchCameraY_ = 0.0f;
+        watchCameraMinX_ = watchCameraMaxX_ = watchCameraMinY_ = watchCameraMaxY_ = 0.0f;
         watchErrorSumPx_ = errorPx;
         watchLooks_ = 1;
         futileLooks_ = 0;
@@ -460,10 +462,19 @@ bool AimController::cannotCloseOn(int64_t nowNs, const Tracker& tracker, const T
     watchMaxY_ = std::max(watchMaxY_, seen->centerY);
     watchErrorSumPx_ += errorPx;
     ++watchLooks_;
+    // How far the camera swept is the span its position covered, not the sum of the slides' sizes: summed, the
+    // measurement noise of a camera standing still added up with every look, and at 60 looks a second a real target
+    // a little off the crosshair passed for a box stuck to the screen.
     float sweepX = 0.0f;
     float sweepY = 0.0f;
     motion_->shiftBetween(previousLookNs, body.lastSeenNs, &sweepX, &sweepY);
-    watchSweptPx_ += std::hypot(sweepX, sweepY);
+    watchCameraX_ += sweepX;
+    watchCameraY_ += sweepY;
+    watchCameraMinX_ = std::min(watchCameraMinX_, watchCameraX_);
+    watchCameraMaxX_ = std::max(watchCameraMaxX_, watchCameraX_);
+    watchCameraMinY_ = std::min(watchCameraMinY_, watchCameraY_);
+    watchCameraMaxY_ = std::max(watchCameraMaxY_, watchCameraY_);
+    watchSweptPx_ = std::max(watchCameraMaxX_ - watchCameraMinX_, watchCameraMaxY_ - watchCameraMinY_);
 
     const float spreadPx = std::max(watchMaxX_ - watchMinX_, watchMaxY_ - watchMinY_);
     const float meanErrorPx = watchErrorSumPx_ / static_cast<float>(watchLooks_);

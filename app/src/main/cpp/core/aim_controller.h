@@ -277,6 +277,12 @@ private:
     float watchMinY_ = 0.0f;
     float watchMaxY_ = 0.0f;
     float watchSweptPx_ = 0.0f;
+    float watchCameraX_ = 0.0f;       ///< Where the camera has gone since the watch began (sum of the slides), screen px...
+    float watchCameraY_ = 0.0f;
+    float watchCameraMinX_ = 0.0f;    ///< ...and the span of those places.
+    float watchCameraMaxX_ = 0.0f;
+    float watchCameraMinY_ = 0.0f;
+    float watchCameraMaxY_ = 0.0f;
     float watchErrorSumPx_ = 0.0f;
     int watchLooks_ = 0;
     int futileLooks_ = 0;

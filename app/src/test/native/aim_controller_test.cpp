@@ -560,6 +560,19 @@ TEST(aim_hands_off_lets_go_soon_after_reaching_a_strafing_target) {
     CHECK(liftedAt < 1.5f);
 }
 
+TEST(aim_does_not_give_up_on_a_still_target_while_the_camera_stands_still) {
+    // The game takes no notice of the assist's finger, so the camera stands still and the frames' slides are only
+    // measurement noise. Added up over a detector running 60 times a second, that noise passed for the camera
+    // sweeping past a box that never moved, and the real target was given up on as the player's own weapon.
+    SimulatedGame::Truth truth;
+    truth.ignoredTouches = 100000;
+    truth.detectionPeriodMs = 16;
+    truth.measureNoisePx = 1.5f;
+    SimulatedGame game(truth, baseSettings(), stationary(260.0f, 80.0f));
+    game.run(20.0f, [](float, float, float) {});
+    CHECK(game.controller().telemetry().giveUps == 0);
+}
+
 TEST(aim_hands_off_makes_a_new_correction_when_the_target_has_been_let_go_of) {
     // The assist lands on a target. The player then turns the camera 700 px away, past the reach of the assist,
     // so that the lock is let go of, and 665 px back, to within 35 px of the same target. It is a new
