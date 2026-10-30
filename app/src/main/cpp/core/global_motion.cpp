@@ -548,6 +548,7 @@ GlobalShift GlobalMotionEstimator::compareWithPrevious(int side) {
         }
     } remember{this, side};
     if (!comparable) {
+        staticScore_.fill(0);   // a region of another size: the grid's pixels now show other parts of the screen
         return result;
     }
     if (static_cast<float>(changedPixels) < kUnchangedShare * kCells) {

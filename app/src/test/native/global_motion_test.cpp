@@ -404,3 +404,30 @@ TEST(global_motion_reads_a_turn_after_the_camera_stood_still_while_something_mov
     }
     CHECK(read == 5);
 }
+
+TEST(global_motion_reads_a_region_of_a_new_size_as_a_fresh_start) {
+    // Panels that stay put are learned while the scene slides in a 256 px region. The region then changes size (another
+    // zone or model): its grid now covers other parts of the screen, and what was learned about the old ones must not
+    // leave parts of the new picture out. It reads the new frames as an estimator that never saw the old ones.
+    const Texture texture(9);
+    GlobalMotionEstimator seasoned;
+    for (int frame = 0; frame < 40; ++frame) {
+        Frame image = renderScene(texture, 15.0f * static_cast<float>(frame), 0.0f);
+        for (int y = 20; y < 110; ++y) {
+            for (int x = 20; x < 110; ++x) {
+                image.set(x, y, (x < 24 || y < 24 || x >= 106 || y >= 106) ? 240.0f : 40.0f);
+            }
+        }
+        seasoned.push(image.rgba.data(), kSide, kSide * 4);
+    }
+    constexpr int kSmaller = 224;
+    GlobalMotionEstimator fresh;
+    int same = 0;
+    for (int frame = 0; frame < 6; ++frame) {
+        const Frame image = renderScene(texture, 7.0f * static_cast<float>(frame), -4.0f * static_cast<float>(frame));
+        const GlobalShift a = seasoned.push(image.rgba.data(), kSmaller, kSide * 4);
+        const GlobalShift b = fresh.push(image.rgba.data(), kSmaller, kSide * 4);
+        same += (a.dx == b.dx && a.dy == b.dy && a.quality == b.quality) ? 1 : 0;
+    }
+    CHECK(same == 6);
+}
