@@ -2,6 +2,8 @@
 bands painted over before anything looks at a frame, and the labelled PC sets. Shared by label_frames.py and
 cut_squares.py.
 """
+import functools
+
 import cv2
 
 GREY = (114, 114, 114)
@@ -90,3 +92,45 @@ def read_names(path):
         elif inside_names:
             break
     return names
+
+
+def video_frames(path):
+    """Yields (index, decode) for every frame of a video in order; decode() returns that frame. Frames are read on the
+    graphics card, about ten times faster here than on the processor. A video the card refuses from its first frame (it
+    does while training holds the card's memory) is read on the processor, which gives the same frames. A card that
+    stops part of the way through stops the run: the rest of the video would otherwise be left out without a word."""
+    capture = cv2.VideoCapture(str(path), cv2.CAP_FFMPEG, [cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY])
+    if not capture.grab():
+        capture.release()
+        capture = cv2.VideoCapture(str(path))
+        if not capture.grab():
+            capture.release()
+            raise SystemExit(f"{path}: no frame could be read")
+    try:
+        index = 0
+        while True:
+            yield index, functools.partial(decoded, capture, path, index)
+            index += 1
+            if not capture.grab():
+                break
+    finally:
+        capture.release()
+    ends_here(path, index)
+
+
+def decoded(capture, path, index):
+    """The frame the capture grabbed last, or a stop of the run when it cannot be decoded."""
+    ok, frame = capture.retrieve()
+    if not ok:
+        raise SystemExit(f"{path}: frame {index} could not be decoded")
+    return frame
+
+
+def ends_here(path, index):
+    """Stops the run unless the video really has no frame at `index`: the processor's decoder has the last word."""
+    capture = cv2.VideoCapture(str(path))
+    capture.set(cv2.CAP_PROP_POS_FRAMES, index)
+    ok, _ = capture.read()
+    capture.release()
+    if ok:
+        raise SystemExit(f"{path}: frame {index} could not be read on the graphics card")

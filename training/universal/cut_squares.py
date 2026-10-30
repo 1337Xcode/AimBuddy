@@ -34,7 +34,7 @@ from hud import fixed_on_screen  # noqa: E402
 from own_character import (in_own_place, is_mostly_over, is_part_of, look_of, own_candidates,  # noqa: E402
                            usual_place)
 from sources import (GREY, PC_SETS, VIDEOS, grey_out_broadcast, has_heads, pc_pictures,  # noqa: E402
-                     read_names, read_pc_picture)
+                     read_names, read_pc_picture, video_frames)
 
 OUTPUT_SIZE = 320
 SIDE_RANGE = (0.44, 0.78)       # square side as a share of the frame height
@@ -233,20 +233,19 @@ def square_round(box, width, height, rng):
 
 def frames_of(path, indices):
     """Yields (index, frame) for the wanted frame indices of a video, in order. Stops the build if one cannot be read:
-    the graphics card's decoder can fail when several programs use it, and a frame left out would leave the labels of
-    the two passes over the video out of step."""
-    capture = cv2.VideoCapture(str(path), cv2.CAP_FFMPEG, [cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY])
-    wanted, index, last = set(indices), -1, max(indices) if indices else -1
-    while index < last:
-        index += 1
-        if not capture.grab():
-            raise SystemExit(f"{path}: frame {index} could not be read")
+    a frame left out would leave the labels of the two passes over the video out of step."""
+    wanted = set(indices)
+    if not wanted:
+        return
+    last, found = max(wanted), 0
+    for index, decode in video_frames(path):
+        if index > last:
+            break
         if index in wanted:
-            ok, frame = capture.retrieve()
-            if not ok:
-                raise SystemExit(f"{path}: frame {index} could not be decoded")
-            yield index, frame
-    capture.release()
+            found += 1
+            yield index, decode()
+    if found < len(wanted):
+        raise SystemExit(f"{path}: {len(wanted) - found} of the cached frames could not be read")
 
 
 def label_video(record, path):

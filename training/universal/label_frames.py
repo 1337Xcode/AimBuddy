@@ -27,7 +27,8 @@ import numpy as np
 from ultralytics import YOLO
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))   # python -I leaves the script's folder off the path
-from sources import PC_SETS, VIDEOS, grey_out_broadcast, has_heads, pc_pictures, read_pc_picture  # noqa: E402
+from sources import (PC_SETS, VIDEOS, grey_out_broadcast, has_heads, pc_pictures, read_pc_picture,  # noqa: E402
+                     video_frames)
 
 SAME_FRAME_DIFF = 3.0   # mean grey difference (0..255) below which a frame repeats the last one kept
 MIN_SCORE = 0.10
@@ -47,22 +48,15 @@ def boxes_of(result, keep_classes=None):
 
 def label_video(path, every_s, broadcast, models, device):
     """Samples the video and runs every model on each frame kept. Returns the frame size and the per-frame boxes."""
-    # Decoding on the graphics card is about ten times faster here, and every frame between two samples is decoded.
-    capture = cv2.VideoCapture(str(path), cv2.CAP_FFMPEG, [cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY])
+    capture = cv2.VideoCapture(str(path))
     fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+    capture.release()
     step = max(1, int(round(every_s * fps)))
-    frames, size, last_small, index = [], None, None, -1
-    while True:
-        index += 1
-        if not capture.grab():
-            ends_here(path, index)
-            break
+    frames, size, last_small = [], None, None
+    for index, decode in video_frames(path):
         if index % step:
             continue
-        ok, frame = capture.retrieve()
-        if not ok:
-            ends_here(path, index)
-            break
+        frame = decode()
         height, width = frame.shape[:2]
         size = [width, height]
         small = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (64, 36), interpolation=cv2.INTER_AREA).astype(np.float32)
@@ -72,23 +66,7 @@ def label_video(path, every_s, broadcast, models, device):
         if broadcast:
             grey_out_broadcast(frame)
         frames.append({"index": index, "boxes": teacher_boxes(frame, models, device)})
-    capture.release()
-    if not frames:
-        # the graphics card's decoder can refuse a video while other programs use it
-        raise SystemExit(f"{path}: no frame could be read")
     return size, frames
-
-
-def ends_here(path, index):
-    """Stops the run unless the video really has no frame at `index`: the graphics card's decoder can fail part of the
-    way through while other programs use it, which would leave the rest of the video out without a word. The
-    processor's decoder, which does not fail that way, has the last word."""
-    capture = cv2.VideoCapture(str(path))
-    capture.set(cv2.CAP_PROP_POS_FRAMES, index)
-    ok, _ = capture.read()
-    capture.release()
-    if ok:
-        raise SystemExit(f"{path}: frame {index} could not be decoded on the graphics card")
 
 
 def teacher_boxes(frame, models, device):
