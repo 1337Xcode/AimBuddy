@@ -359,10 +359,14 @@ stateDiagram-v2
     Tentative --> [*]: one miss
     Tracked --> Coasting: missed
     Coasting --> Tracked: matched again
-    Coasting --> [*]: unseen for 350 ms
+    Coasting --> Lost: unseen for 350 ms
+    Lost --> Tracked: a confident box on its path within 1 s
+    Lost --> [*]: after 1 s
 ```
 
 A tentative target is drawn and aimed at only if the detector is at least 90% sure of it, so a box reported for a single frame is never shown. A missed target is held at full strength for 120 ms and then fades. Both times stretch when results come slower than about 30 a second, so on a slow phone a target is not dropped between two results.
+
+Targets go behind cover and come out again. While a target is missed past the hold time, its predicted speed fades, since it has probably stopped or gone behind something. When it is seen again, its speed is taken from how far it went while unseen, with the camera's turn taken out, so a runner that comes out from behind a wall is followed at its pace at once and one that stopped behind it is not pushed on. A target forgotten after 350 ms is kept in mind for a second: a box of 50% or more on its path, anywhere from where it was last seen to where its speed would have taken it and within one box height of that line, is the same target, drawn at once under its old identity. In the simulated game, a runner at 300 px/s hidden for 0.3 s out of every 1.2 s had its head under the crosshair 64% of the time instead of 54% at 60 detections a second and 48% instead of 37% at 30, and the aim was back on its head 0.32 s after it came out instead of 0.41 s at 60 a second. Hidden for 0.6 s out of every 1.6 s, the aim lost it after 15% of the returns instead of 60% at 15 detections a second (`sh app/src/test/native/bench/run.sh cover`).
 
 </details>
 
