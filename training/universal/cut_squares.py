@@ -392,7 +392,7 @@ def build_pc(args, stats):
                 side = min(int(rng.uniform(*SIDE_RANGE) * height), width)
                 x0 = rng.randint(0, width - side)
                 y0 = rng.randint(0, height - side) if height > side else 0
-                count = write_square(image, (x0, y0, side), labels, out, f"pc_{folder}_{image_path.stem[:40]}_{k}", rng,
+                count = write_square(image, (x0, y0, side), labels, out, f"pc_{folder}_{image_path.stem}_{k}", rng,
                                      augment=split == "train")
                 if count >= 0:
                     written[split] += 1
