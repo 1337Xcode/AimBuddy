@@ -102,6 +102,9 @@ AimLoop::Stats AimLoop::stats() const {
 void AimLoop::run() {
     LOGI("Aim loop started");
     setpriority(PRIO_PROCESS, 0, kThreadNice);
+    // The tracker numbers its targets from 1 again in a new run, so a box given up on in the last run would match a
+    // target of this one by its number.
+    controller_.forgetScene();
 
     // Start from what an earlier run measured, so the first move is already close to right.
     if (source_) {
