@@ -554,6 +554,27 @@ TEST(mux_catches_up_after_dropped_events) {
     CHECK(rig.reader.problems().empty());
 }
 
+TEST(mux_gives_a_new_finger_the_values_its_slot_held_before_the_screen_was_taken_over) {
+    // The player's last finger in slot 0 touched before the screen was taken over, at x 500 with a size of 30. The
+    // kernel sends the next finger in that slot only what changed: its id and its y. The merged screen, which never
+    // saw the earlier finger, must still get x 500 and size 30.
+    Rig rig;
+    ContactSnapshot snapshot;
+    snapshot.currentSlot = 0;
+    snapshot.slots[0].values[axisIndex(kAbsMtPositionX)] = 500;
+    snapshot.slots[0].values[axisIndex(kAbsMtPositionY)] = 600;
+    snapshot.slots[0].values[axisIndex(kAbsMtTouchMajor)] = 30;
+    rig.mux.resync(snapshot);
+    rig.screen.send(kEvAbs, kAbsMtTrackingId, 5);
+    rig.screen.send(kEvAbs, kAbsMtPositionY, 650);
+    rig.screen.sync();
+
+    const SeenFrame& last = rig.reader.lastFrame();
+    CHECK(last.xIn(0) == 500 && last.yIn(0) == 650);
+    CHECK(last.majorIn(0) == 30);
+    CHECK(rig.reader.problems().empty());
+}
+
 TEST(mux_does_not_mistake_a_replaced_finger_for_a_moving_one) {
     Rig rig;
     rig.screen.down(0, 1, 100, 100);

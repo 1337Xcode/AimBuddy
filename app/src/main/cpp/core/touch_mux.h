@@ -170,6 +170,10 @@ private:
     EventSink* sink_;
 
     std::array<Contact, kMaxRealSlots + 1> contacts_{};
+    /// What each slot of the real screen holds, axis by axis. The kernel sends a new finger only the values that differ
+    /// from the last finger in its slot, which may have touched before the screen was taken over.
+    std::array<std::array<int32_t, evdev::kMtAxisCount>, kMaxRealSlots> realValues_{};
+    std::array<std::array<bool, evdev::kMtAxisCount>, kMaxRealSlots> realKnown_{};
     std::array<int32_t, evdev::kMtAxisCount> contactStyle_{};   ///< Typical size and pressure of a real finger.
 
     int currentRealSlot_ = 0;      ///< Slot the real screen's next values belong to (-1 when out of range).

@@ -58,6 +58,19 @@ void TouchMux::startContact(int slot, int32_t realId) {
     contact.trackingId = realId;
     selectSlot(slot);
     emit(kEvAbs, kAbsMtTrackingId, contact.outputId);
+    if (slot == aimSlot()) {
+        return;
+    }
+    // The values the real screen will not repeat for this finger: those its slot already holds.
+    for (uint16_t code = kMtAxisFirst; code <= kMtAxisLast; ++code) {
+        const int index = axisIndex(code);
+        if (code == kAbsMtTrackingId || !info_.axis(code).present || !realKnown_[slot][index]) {
+            continue;
+        }
+        if (!contact.known[index] || contact.values[index] != realValues_[slot][index]) {
+            writeAxis(slot, code, realValues_[slot][index]);
+        }
+    }
 }
 
 void TouchMux::endContact(int slot) {
@@ -161,6 +174,8 @@ void TouchMux::applyRealAxis(uint16_t code, int32_t value) {
         return;
     }
     learnContactStyle(code, value);
+    realValues_[slot][axisIndex(code)] = value;
+    realKnown_[slot][axisIndex(code)] = true;
     writeAxis(slot, code, value);
 }
 
@@ -190,6 +205,10 @@ void TouchMux::resync(const ContactSnapshot& snapshot) {
     needsResync_ = false;
     inRealFrame_ = false;
     currentRealSlot_ = (snapshot.currentSlot >= 0 && snapshot.currentSlot < info_.slotCount) ? snapshot.currentSlot : -1;
+    for (int slot = 0; slot < info_.slotCount; ++slot) {
+        realValues_[slot] = snapshot.slots[slot].values;
+        realKnown_[slot].fill(true);
+    }
 
     // Fingers that are gone (or were replaced) are lifted in one group, new ones put down in the
     // next, so a replaced finger is never mistaken for the same one moving.
