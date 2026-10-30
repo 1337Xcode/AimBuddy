@@ -98,6 +98,7 @@ void Tracker::setEgoMotion(const EgoMotion* egoMotion) {
 void Tracker::reset() {
     std::lock_guard<std::mutex> lock(mutex_);
     trackCount_ = 0;
+    lostCount_ = 0;
     nextId_ = 1;
     hasArrival_ = false;
     latestArrivalNs_ = 0;
@@ -246,6 +247,8 @@ void Tracker::correctTrack(Track& track, const Detection& detection) const {
     const float maxSpeed = config_.maxSpeedPerBox * track.height.value;
     track.x.clampVelocity(maxSpeed);
     track.y.clampVelocity(maxSpeed);
+    track.seenVelocityX = track.x.velocity;
+    track.seenVelocityY = track.y.velocity;
 
     track.score = track.hits == 0 ? detection.score : 0.6f * track.score + 0.4f * detection.score;
     track.hits += 1;
@@ -445,18 +448,25 @@ void Tracker::update(const Detection* detections, int count, int64_t captureNs, 
         const bool wasScanned = scanned == nullptr || scanned->contains(track.x.position, track.y.position);
         (wasScanned ? track.missNs : track.unobservedNs) += stepNs[i];
         if (track.missNs > coastNs() || track.unobservedNs > config_.unobservedNs) {
+            rememberLost(track, captureNs);
             removeTrackAt(i);
         }
     }
 
-    // Start new targets from strong, unclaimed detections that clear the stricter birth score.
+    // Start new targets from strong, unclaimed detections that clear the stricter birth score. One that shows where a
+    // target forgotten a moment ago could have got to is that target, back from behind cover.
     for (int s = 0; s < strongCount && trackCount_ < kMaxTracks; ++s) {
         const Detection& detection = detections[strong[s]];
         if (detectionUsed[strong[s]] || detection.score < config_.birthScore) {
             continue;
         }
+        const int lost = findLost(detection, captureNs);
         startTrack(detection, captureNs);
         tracks_[trackCount_ - 1].matchedNow = true;
+        if (lost >= 0) {
+            recall(tracks_[trackCount_ - 1], lost_[lost], captureNs);
+            lost_[lost] = lost_[--lostCount_];
+        }
     }
 
     removeDuplicates();
@@ -484,6 +494,98 @@ void Tracker::removeDuplicates() {
             }
         }
     }
+}
+
+void Tracker::rememberLost(const Track& track, int64_t nowNs) {
+    // entries too old to be recalled make room first
+    for (int i = lostCount_ - 1; i >= 0; --i) {
+        if (nowNs - lost_[i].seenNs > config_.recallNs) {
+            lost_[i] = lost_[--lostCount_];
+        }
+    }
+    if (track.phase == TrackPhase::kTentative || track.hits < config_.confirmHits) {
+        return;
+    }
+    LostTrack entry;
+    entry.id = track.id;
+    entry.classId = track.classId;
+    entry.hits = track.hits;
+    entry.seenNs = track.lastSeenNs;
+    entry.seenX = track.seenX;
+    entry.seenY = track.seenY;
+    entry.velocityX = track.seenVelocityX;
+    entry.velocityY = track.seenVelocityY;
+    entry.height = track.height.value;
+    if (lostCount_ < kMaxTracks) {
+        lost_[lostCount_++] = entry;
+        return;
+    }
+    int oldest = 0;
+    for (int i = 1; i < lostCount_; ++i) {
+        oldest = lost_[i].seenNs < lost_[oldest].seenNs ? i : oldest;
+    }
+    lost_[oldest] = entry;
+}
+
+int Tracker::findLost(const Detection& detection, int64_t captureNs) const {
+    const float centerX = detection.x + detection.width * 0.5f;
+    const float centerY = detection.y + detection.height * 0.5f;
+    int best = -1;
+    float bestDistance = 0.0f;
+    for (int i = 0; i < lostCount_; ++i) {
+        const LostTrack& lost = lost_[i];
+        const int64_t gapNs = captureNs - lost.seenNs;
+        const float sizeRatio = detection.height / std::max(lost.height, 1.0f);
+        if (lost.classId != detection.classId || gapNs <= 0 || gapNs > config_.recallNs || sizeRatio < 0.5f ||
+            sizeRatio > 2.0f) {
+            continue;
+        }
+        // Its path: from where it was last seen (moved with the camera since) to where its speed then would have taken
+        // it. It may have stopped anywhere along it, or kept going.
+        float egoX = 0.0f;
+        float egoY = 0.0f;
+        if (egoMotion_ != nullptr) {
+            egoMotion_->shiftBetween(lost.seenNs, captureNs, &egoX, &egoY);
+        }
+        const float gapS = nsToSeconds(gapNs);
+        const float startX = lost.seenX + egoX;
+        const float startY = lost.seenY + egoY;
+        const float pathX = lost.velocityX * gapS;
+        const float pathY = lost.velocityY * gapS;
+        const float pathSq = pathX * pathX + pathY * pathY;
+        const float along =
+            pathSq > 0.0f ? std::clamp(((centerX - startX) * pathX + (centerY - startY) * pathY) / pathSq, 0.0f, 1.0f) : 0.0f;
+        const float distance = std::hypot(centerX - startX - along * pathX, centerY - startY - along * pathY);
+        const float reach = config_.recallReachPerBox * std::max(detection.height, lost.height);
+        if (distance <= reach && (best < 0 || distance < bestDistance)) {
+            best = i;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+void Tracker::recall(Track& track, const LostTrack& lost, int64_t captureNs) const {
+    track.id = lost.id;
+    track.hits += lost.hits;
+    track.phase = TrackPhase::kTracked;
+    float egoX = 0.0f;
+    float egoY = 0.0f;
+    if (egoMotion_ != nullptr) {
+        egoMotion_->shiftBetween(lost.seenNs, captureNs, &egoX, &egoY);
+    }
+    // the speed it covered the gap with, doubted as for a target that comes back before it is forgotten
+    const float gapS = nsToSeconds(captureNs - lost.seenNs);
+    const float variance = measurementVariance(track.height.value, track.score);
+    track.x.restartVelocity((track.seenX - lost.seenX - egoX) / gapS,
+                            (2.0f * variance + square(config_.egoUncertainty * egoX)) / square(gapS));
+    track.y.restartVelocity((track.seenY - lost.seenY - egoY) / gapS,
+                            (2.0f * variance + square(config_.egoUncertainty * egoY)) / square(gapS));
+    const float maxSpeed = config_.maxSpeedPerBox * track.height.value;
+    track.x.clampVelocity(maxSpeed);
+    track.y.clampVelocity(maxSpeed);
+    track.seenVelocityX = track.x.velocity;
+    track.seenVelocityY = track.y.velocity;
 }
 
 void Tracker::removeTrackAt(int index) {

@@ -95,6 +95,10 @@ struct TrackerConfig {
     int64_t coastNs = 350'000'000;        ///< Forget a missed target after this long.
     int64_t unobservedNs = 900'000'000;   ///< Forget a target outside the scanned region after this long.
     int64_t maxExtrapolateNs = 150'000'000; ///< Never project a position further ahead than this.
+    int64_t recallNs = 1'000'000'000;     ///< A forgotten target seen again within this long of its last sighting, where
+                                          ///< its path could have taken it, is the same target: it keeps its identity and
+                                          ///< is shown at once, at the speed it covered the gap with.
+    float recallReachPerBox = 1.0f;       ///< How far off that path it may show, in box heights.
     float coastVelocityDecayS = 0.15f;    ///< Time constant at which a missed target's velocity fades.
     float velocityDoubt = 1.0f;           ///< How far a target's speed is trusted when carried forward to be drawn: it counts for
                                           ///< speed squared over speed squared plus this many times its own variance. A speed no
@@ -196,9 +200,24 @@ private:
         int64_t lastSeenNs = 0;   ///< Capture time of the last matched detection.
         float seenX = 0.0f;       ///< Where the box centre was then, screen pixels.
         float seenY = 0.0f;
+        float seenVelocityX = 0.0f; ///< Its own speed then, screen pixels per second, before any fading.
+        float seenVelocityY = 0.0f;
         int64_t missNs = 0;       ///< Time unseen while inside the scanned region.
         int64_t unobservedNs = 0; ///< Time unseen while outside the scanned region.
         bool matchedNow = false;  ///< Paired with a detection in the latest update.
+    };
+
+    /// A confirmed target that was forgotten, kept for a while in case it shows again (see TrackerConfig::recallNs).
+    struct LostTrack {
+        int id = 0;
+        int classId = 0;
+        int hits = 0;
+        int64_t seenNs = 0;
+        float seenX = 0.0f;
+        float seenY = 0.0f;
+        float velocityX = 0.0f;
+        float velocityY = 0.0f;
+        float height = 0.0f;
     };
 
     struct Match {
@@ -226,6 +245,9 @@ private:
     void projectTrack(const Track& track, int64_t atNs, TrackView& view) const;
     void removeDuplicates();
     void removeTrackAt(int index);
+    void rememberLost(const Track& track, int64_t nowNs);
+    int findLost(const Detection& detection, int64_t captureNs) const;
+    void recall(Track& track, const LostTrack& lost, int64_t captureNs) const;
 
     /// Learns how often results arrive (see update()).
     void noteArrival(int64_t captureNs, int64_t arrivalNs);
@@ -238,6 +260,8 @@ private:
     const EgoMotion* egoMotion_ = nullptr;
     std::array<Track, kMaxTracks> tracks_{};
     int trackCount_ = 0;
+    std::array<LostTrack, kMaxTracks> lost_{};
+    int lostCount_ = 0;
     int nextId_ = 1;
     bool hasArrival_ = false;
     int64_t latestArrivalNs_ = 0;   ///< When the newest result arrived.

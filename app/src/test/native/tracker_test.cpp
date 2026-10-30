@@ -421,6 +421,32 @@ TEST(tracker_takes_up_a_runner_at_its_pace_when_it_comes_out_from_behind_cover) 
     }
 }
 
+TEST(tracker_knows_a_runner_again_after_cover_too_long_to_follow_it_through) {
+    // Hidden for 0.6 s, longer than a missed target is kept, the runner comes out where its path leads. It is the same
+    // target: drawn on its first detection, under its old identity, at its pace. A box far off that path is someone else.
+    Tracker tracker;
+    TrackView views[aimbuddy::kMaxTracks];
+    const auto runnerAt = [](int64_t t) { return 300.0f + 300.0f * static_cast<float>(t) * 1e-9f; };
+    for (int frame = 0; frame < 30; ++frame) {
+        const int64_t t = frame * 16 * kMs;
+        Detection d = box(runnerAt(t), 400.0f, 60.0f, 180.0f, 0.9f);
+        tracker.update(&d, 1, t, nullptr);
+    }
+    CHECK(tracker.snapshot(29 * 16 * kMs, views, aimbuddy::kMaxTracks) == 1);
+    const int id = views[0].id;
+    for (int frame = 30; frame < 68; ++frame) {
+        tracker.update(nullptr, 0, frame * 16 * kMs, nullptr);
+    }
+    CHECK(tracker.snapshot(67 * 16 * kMs, views, aimbuddy::kMaxTracks) == 0);   // forgotten by now
+    const int64_t back = 68 * 16 * kMs;
+    const Detection both[2] = {box(runnerAt(back), 400.0f, 60.0f, 180.0f, 0.9f), box(1500.0f, 400.0f, 60.0f, 180.0f, 0.8f)};
+    tracker.update(both, 2, back, nullptr);
+    CHECK(tracker.snapshot(back, views, aimbuddy::kMaxTracks) == 1);   // the stranger waits for its third sighting
+    CHECK(views[0].id == id);
+    CHECK_NEAR(views[0].centerX, runnerAt(back), 10.0);
+    CHECK_NEAR(views[0].velocityX, 300.0, 30.0);
+}
+
 TEST(tracker_follows_a_target_that_peeks_out_of_cover) {
     // A bot stands fully visible, ducks so only its head shows, then rises again.
     Tracker tracker;
