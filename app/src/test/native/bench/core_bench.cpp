@@ -2,8 +2,9 @@
 //  - what each step of a frame costs (colour finder, output decoding, camera look, tracker, aim step, touch merger,
 //    overlay fingerprint);
 //  - how the aim controller copes with a camera it was not told about, in the simulated game the tests use;
-//  - how closely the aim follows targets that strafe, run and stop, on phones that detect 60, 30 and 15 times a second.
-// Build and run: sh app/src/test/native/bench/run.sh [runs], or with "camera" or "follow" for one simulation only.
+//  - how closely the aim follows targets that strafe, run and stop, on phones that detect 60, 30 and 15 times a second;
+//  - how the aim copes with targets that go behind cover, show only in part, or are seen in some frames only.
+// Build and run: sh app/src/test/native/bench/run.sh [runs], or with "camera", "follow" or "cover" for one simulation only.
 // The timings are for this machine's processor, not a phone's, and the simulation is not a real game.
 #include <algorithm>
 #include <chrono>
@@ -533,10 +534,126 @@ void benchMovingTargets() {
     }
 }
 
+/// Hidden for `hiddenS` out of every `periodS` from `firstS` on: a target running past pillars, or ducking behind a wall.
+std::function<bool(float)> hiddenEvery(float periodS, float hiddenS, float firstS) {
+    return [=](float t) { return t < firstS || std::fmod(t - firstS, periodS) >= hiddenS; };
+}
+
+/// How the aim did on a target that goes out of sight now and then: the RMS distance and the share of the time under the
+/// crosshair while it is in view, how long after each return the head was under the crosshair again, and the share of
+/// returns after which it never was before the target went out of sight again.
+struct CoverScore {
+    double rmsPx = 0.0;
+    double onHeadShare = 0.0;
+    double backOnHeadS = 0.0;
+    double neverBackShare = 0.0;
+};
+
+/// Runs one case of a target that goes out of sight, with each seed, and averages what the aim did.
+CoverScore runCoverCase(simulation::SimulatedGame::Truth truth, const simulation::SimulatedGame::Path& path,
+                        const std::function<bool(float)>& visible) {
+    truth.visibleAt = visible;
+    CoverScore total;
+    double backSum = 0.0;
+    int returns = 0;
+    int neverBack = 0;
+    for (const uint32_t seed : kSeeds) {
+        simulation::SimulatedGame game(truth, simulation::baseSettings(), path, seed);
+        double squares = 0.0;
+        int samples = 0;
+        int onHead = 0;
+        bool wasVisible = true;
+        float returnedAt = -1.0f;   // when the target last came back into view, while the head has not been reached since
+        game.run(kFollowRunS, [&](float t, float errorX, float errorY) {
+            const bool inView = visible(t);
+            if (inView && !wasVisible && t >= kFollowFromS) {
+                returnedAt = t;
+                ++returns;
+            }
+            if (!inView && wasVisible && returnedAt >= 0.0f) {
+                ++neverBack;   // out of sight again before the aim got back to it
+                returnedAt = -1.0f;
+            }
+            wasVisible = inView;
+            if (!inView || t < kFollowFromS) {
+                return;
+            }
+            const double distanceSq = static_cast<double>(errorX) * errorX + static_cast<double>(errorY) * errorY;
+            const bool head = distanceSq <= kHeadRadiusPx * kHeadRadiusPx;
+            squares += distanceSq;
+            ++samples;
+            onHead += head ? 1 : 0;
+            if (head && returnedAt >= 0.0f) {
+                backSum += t - returnedAt;
+                returnedAt = -1.0f;
+            }
+        });
+        total.rmsPx += std::sqrt(squares / std::max(samples, 1));
+        total.onHeadShare += static_cast<double>(onHead) / std::max(samples, 1);
+    }
+    const double seeds = static_cast<double>(std::size(kSeeds));
+    total.rmsPx /= seeds;
+    total.onHeadShare /= seeds;
+    const int reached = returns - neverBack;
+    total.backOnHeadS = reached > 0 ? backSum / reached : -1.0;
+    total.neverBackShare = returns > 0 ? static_cast<double>(neverBack) / returns : 0.0;
+    return total;
+}
+
+/// The aim controller on targets that go behind cover, show only in part, or are seen in some frames only.
+void benchCover() {
+    struct Phone {
+        const char* name;
+        simulation::SimulatedGame::Truth truth;
+    };
+    const Phone phones[] = {
+        {"60/s, 20 ms", phoneDetecting(16, 20, 2.0f)},
+        {"30/s, 40 ms", phoneDetecting(33, 40, 2.5f)},
+        {"15/s, 70 ms", phoneDetecting(66, 70, 3.0f)},
+    };
+    struct Case {
+        const char* name;
+        simulation::SimulatedGame::Path path;
+        std::function<bool(float)> visible;
+        std::function<float(float)> shownShare;   // empty: the whole body shows while in view
+        float dropoutRate;
+    };
+    const auto always = [](float) { return true; };
+    const Case cases[] = {
+        {"run 300 px/s, hidden 0.3 s every 1.2 s", running(300.0f), hiddenEvery(1.2f, 0.3f, 1.0f), {}, 0.10f},
+        {"run 300 px/s, hidden 0.6 s every 1.6 s", running(300.0f), hiddenEvery(1.6f, 0.6f, 1.0f), {}, 0.10f},
+        {"strafe 400 px/s, hidden 0.25 s every 1 s", strafingLegs(400.0f, 0.5f), hiddenEvery(1.0f, 0.25f, 1.0f), {}, 0.10f},
+        {"still, peeks 0.4 s out of every 1 s", simulation::stationary(150.0f, -50.0f), hiddenEvery(1.0f, 0.6f, 1.0f), {}, 0.10f},
+        {"run 300 px/s, stops behind cover", stopAndGo(300.0f, 0.8f), hiddenEvery(1.6f, 0.5f, 0.7f), {}, 0.10f},
+        {"stands, starts running behind cover", stopAndGo(300.0f, 0.8f), hiddenEvery(1.6f, 0.5f, 1.5f), {}, 0.10f},
+        {"run 300 px/s, legs hidden half the time", running(300.0f), always,
+         [](float t) { return std::fmod(t, 1.6f) < 0.8f ? 0.5f : 1.0f; }, 0.10f},
+        {"run 300 px/s, seen in 60% of frames", running(300.0f), always, {}, 0.40f},
+    };
+    std::printf("\n| target | detections | RMS error in view | head under the crosshair | back on the head after a return | returns never caught |\n");
+    std::printf("| --- | --- | ---: | ---: | ---: | ---: |\n");
+    for (const Case& c : cases) {
+        for (const Phone& phone : phones) {
+            simulation::SimulatedGame::Truth truth = phone.truth;
+            truth.shownShareAt = c.shownShare;
+            truth.dropoutRate = c.dropoutRate;
+            const CoverScore score = runCoverCase(truth, c.path, c.visible);
+            char back[24];
+            if (score.backOnHeadS < 0.0) {
+                std::snprintf(back, sizeof(back), "-");
+            } else {
+                std::snprintf(back, sizeof(back), "%.2f s", score.backOnHeadS);
+            }
+            std::printf("| %-42s | %-11s | %6.1f px | %5.1f%% | %8s | %5.1f%% |\n", c.name, phone.name, score.rmsPx,
+                        100.0 * score.onHeadShare, back, 100.0 * score.neverBackShare);
+        }
+    }
+}
+
 }  // namespace
 
-/// Runs the step timings, then the simulated cameras and the moving targets. With "camera" or "follow" only that
-/// simulation runs.
+/// Runs the step timings, then the simulated cameras, the moving targets and the targets behind cover. With "camera",
+/// "follow" or "cover" only that simulation runs.
 int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "camera") {
         benchUnknownCamera();
@@ -544,6 +661,10 @@ int main(int argc, char** argv) {
     }
     if (argc > 1 && std::string(argv[1]) == "follow") {
         benchMovingTargets();
+        return 0;
+    }
+    if (argc > 1 && std::string(argv[1]) == "cover") {
+        benchCover();
         return 0;
     }
     const int runs = argc > 1 ? std::atoi(argv[1]) : 200;
@@ -557,5 +678,6 @@ int main(int argc, char** argv) {
     benchFingerprint(runs);
     benchUnknownCamera();
     benchMovingTargets();
+    benchCover();
     return 0;
 }

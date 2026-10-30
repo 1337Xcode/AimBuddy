@@ -68,6 +68,7 @@ public:
         float dropoutRate = 0.10f;    ///< Share of frames in which the detector misses the target.
         int ignoredTouches = 0;       ///< How many finger touches, from the first, the game takes no notice of.
         std::function<bool(float)> visibleAt{};   ///< Whether the target is on screen at a time in seconds (the detector cannot see it when it is not); empty means always.
+        std::function<float(float)> shownShareAt{};   ///< Share of the body, from the head down, that low cover leaves in view at a time in seconds (the box covers only that); empty means all of it.
 
         // What a real match adds. All of it is off unless set, so the tests above are not touched.
         std::function<void(float, float*, float*)> playerTurn{};  ///< The player's own turning: how fast the scene slides, in px/s, at a time in seconds.
@@ -339,6 +340,10 @@ private:
         target.y = cy - kBoxHeight * 0.5f;
         target.width = kBoxWidth * static_cast<float>(1.0 + random_.gaussian(0.04));
         target.height = kBoxHeight * static_cast<float>(1.0 + random_.gaussian(0.04));
+        if (truth_.shownShareAt) {
+            // Low cover hides the body from the feet up: the box keeps its top edge and covers what is left in view.
+            target.height *= std::clamp(truth_.shownShareAt(seconds), 0.05f, 1.0f);
+        }
         target.score = score;
         if (present) {
             frame.detections.push_back(target);
