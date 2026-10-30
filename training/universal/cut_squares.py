@@ -297,14 +297,20 @@ def centre_inside(box, area):
     return area[0] <= cx <= area[2] and area[1] <= cy <= area[3]
 
 
-def build_videos(args, rng, stats):
+def source_rng(seed, name):
+    """The random numbers of one source, the same however the sources are split between runs."""
+    return random.Random(f"{seed}:{name}")
+
+
+def build_videos(args, stats):
     """Cuts squares from every cached video."""
     for game, video, split, _, _ in VIDEOS:
         cache = pathlib.Path(args.cache) / f"{game}_{video}.json"
         path = pathlib.Path(args.videos) / game / f"{video}.mp4"
         if not cache.is_file() or not path.is_file():
             raise SystemExit(f"{cache} or {path} is missing: run label_frames.py first")
-        written = build_video(json.loads(cache.read_text()), path, pathlib.Path(args.out), rng, stats)
+        written = build_video(json.loads(cache.read_text()), path, pathlib.Path(args.out),
+                              source_rng(args.seed, f"{game}_{video}"), stats)
         print(f"{game} {video} ({split}): {written} squares", flush=True)
 
 
@@ -337,12 +343,13 @@ def build_video(record, path, out_root, rng, stats):
     return written
 
 
-def build_pc(args, rng, stats):
+def build_pc(args, stats):
     """Cuts squares from the PC sets' training and validation pictures, with their own labels. Sets without heads take
     sunxds's heads inside a labelled body, from the cache label_frames.py wrote."""
     for folder, mapping in PC_SETS:
         root = pathlib.Path(args.pc)
         names = read_names(root / folder / "data.yaml")
+        rng = source_rng(args.seed, f"pc_{folder}")
         cached_heads = {}
         if not has_heads(mapping):
             cache = pathlib.Path(args.cache) / f"pc_{folder}.json"
@@ -392,12 +399,11 @@ def main():
     parser.add_argument("--seed", type=int, default=20261030)
     parser.add_argument("--only", choices=("videos", "pc", "all"), default="all")
     args = parser.parse_args()
-    rng = random.Random(args.seed)
     stats = {f"{split}_{kind}": 0 for split in ("train", "val") for kind in ("squares", "empty", "bodies", "own")}
     if args.only in ("videos", "all"):
-        build_videos(args, rng, stats)
+        build_videos(args, stats)
     if args.only in ("pc", "all"):
-        build_pc(args, rng, stats)
+        build_pc(args, stats)
     root = pathlib.Path(args.out).resolve().as_posix()
     names = "names:\n  0: body\n  1: head\n  2: self\n"
     (pathlib.Path(args.out) / "data.yaml").write_text(f"path: {root}\ntrain: images/train\nval: images/val\n{names}",
