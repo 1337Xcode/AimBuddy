@@ -353,6 +353,88 @@ cd training
 python src\check_model_contract.py --weights outputs\runs\detect\train\weights\best.pt
 ```
 
+## AimBuddy General: one model for every shooter
+
+The model the store offers is built by the scripts in `training/universal/`, not by the per-game pipeline above. It is trained on Free Fire and PUBG Mobile footage and on four PC shooters, and it has a class for the player's own character, which the app drops, so a third-person game does not get the player boxed.
+
+### Sources
+
+| Source | What | Labels | License |
+|---|---|---|---|
+| [amer224/freefire-realgame-ds](https://huggingface.co/datasets/amer224/freefire-realgame-ds), `videos/` | 17 Free Fire videos, third person | Teacher labels, below | None stated |
+| [oreo2000/pubgm-videos](https://huggingface.co/datasets/oreo2000/pubgm-videos) | 30 PUBG Mobile videos, mostly tournament broadcasts | Teacher labels, below | None stated |
+| Roboflow 100 through [LibreYOLO](https://huggingface.co/LibreYOLO): `csgo-videogame`, `apex-videogame`, `halo-infinite-angel-videogame`, `farcry6-videogame` | PC screenshots | Human labels | CC BY 4.0 |
+
+The video uploaders state no license, so check that you may use the videos before you build from them. Videos are split by video, never by frame: 14 Free Fire and 24 PUBG Mobile videos are built (5 of them for validation only), and the 3 and 6 that the model is judged on are never read by the build. The PC sets keep their own train and validation splits; their test splits are only scored.
+
+### One form for every source
+
+Every picture is brought to what the app feeds the model:
+
+- A square round the screen centre, 0.44 to 0.78 of the frame height on a side, resized to 320 px. The app reads 1 to 1.75 times the model's input size from a capture usually 720 px tall and shrinks it to the input, so a player has the same size in pixels in training as on the phone, whichever input size the model ships with. A second square per frame sits a little aside, as if the player looked away from the target.
+- The PC sets were stretched to 640 by 640 by their publisher. They are put back to 16:9 before squares are cut, so a player is as wide as in the game.
+- Three classes: 0 body (any player who is not the player), 1 head (of such a body), 2 self (the player's own character). `model.json` maps them to `body`, `head` and `ignore`.
+- What no source vouches for is painted grey (114) and taught as neither a target nor background: a person only one teacher half believes in, and a box cut to a sliver by the square's edge.
+- Broadcast overlays (team lists, player cameras, scoreboards) are painted grey before anything looks at the frame, and a PUBG Mobile square that still shows a face on a broadcast panel is left out.
+- A frame that differs from the last one kept by less than 3 grey levels on average is skipped, and only 35% of the squares with nobody in them are kept, so near copies and empty scenery do not outweigh the players.
+
+The built set has 17,156 training squares (7,864 Free Fire, 2,764 PUBG Mobile, 6,528 PC) and 2,588 validation squares. The training squares hold 7,429 bodies, 1,423 heads and 8,294 own characters.
+
+### Teacher labels for the videos
+
+Nobody labelled the videos, so two models label them (`training/universal/teachers.py`):
+
+- sunxds 0.8.0 from [sunone_aimbot](https://github.com/SunOner/sunone_aimbot) by SunOner, a YOLO12n trained on PC shooters with the classes player and head, runs on the whole frame at 1.25 times its width, with flips and three scales. A player it scores 0.25 or more is a body. One scored 0.12 to 0.25 is a body only when a COCO person covers it (overlap 0.4 or more), and unsure otherwise.
+- YOLO11x trained on COCO adds people sunxds missed, as unsure only, because it also finds people who are not players.
+- A person low in the frame, round the middle and tall (its box reaches below 0.72 of the height, is at least 0.18 of it tall, and has its centre between 0.28 and 0.66 of the width) is the own character, whichever model found it.
+
+sunxds scores players in mobile games low, from 0.25 to 0.6, so on its own at the app's default of 0.5 it misses many of them. As a teacher it is trusted from 0.25.
+
+### Training and export
+
+YOLO26n from its COCO weights, 320 px, 60 epochs, AdamW at 0.0014 with a cosine schedule (`training/universal/train.py`). MuSGD at 0.01, which Ultralytics chooses for YOLO26 by itself at this many steps, made the loss climb once the warm-up ended, so the optimizer is set. `training/universal/export.py` writes `model.param`, `model.bin` and `model.json` at the input size the store ships.
+
+### How it was judged
+
+**Android, in the app's view.** 602 squares cut the way the app cuts them, from the 3 Free Fire and 6 PUBG Mobile videos the build never reads (310 and 292 views). The players in them were counted by eye before any model's boxes were drawn: 57 in 52 views, one of them added afterwards, a player half hidden by a wall that the count had missed. Teammates count; players a broadcast draws through walls and smoke, and dead bodies, do not. Then every box a model drew at 0.25 or more was judged as on a player, on the player's own character, or on something else.
+
+| At the default confidence, 0.5 | Players found | Views with the own character boxed | Boxes on things that are not people |
+|---|---:|---:|---:|
+| AimBuddy General 1 | 13 of 57 | 111 | 2 |
+| sunxds 0.8.0 | 17 | 24 | 0 |
+| AimBuddy General 2 | 30 | 0 | 6 |
+| AimBuddy General 2 at 320 px | 31 | 0 | 8 |
+
+General 2's six boxes are on three things: a pylon in a broadcast's view from the air, a distant car, and a figure painted on a car. 57 players are too few to separate close results: 30 against 13 is clear, 30 against 31 is not.
+
+**PC, the sets' own test pictures.** Human labels, scored in the app's square at the centre and at two places beside it. These come from the games General 2 trained on, so they show that it kept what it learned there more than how it does in a new game.
+
+| Players found at 0.5 | General 1 | sunxds 0.8.0 | General 2 |
+|---|---:|---:|---:|
+| CS:GO, 244 players | 17.6% | 20.1% | 86.1% |
+| Apex Legends, 509 | 5.3% | 12.8% | 78.0% |
+| Halo Infinite, 72 | 0.0% | 0.0% | 97.2% |
+| Far Cry 6, 19 | 57.9% | 36.8% | 68.4% |
+
+**Speed.** On a laptop processor with three threads and the models run in turn, General 2 at 256 px takes 14.2 ms a frame, General 1 15.2 ms, General 2 at 320 px 21.3 ms and sunxds at 320 px about twice General 1. At 320 px General 2 found one more player and cost 1.40 times as long, so the store ships it at 256 px, where it costs a phone what version 1 did.
+
+### Rebuilding it
+
+```powershell
+pip install huggingface_hub ncnn
+hf download amer224/freefire-realgame-ds --repo-type dataset --include "videos/*" --local-dir sources\freefire-ds
+Move-Item sources\freefire-ds\videos sources\freefire
+hf download oreo2000/pubgm-videos --repo-type dataset --include "*.mp4" --local-dir sources\pubgm
+hf download LibreYOLO/csgo-videogame --repo-type dataset --local-dir sources\pc\csgo-videogame
+python training\universal\build_dataset.py --only videos --videos sources --pc sources\pc --out training\outputs\universal\dataset --sunxds sunxds_0.8.0.pt --coco yolo11x.pt
+python training\universal\build_dataset.py --only pc --videos sources --pc sources\pc --out training\outputs\universal\dataset --sunxds sunxds_0.8.0.pt --coco yolo11x.pt
+python training\universal\train.py --base yolo26n.pt --data training\outputs\universal\dataset\data.yaml
+python training\universal\export.py training\outputs\universal\runs\universal\weights\best.pt training\outputs\universal\export 256 2
+python training\universal\score_pc_tests.py sources\pc training\outputs\universal\export
+```
+
+Download the other three PC sets the same way. `build_dataset.py` reads `<videos>\freefire\<id>.mp4` and `<videos>\pubgm\<name>.mp4`, named as on Hugging Face. `yolo26n.pt` and `yolo11x.pt` are the Ultralytics COCO weights, and `sunxds_0.8.0.pt` is in the `models` folder of sunone_aimbot. The published set was built in these two passes, each starting the random squares afresh, so one pass with `--only all` cuts other squares. Labelling, which runs both teachers on every sampled frame, is the slow step.
+
 ## Common Issues
 
 | Problem | Solution |
