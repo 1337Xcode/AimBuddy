@@ -101,6 +101,19 @@ TEST(camera_motion_answers_from_measurements_then_from_the_response) {
     CHECK_NEAR(dx, -17.0, 1e-3);
 }
 
+TEST(camera_motion_counts_a_slide_once_when_a_frame_time_steps_back) {
+    // After a stall one frame is stamped with the time it arrived and the next with its own, earlier time, so a slide
+    // can start before the one before it ends. Over the time the two share, only the first one counts.
+    CameraMotion motion;
+    motion.addMeasurement(0, 100 * kMs, 10.0f, 0.0f, 1.0f);
+    motion.addMeasurement(60 * kMs, 160 * kMs, 6.0f, 0.0f, 1.0f);
+    float dx, dy;
+    motion.shiftBetween(60 * kMs, 100 * kMs, &dx, &dy);
+    CHECK_NEAR(dx, 4.0, 1e-3);
+    motion.shiftBetween(0, 160 * kMs, &dx, &dy);
+    CHECK_NEAR(dx, 16.0, 1e-3);
+}
+
 TEST(camera_motion_fills_a_poor_measurement_from_the_response) {
     CameraMotion motion;
     motion.setPrior({2.0f, 2.0f, 0.0f, false}, false);

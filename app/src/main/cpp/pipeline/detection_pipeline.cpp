@@ -166,7 +166,10 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
     std::lock_guard<std::mutex> lock(motionMutex_);
     const float limit = maxRate_.load(std::memory_order_relaxed);
     const int64_t intervalNs = std::max(kCameraLookIntervalNs, limit > 0.0f ? static_cast<int64_t>(1e9f / limit) : int64_t{0});
-    if (lastFrameNs_ > 0 && frame.captureTimeNs > lastFrameNs_ && frame.captureTimeNs - lastFrameNs_ < intervalNs) {
+    // A frame stamped no later than the last one looked at cannot be placed after it: after a stall one frame takes
+    // the time it arrived and the next its own, earlier time. The next newer frame is compared with the last one looked
+    // at, so no slide is lost.
+    if (lastFrameNs_ > 0 && (frame.captureTimeNs <= lastFrameNs_ || frame.captureTimeNs - lastFrameNs_ < intervalNs)) {
         return;
     }
     const int64_t lookStartNs = steadyNowNs();
@@ -184,7 +187,7 @@ void DetectionPipeline::measureCameraMotion(const RoiFrame& frame) {
         movers[moverCount++] = {left, top, left + view.width * captureOfScreen, top + view.height * captureOfScreen};
     }
     const GlobalShift shift = sceneMotion_.push(frame.rgba.data(), frame.roi.side, frame.roi.side * 4, movers, moverCount);
-    if (lastFrameNs_ > 0 && frame.captureTimeNs > lastFrameNs_) {
+    if (lastFrameNs_ > 0) {
         // The measurement is in capture pixels; everything else works in screen pixels.
         const float scale = frame.geometry.screenPerCapture();
         cameraMotion_->addMeasurement(lastFrameNs_, frame.captureTimeNs, shift.dx * scale, shift.dy * scale, shift.quality);

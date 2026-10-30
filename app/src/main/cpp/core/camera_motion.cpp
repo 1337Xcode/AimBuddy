@@ -140,6 +140,8 @@ void CameraMotion::addMeasurement(int64_t fromNs, int64_t toNs, float dx, float 
     if (toNs <= fromNs || toNs <= measured_.latestNs()) {
         return;   // out of order or empty: the record only grows forward
     }
+    // A slide that starts before the newest entry ends is laid after it: counted over both, it would count twice.
+    fromNs = std::max(fromNs, measured_.latestNs());
     const bool usable = quality >= kMinMeasurementQuality && std::isfinite(dx) && std::isfinite(dy);
     if (!usable) {
         // Nothing trustworthy was seen: assume the camera did what the assist's own moves say.
