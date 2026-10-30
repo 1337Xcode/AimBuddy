@@ -69,19 +69,25 @@ def label_video(path, every_s, broadcast, models, device):
         last_small = small
         if broadcast:
             grey_out_broadcast(frame)
-        found = {}
-        sunxds_size = min(2048, int(round(1.25 * width / 32)) * 32)
-        found["sunxds"] = boxes_of(models["sunxds"].predict(frame, imgsz=sunxds_size, augment=True, conf=MIN_SCORE, iou=0.6,
-                                                            device=device, verbose=False)[0])
-        found["coco"] = boxes_of(models["coco"].predict(frame, imgsz=min(960, int(round(width / 32)) * 32), conf=0.15,
-                                                        classes=[0], device=device, verbose=False)[0])
-        student_size = min(1920, int(round(width / 32)) * 32)
-        for name in ("gen2", "sunft"):
-            found[name] = boxes_of(models[name].predict(frame, imgsz=student_size, augment=True, conf=MIN_SCORE,
-                                                        device=device, verbose=False)[0])
-        frames.append({"index": index, "boxes": found})
+        frames.append({"index": index, "boxes": teacher_boxes(frame, models, device)})
     capture.release()
     return size, frames
+
+
+def teacher_boxes(frame, models, device):
+    """Every box each teacher gives one frame above its floor, by teacher name, in frame pixels."""
+    width = frame.shape[1]
+    found = {}
+    sunxds_size = min(2048, int(round(1.25 * width / 32)) * 32)
+    found["sunxds"] = boxes_of(models["sunxds"].predict(frame, imgsz=sunxds_size, augment=True, conf=MIN_SCORE, iou=0.6,
+                                                        device=device, verbose=False)[0])
+    found["coco"] = boxes_of(models["coco"].predict(frame, imgsz=min(960, int(round(width / 32)) * 32), conf=0.15,
+                                                    classes=[0], device=device, verbose=False)[0])
+    student_size = min(1920, int(round(width / 32)) * 32)
+    for name in ("gen2", "sunft"):
+        found[name] = boxes_of(models[name].predict(frame, imgsz=student_size, augment=True, conf=MIN_SCORE,
+                                                    device=device, verbose=False)[0])
+    return found
 
 
 def label_pc_set(root, folder, sunxds, device):
