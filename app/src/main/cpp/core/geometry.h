@@ -2,8 +2,13 @@
 #define AIMBUDDY_CORE_GEOMETRY_H
 
 #include <algorithm>
+#include <cmath>
 
 namespace aimbuddy {
+
+/// The capture is the screen shrunk with its shape kept and both sides rounded to even pixels: two grids whose
+/// shapes differ by more than this share come from two different screen sizes.
+constexpr float kShapeTolerance = 0.02f;
 
 /**
  * Sizes of the two pixel grids the pipeline converts between.
@@ -19,6 +24,13 @@ struct CaptureGeometry {
 
     bool isValid() const {
         return screenWidth > 0 && screenHeight > 0 && captureWidth > 0 && captureHeight > 0;
+    }
+    /// True when the capture image has the screen's shape. While the display changes size, frames of the new size
+    /// arrive before the new screen size is known, and mapped with the old one their boxes would land in the wrong places.
+    bool hasScreenShape() const {
+        const float screenShape = static_cast<float>(screenWidth) * static_cast<float>(captureHeight);
+        const float captureShape = static_cast<float>(captureWidth) * static_cast<float>(screenHeight);
+        return std::fabs(captureShape - screenShape) <= kShapeTolerance * screenShape;
     }
     /// Screen pixels per capture pixel.
     float screenPerCapture() const {
@@ -42,11 +54,12 @@ constexpr float kMaxRoiToModelRatio = 1.75f;
  * The side is the zone's diameter converted to capture pixels, kept between the model input size
  * (one capture pixel per model pixel, the sharpest view the model can have) and 1.75 times that
  * (a mild shrink that still keeps distant targets visible). The region is centred on the screen
- * centre and clamped to stay inside the capture image.
+ * centre and clamped to stay inside the capture image. A capture whose shape is not the screen's (one frame of a
+ * display that is changing size) gives no region, so that frame is left out.
  */
 inline RoiRect computeRoi(const CaptureGeometry& geometry, float zoneRadiusScreenPx, int modelSize) {
     RoiRect roi;
-    if (!geometry.isValid() || modelSize <= 0) {
+    if (!geometry.isValid() || !geometry.hasScreenShape() || modelSize <= 0) {
         return roi;
     }
     const float captureSideF = 2.0f * zoneRadiusScreenPx / geometry.screenPerCapture();

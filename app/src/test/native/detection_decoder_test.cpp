@@ -233,6 +233,25 @@ TEST(roi_is_centred_and_clamped) {
     CHECK(computeRoi(geometry, 600.0f, 640).side == 720);
 }
 
+TEST(roi_is_empty_while_the_capture_has_another_shape_than_the_screen) {
+    // The display turned from portrait to landscape: frames of the new landscape size came while the screen was
+    // still known as portrait, and each of their boxes was scaled by 0.675 where it should have been 1.5.
+    CaptureGeometry geometry;
+    geometry.screenWidth = 1080;
+    geometry.screenHeight = 2400;
+    geometry.captureWidth = 1600;
+    geometry.captureHeight = 720;
+    CHECK(!geometry.hasScreenShape());
+    CHECK(computeRoi(geometry, 200.0f, 256).side == 0);
+
+    geometry.captureWidth = 720;    // the capture of that portrait screen, rounded to even sides
+    geometry.captureHeight = 1600;
+    CHECK(geometry.hasScreenShape());
+    CHECK(computeRoi(geometry, 200.0f, 256).side > 0);
+    geometry.captureWidth = 718;
+    CHECK(geometry.hasScreenShape());
+}
+
 TEST(profile_parses_role_lists) {
     const ModelProfile one = ModelProfile::defaultsFor(1);
     CHECK(one.roleOf(0) == ClassRole::kBody);
