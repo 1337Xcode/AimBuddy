@@ -400,6 +400,24 @@ TEST(tracker_keeps_the_speed_of_a_target_seen_in_only_some_frames) {
     CHECK_NEAR(view.velocityX, 300.0, 30.0);
 }
 
+TEST(tracker_draws_a_runner_missed_in_one_frame_where_it_runs) {
+    // One frame without the runner says nothing of its speed: the box drawn ahead of the last update must carry on at
+    // the runner's pace, not slow down.
+    Tracker tracker;
+    const auto runnerAt = [](int64_t t) { return 300.0f + 300.0f * static_cast<float>(t) * 1e-9f; };
+    for (int frame = 0; frame < 30; ++frame) {
+        const int64_t t = frame * 16 * kMs;
+        Detection d = box(runnerAt(t), 400.0f, 60.0f, 180.0f, 0.9f);
+        tracker.update(&d, 1, t, nullptr);
+    }
+    tracker.update(nullptr, 0, 30 * 16 * kMs, nullptr);
+    const int64_t drawnAt = 30 * 16 * kMs + 60 * kMs;
+    TrackView view;
+    CHECK(viewNear(tracker, drawnAt, runnerAt(drawnAt), 400.0f, &view));
+    CHECK_NEAR(view.velocityX, 300.0, 30.0);
+    CHECK_NEAR(view.centerX, runnerAt(drawnAt), 6.0);
+}
+
 TEST(tracker_takes_up_a_runner_at_its_pace_when_it_comes_out_from_behind_cover) {
     // A target running at 300 px/s goes behind a wall for 0.3 s: long enough for the speed of the missed target to fade.
     // Two frames after it shows again, the box must already move at the runner's pace, not at what was left of it.

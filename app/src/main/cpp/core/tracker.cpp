@@ -599,10 +599,16 @@ void Tracker::projectTrack(const Track& track, int64_t atNs, TrackView& view) co
     const int64_t aheadNs = std::max<int64_t>(0, std::min(atNs - track.stateNs, config_.maxExtrapolateNs));
     const float ahead = nsToSeconds(aheadNs);
 
+    // A missed target's speed fades from the end of the hold time on, as in predictTrack: only the part of the look
+    // ahead that falls past it fades the speed. Fading all of it made the box and the aim fall behind a runner at every
+    // frame that missed it.
     float velocityX = track.x.velocity;
     float velocityY = track.y.velocity;
     if (track.phase == TrackPhase::kCoasting) {
-        const float keep = std::exp(-ahead / config_.coastVelocityDecayS);
+        const int64_t holdLimitNs = holdNs();
+        const int64_t fadedNs = std::max<int64_t>(0, track.missNs + aheadNs - holdLimitNs) -
+                                std::max<int64_t>(0, track.missNs - holdLimitNs);
+        const float keep = std::exp(-nsToSeconds(fadedNs) / config_.coastVelocityDecayS);
         velocityX *= keep;
         velocityY *= keep;
     }
