@@ -39,7 +39,8 @@ def main():
     }
     # one key a line, lists on their line, as the store's other model.json files are written
     body = ",\n".join(f"  {json.dumps(key)}: {json.dumps(value)}" for key, value in profile.items())
-    (out / "model.json").write_text("{\n" + body + "\n}\n", encoding="utf-8")
+    # the store serves files byte for byte, so the line ends are the same on every system
+    (out / "model.json").write_text("{\n" + body + "\n}\n", encoding="utf-8", newline="\n")
     print("exported", out, "from", weights)
 
 
