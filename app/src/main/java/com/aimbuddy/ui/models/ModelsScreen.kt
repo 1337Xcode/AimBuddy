@@ -262,6 +262,11 @@ private fun LazyStaggeredGridScope.storeTab(
                 CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 3.dp)
             }
         }
+        StoreState.NeedsNewerApp -> item {
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = Space.l), contentAlignment = Alignment.Center) {
+                EmptyNote(stringResource(R.string.models_store_needs_newer_app))
+            }
+        }
         StoreState.Failed -> item {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(vertical = Space.l),

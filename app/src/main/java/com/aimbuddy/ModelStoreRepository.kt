@@ -57,6 +57,12 @@ class InstalledFiles(val param: File, val bin: File)
 data class StoreList(val models: List<StoreModelDefinition>, val saved: Boolean)
 
 /**
+ * The store's list is written for a newer AimBuddy than this one. Not an [IOException]: the store was reached and
+ * read, so showing the copy saved by an earlier visit as if there were no connection would hide the real reason.
+ */
+class StoreNeedsNewerAppException : Exception("The store needs a newer version of AimBuddy")
+
+/**
  * Reads the store: the models published in the project's `model` folder on GitHub, and the files of
  * each. The list is one small file (`index.json`), so opening the store costs a single request, and
  * the last copy is kept so the store still opens without a connection.
@@ -267,13 +273,13 @@ class ModelStoreRepository(
 
         /**
          * Reads the text of `index.json`. A model whose entry is damaged is skipped with a warning, so
-         * one bad entry cannot hide the rest; a list the app is too old to read is an error.
+         * one bad entry cannot hide the rest; a list the app is too old to read is a [StoreNeedsNewerAppException].
          */
         fun parseIndex(text: String, baseUrl: String): List<StoreModelDefinition> {
             val root = JSONObject(text)
             val schema = root.getInt("schema")
             if (schema > SUPPORTED_SCHEMA) {
-                throw IOException("The store needs a newer version of AimBuddy")
+                throw StoreNeedsNewerAppException()
             }
             val entries = root.getJSONArray("models")
             val models = mutableListOf<StoreModelDefinition>()

@@ -103,7 +103,7 @@ class ModelStoreIndexTest {
         try {
             ModelStoreRepository.parseIndex(index(entry("general"), schema = 2), baseUrl)
             fail("accepted a newer schema")
-        } catch (expected: IOException) {
+        } catch (expected: StoreNeedsNewerAppException) {
             // the app has to be updated before it can read this store
         }
     }

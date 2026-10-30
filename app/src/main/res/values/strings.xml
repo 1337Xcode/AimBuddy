@@ -101,6 +101,7 @@
     <string name="models_from_file">From a file</string>
     <string name="models_installed_label">Installed</string>
     <string name="models_store_error">Can\'t reach the store.</string>
+    <string name="models_store_needs_newer_app">This store lists models for a newer AimBuddy. Update the app to see them.</string>
     <string name="models_download_failed">That model could not be downloaded.</string>
     <string name="models_store_empty">No models to show yet.</string>
     <string name="models_retry">Try again</string>

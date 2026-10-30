@@ -73,6 +73,24 @@ class ModelStoreFetchTest {
     }
 
     @Test
+    fun aListForANewerAppIsSaidSoEvenWhenAnOlderListWasSaved() {
+        // The store was read but this app is too old for it: the saved list, shown as if there were no connection, hid that.
+        val cache = folder.newFolder("cache")
+        var schema = 1
+        val repository = ModelStoreRepository(baseUrl, cache) { JSONObject(indexOf("saved-model")).put("schema", schema).toString() }
+        assertEquals(listOf("saved-model"), idsOf(repository))
+
+        schema = 2
+
+        try {
+            repository.fetchModels()
+            fail("a list for a newer app was taken for no connection")
+        } catch (expected: StoreNeedsNewerAppException) {
+            // the player is told to update
+        }
+    }
+
+    @Test
     fun withoutAConnectionOrASavedListTheStoreCannotBeRead() {
         val repository = ModelStoreRepository(baseUrl, folder.newFolder("cache")) { throw IOException("no connection") }
 

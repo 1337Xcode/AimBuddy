@@ -99,6 +99,7 @@
     <string name="models_from_file">Из файла</string>
     <string name="models_installed_label">Установлена</string>
     <string name="models_store_error">Не удаётся связаться с магазином.</string>
+    <string name="models_store_needs_newer_app">Магазин рассчитан на более новую версию AimBuddy. Обновите приложение, чтобы увидеть модели.</string>
     <string name="models_download_failed">Не удалось скачать модель.</string>
     <string name="models_store_empty">Пока нет моделей.</string>
     <string name="models_retry">Повторить</string>

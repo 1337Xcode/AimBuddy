@@ -99,6 +99,7 @@
     <string name="models_from_file">来自文件</string>
     <string name="models_installed_label">已安装</string>
     <string name="models_store_error">无法连接商店。</string>
+    <string name="models_store_needs_newer_app">此商店需要更新版本的 AimBuddy。请更新应用后查看模型。</string>
     <string name="models_download_failed">无法下载该模型。</string>
     <string name="models_store_empty">暂无模型。</string>
     <string name="models_retry">重试</string>

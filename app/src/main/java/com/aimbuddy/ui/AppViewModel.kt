@@ -21,6 +21,7 @@ import com.aimbuddy.R
 import com.aimbuddy.RootShell
 import com.aimbuddy.ShizukuStatus
 import com.aimbuddy.StoreModelDefinition
+import com.aimbuddy.StoreNeedsNewerAppException
 import com.aimbuddy.DownloadCancelledException
 import com.aimbuddy.TouchHelper
 import com.aimbuddy.TouchTest
@@ -76,6 +77,8 @@ sealed interface StoreState {
         val saved: Boolean = false,
     ) : StoreState
     data object Failed : StoreState
+    /** The store was read, but its list is written for a newer AimBuddy. */
+    data object NeedsNewerApp : StoreState
 }
 
 /** The download under way: which model, how far it has got, and whether the player has asked for it to stop. */
@@ -425,7 +428,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { storeRepository.fetchModels() } }
             _models.update {
-                it.copy(store = result.fold({ list -> StoreState.Ready(list.models, saved = list.saved) }, { StoreState.Failed }))
+                it.copy(store = result.fold(
+                    { list -> StoreState.Ready(list.models, saved = list.saved) },
+                    { error -> if (error is StoreNeedsNewerAppException) StoreState.NeedsNewerApp else StoreState.Failed },
+                ))
             }
             result.exceptionOrNull()?.let { Log.w(TAG, "The store could not be read: ${it.message}") }
             result.getOrNull()?.let { loadIcons(it.models) }
