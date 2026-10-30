@@ -400,6 +400,27 @@ TEST(tracker_keeps_the_speed_of_a_target_seen_in_only_some_frames) {
     CHECK_NEAR(view.velocityX, 300.0, 30.0);
 }
 
+TEST(tracker_takes_up_a_runner_at_its_pace_when_it_comes_out_from_behind_cover) {
+    // A target running at 300 px/s goes behind a wall for 0.3 s: long enough for the speed of the missed target to fade.
+    // Two frames after it shows again, the box must already move at the runner's pace, not at what was left of it.
+    Tracker tracker;
+    TrackView view;
+    for (int frame = 0; frame < 60; ++frame) {
+        const int64_t t = frame * 16 * kMs;
+        const bool hidden = frame >= 30 && frame < 49;   // 0.48 s to 0.78 s
+        if (hidden) {
+            tracker.update(nullptr, 0, t, nullptr);
+            continue;
+        }
+        Detection d = box(300.0f + 300.0f * static_cast<float>(t) * 1e-9f, 400.0f, 60.0f, 180.0f, 0.9f);
+        tracker.update(&d, 1, t, nullptr);
+        if (frame == 50) {
+            CHECK(viewNear(tracker, t, d.x + d.width * 0.5f, d.y + d.height * 0.5f, &view));
+            CHECK_NEAR(view.velocityX, 300.0, 30.0);
+        }
+    }
+}
+
 TEST(tracker_follows_a_target_that_peeks_out_of_cover) {
     // A bot stands fully visible, ducks so only its head shows, then rises again.
     Tracker tracker;

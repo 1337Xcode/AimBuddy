@@ -122,6 +122,16 @@ struct ManeuveringFilter {
         blend();
     }
 
+    /// Sets the speed to a value measured some other way, with its variance, the position staying as it is.
+    void restartVelocity(float newVelocity, float velocityVariance) {
+        for (PositionVelocityFilter* filter : {&steady, &agile}) {
+            filter->velocity = newVelocity;
+            filter->pVelocity = velocityVariance;
+            filter->pCross = 0.0f;
+        }
+        blend();
+    }
+
     /// Multiplies the speed by `keep`, for a target that was missed and is probably slowing down.
     void scaleVelocity(float keep) {
         steady.velocity *= keep;

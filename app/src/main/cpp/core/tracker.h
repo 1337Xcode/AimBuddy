@@ -194,6 +194,8 @@ private:
         int hits = 0;
         int64_t stateNs = 0;      ///< The instant the filters describe.
         int64_t lastSeenNs = 0;   ///< Capture time of the last matched detection.
+        float seenX = 0.0f;       ///< Where the box centre was then, screen pixels.
+        float seenY = 0.0f;
         int64_t missNs = 0;       ///< Time unseen while inside the scanned region.
         int64_t unobservedNs = 0; ///< Time unseen while outside the scanned region.
         bool matchedNow = false;  ///< Paired with a detection in the latest update.

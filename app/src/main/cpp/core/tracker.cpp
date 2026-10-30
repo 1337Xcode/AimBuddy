@@ -194,6 +194,13 @@ void Tracker::correctTrack(Track& track, const Detection& detection) const {
         varianceHeight *= kClippedVarianceScale;
     }
 
+    // Missed for longer than the hold time, the target's speed has faded (see predictTrack). The way it went while
+    // unseen measures its pace better: a runner coming out from behind cover is followed at its speed at once, where
+    // the faded estimate left the aim trailing for a third of a second, and a target that stopped behind the cover is
+    // not pushed on.
+    const int64_t unseenNs = track.stateNs - track.lastSeenNs;
+    const bool returning = track.hits > 0 && track.missNs > holdNs() && unseenNs > 0;
+
     // A sudden large size change means a different part of the target became visible (it peeked
     // out, ducked behind cover, or a leg or arm came into view). Follow it at once instead of
     // blending, and re-anchor the centre so the jump is not mistaken for the target running.
@@ -216,6 +223,25 @@ void Tracker::correctTrack(Track& track, const Detection& detection) const {
         track.height.update(detection.height, varianceHeight);
     }
 
+    if (returning) {
+        float egoX = 0.0f;
+        float egoY = 0.0f;
+        if (egoMotion_ != nullptr) {
+            egoMotion_->shiftBetween(track.lastSeenNs, track.stateNs, &egoX, &egoY);
+        }
+        // Its doubt: the error of two box centres, and of the camera's turn over the gap, spread over the gap. A box
+        // that came back another size shows another part of the target, so its centre moved without the target.
+        const float gapS = nsToSeconds(unseenNs);
+        if (!widthChanged) {
+            track.x.restartVelocity((centerX - track.seenX - egoX) / gapS,
+                                    (2.0f * varianceX + square(config_.egoUncertainty * egoX)) / square(gapS));
+        }
+        if (!heightChanged) {
+            track.y.restartVelocity((centerY - track.seenY - egoY) / gapS,
+                                    (2.0f * varianceY + square(config_.egoUncertainty * egoY)) / square(gapS));
+        }
+    }
+
     // A speed no person can reach is a matching mistake; keep it from flinging the box.
     const float maxSpeed = config_.maxSpeedPerBox * track.height.value;
     track.x.clampVelocity(maxSpeed);
@@ -224,6 +250,8 @@ void Tracker::correctTrack(Track& track, const Detection& detection) const {
     track.score = track.hits == 0 ? detection.score : 0.6f * track.score + 0.4f * detection.score;
     track.hits += 1;
     track.lastSeenNs = track.stateNs;
+    track.seenX = centerX;
+    track.seenY = centerY;
     track.missNs = 0;
     track.unobservedNs = 0;
     track.phase = track.hits >= config_.confirmHits ? TrackPhase::kTracked : TrackPhase::kTentative;
