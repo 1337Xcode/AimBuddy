@@ -31,6 +31,8 @@ public:
     /**
      * Changes the settings with `change`, which is handed them under the lock (so it must be quick and must not
      * call the store). Values are clamped afterwards and the settings are noted as needing to be saved.
+     * A change made before load() is kept and made again once the file is read, after the caller has returned,
+     * so it must hold copies of what it uses, never references to the caller's variables.
      */
     void update(const std::function<void(Settings&)>& change);
 

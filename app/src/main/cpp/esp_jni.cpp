@@ -127,7 +127,7 @@ void keepLearnedColour(bool found, const aimbuddy::ColourRange& range) {
     if (!found) {
         return;
     }
-    g_settingsStore.update([&range](Settings& settings) {
+    g_settingsStore.update([range](Settings& settings) {
         settings.colourLearned = true;
         settings.colourHue = range.hueDegrees;
         settings.colourSaturation = range.minSaturation;
@@ -144,7 +144,7 @@ void keepLearnedCamera(const aimbuddy::CameraResponse& response, float confidenc
     if (unchanged) {
         return;
     }
-    g_settingsStore.update([&response, confidence](Settings& current) {
+    g_settingsStore.update([response, confidence](Settings& current) {
         current.learnedGainX = response.gainX;
         current.learnedGainY = response.gainY;
         current.learnedDelayMs = response.delayS * 1000.0f;
@@ -296,7 +296,7 @@ JNIEXPORT jstring JNICALL Java_com_aimbuddy_NativeBridge_settingsSnapshot(JNIEnv
 JNIEXPORT void JNICALL Java_com_aimbuddy_NativeBridge_setSetting(JNIEnv* env, jclass /* clazz */, jstring name, jstring value) {
     const std::string settingName = toStdString(env, name);
     const std::string settingValue = toStdString(env, value);
-    g_settingsStore.update([&](Settings& settings) {
+    g_settingsStore.update([settingName, settingValue](Settings& settings) {
         settings = aimbuddy::SettingsStore::withValue(settings, settingName, settingValue);
     });
 }
