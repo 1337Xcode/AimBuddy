@@ -573,6 +573,52 @@ TEST(aim_does_not_give_up_on_a_still_target_while_the_camera_stands_still) {
     CHECK(game.controller().telemetry().giveUps == 0);
 }
 
+TEST(aim_hands_off_corrects_again_for_a_target_the_lock_comes_back_to) {
+    // Hands off: the assist lands on A and lifts its finger. The crosshair moves near B, the lock goes to B, and before
+    // the crosshair is on B it moves back near A, out of A's dead zone. A gets a new correction: the finger goes down.
+    AimSettings settings = baseSettings();
+    settings.zone = AimZone::kCenter;
+    settings.afterLanding = AfterLanding::kHandsOff;
+    settings.setSwitching(Switching::kQuick);
+    CameraMotion motion;
+    AimController controller(settings, &motion);
+    Tracker tracker;
+    const ModelProfile profile = ModelProfile::defaultsFor(1);
+    const float aX = 1300.0f;
+    const float bX = 1000.0f;
+    const auto feed = [&](int64_t atMs) {
+        Detection d[2];
+        d[0].x = aX - 30.0f; d[0].y = 450; d[0].width = 60; d[0].height = 180; d[0].score = 0.9f;
+        d[1].x = bX - 30.0f; d[1].y = 450; d[1].width = 60; d[1].height = 180; d[1].score = 0.9f;
+        tracker.update(d, 2, atMs * kMs, nullptr);
+    };
+    const auto runUntil = [&](int64_t fromMs, int64_t toMs, float crosshairX) {
+        controller.setCrosshair(crosshairX, 540.0f);
+        for (int64_t atMs = fromMs; atMs < toMs; atMs += 8) {
+            if (atMs % 16 == 0) {
+                feed(atMs);
+            }
+            controller.step(atMs * kMs, tracker, profile, PlayerInput());
+        }
+    };
+    runUntil(0, 800, aX);   // on A: it lands and the finger lifts
+    const int idA = controller.lockedTrackId();
+    CHECK(idA >= 0);
+    CHECK(!controller.isTouching());
+    runUntil(800, 1200, bX + 60.0f);   // near B: the lock moves to B
+    CHECK(controller.lockedTrackId() != idA);
+    bool correctedA = false;
+    controller.setCrosshair(aX - 80.0f, 540.0f);
+    for (int64_t atMs = 1200; atMs < 1800; atMs += 8) {
+        if (atMs % 16 == 0) {
+            feed(atMs);
+        }
+        controller.step(atMs * kMs, tracker, profile, PlayerInput());
+        correctedA = correctedA || (controller.lockedTrackId() == idA && controller.isTouching());
+    }
+    CHECK(correctedA);
+}
+
 TEST(aim_hands_off_makes_a_new_correction_when_the_target_has_been_let_go_of) {
     // The assist lands on a target. The player then turns the camera 700 px away, past the reach of the assist,
     // so that the lock is let go of, and 665 px back, to within 35 px of the same target. It is a new

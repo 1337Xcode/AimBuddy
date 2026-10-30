@@ -556,6 +556,10 @@ int AimController::keepOrSwitchLock(int64_t nowNs, const TrackView* views, const
     if (nsToSeconds(nowNs - rivalSinceNs_) >= settings_.switchHoldSeconds) {
         lockedId_.store(rivalId, std::memory_order_relaxed);
         rivalId_ = -1;
+        // whether the crosshair landed on the old target says nothing of the new one, nor of the old one if the lock
+        // comes back to it: it was let go of in between
+        landedId_ = -1;
+        onTargetSinceNs_ = 0;
         return best.index;
     }
     return locked.index;
