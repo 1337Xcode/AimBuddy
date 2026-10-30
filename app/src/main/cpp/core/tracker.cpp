@@ -131,11 +131,22 @@ void Tracker::predictTrack(Track& track, int64_t toNs) const {
         egoMotion_->shiftBetween(track.stateNs, toNs, &egoX, &egoY);
     }
 
-    // A target that was missed is probably slowing down or hiding, so let its velocity fade.
+    // A target missed for longer than the hold time has probably stopped or gone behind something, so its speed fades
+    // from then on. A frame or two without it says nothing of the kind: a target the detector sees in only some frames
+    // (half hidden, blurred, small) keeps the speed the filter is sure of, where fading all of it at every miss left
+    // the aim behind (a runner at 300 px/s seen in three frames out of five was tracked at 213 px/s). The part of the
+    // speed that is no bigger than its own doubt, such as the trace of a misread camera turn, still fades.
     if (track.phase == TrackPhase::kCoasting) {
-        const float keep = std::exp(-dt / config_.coastVelocityDecayS);
-        track.x.scaleVelocity(keep);
-        track.y.scaleVelocity(keep);
+        const float fade = std::exp(-dt / config_.coastVelocityDecayS);
+        if (track.missNs > holdNs()) {
+            track.x.scaleVelocity(fade);
+            track.y.scaleVelocity(fade);
+        } else {
+            const float trustX = velocityTrust(track.x.velocity, track.x.pVelocity);
+            const float trustY = velocityTrust(track.y.velocity, track.y.pVelocity);
+            track.x.scaleVelocity(trustX + (1.0f - trustX) * fade);
+            track.y.scaleVelocity(trustY + (1.0f - trustY) * fade);
+        }
     }
 
     // The steady filter holds a still or straight-running target's box steady; the agile one follows it through a turn.

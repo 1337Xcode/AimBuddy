@@ -380,6 +380,26 @@ TEST(tracker_separates_target_speed_from_camera_turning) {
     CHECK_NEAR(view.velocityX, 200.0, 30.0);
 }
 
+TEST(tracker_keeps_the_speed_of_a_target_seen_in_only_some_frames) {
+    // A target running at 300 px/s that the detector finds in two frames out of five (half hidden, small, blurred):
+    // the frames that miss it say nothing of its speed, and must not wear the estimate down.
+    Tracker tracker;
+    const bool seen[5] = {true, false, true, false, false};
+    for (int frame = 0; frame < 120; ++frame) {
+        const int64_t t = frame * 16 * kMs;
+        if (seen[frame % 5] || frame < 4) {
+            Detection d = box(300.0f + 300.0f * static_cast<float>(t) * 1e-9f, 400.0f, 60.0f, 180.0f, 0.9f);
+            tracker.update(&d, 1, t, nullptr);
+        } else {
+            tracker.update(nullptr, 0, t, nullptr);
+        }
+    }
+    const int64_t lastSeen = 115 * 16 * kMs;   // frame 115 is the last one in which it was found
+    TrackView view;
+    CHECK(viewNear(tracker, lastSeen, 300.0f + 300.0f * static_cast<float>(lastSeen) * 1e-9f, 400.0f, &view));
+    CHECK_NEAR(view.velocityX, 300.0, 30.0);
+}
+
 TEST(tracker_follows_a_target_that_peeks_out_of_cover) {
     // A bot stands fully visible, ducks so only its head shows, then rises again.
     Tracker tracker;
