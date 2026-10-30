@@ -416,7 +416,9 @@ General 2's six boxes are on three things: a pylon in a broadcast's view from th
 | Halo Infinite, 72 | 0.0% | 0.0% | 97.2% |
 | Far Cry 6, 19 | 57.9% | 36.8% | 68.4% |
 
-**Speed.** On a laptop processor with three threads and the models run in turn, General 2 at 256 px takes 14.2 ms a frame, General 1 15.2 ms, General 2 at 320 px 21.3 ms and sunxds at 320 px about twice General 1. At 320 px General 2 found one more player and cost 1.40 times as long, so the store ships it at 256 px, where it costs a phone what version 1 did.
+**Speed.** On a laptop processor with three threads and the models run in turn, General 2 at 256 px takes 8.1 ms a frame, General 1 8.6 ms, General 2 at 320 px 12.1 ms and sunxds at 320 px 17.1 ms. At 320 px General 2 found one more player and cost 1.40 times as long, so the store ships it at 256 px, where it costs a phone what version 1 did.
+
+**sunxds as the base.** Fine-tuning sunxds itself on the same squares, with the same settings, came out level: 29 of the 57 players at 256 px and 31 at 320 px, the own character boxed in no view, and 3 and 5 boxes on things that are not people. It costs 11.9 ms a frame at 256 px, 1.38 times General 1, so General 2 is the YOLO26n and sunxds is its teacher.
 
 ### Rebuilding it
 
