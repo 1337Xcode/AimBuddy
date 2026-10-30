@@ -102,8 +102,12 @@ struct TrackerConfig {
                                           ///< the box wander; a clear one is carried on whole.
 
     // --- Motion model (all scaled by the target's box height, so distance does not matter) ---
-    float accelerationPerBox = 14.0f;     ///< Std. dev. of acceleration, box heights per second squared, of a target that is clearly moving.
-    float restingAccelerationPerBox = 4.0f; ///< The same for a target that looks to be standing still, which is smoothed harder so its box does not wander.
+    float steadyAccelerationPerBox = 4.0f; ///< Std. dev. of acceleration, box heights per second squared, of a target holding its course
+                                          ///< (standing, or running straight), which is smoothed hard so its box does not wander...
+    float agileAccelerationPerBox = 20.0f; ///< ...and of one turning sharply (a strafe changing direction, a stop, a start).
+    float steadyHoldS = 1.0f;             ///< How long a target typically holds its course before it turns...
+    float agileHoldS = 0.4f;              ///< ...and how long a turn typically takes. Together they set how readily the filter
+                                          ///< switches between the two kinds of motion (see ManeuveringFilter).
     float positionSigmaPerBox = 0.03f;    ///< Std. dev. of the detector's centre error, in box heights.
     float sizeSigmaPerBox = 0.06f;        ///< Std. dev. of the detector's size error, as a fraction of size.
     float sizeDriftPerSecond = 0.20f;     ///< How fast the true box size may change, as a fraction per second.
@@ -182,8 +186,8 @@ private:
         int id = 0;
         int classId = 0;
         TrackPhase phase = TrackPhase::kTentative;
-        PositionVelocityFilter x;
-        PositionVelocityFilter y;
+        ManeuveringFilter x;
+        ManeuveringFilter y;
         LevelFilter width;
         LevelFilter height;
         float score = 0.0f;

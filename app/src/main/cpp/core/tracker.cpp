@@ -134,19 +134,18 @@ void Tracker::predictTrack(Track& track, int64_t toNs) const {
     // A target that was missed is probably slowing down or hiding, so let its velocity fade.
     if (track.phase == TrackPhase::kCoasting) {
         const float keep = std::exp(-dt / config_.coastVelocityDecayS);
-        track.x.velocity *= keep;
-        track.y.velocity *= keep;
+        track.x.scaleVelocity(keep);
+        track.y.scaleVelocity(keep);
     }
 
-    // A target that is standing still is held steady; one that is clearly moving is allowed to speed up and turn.
+    // The steady filter holds a still or straight-running target's box steady; the agile one follows it through a turn.
     const float boxHeight = std::max(track.height.value, 1.0f);
-    const float speedSigma = std::sqrt(0.5f * (track.x.pVelocity + track.y.pVelocity));
-    const float speed = std::hypot(track.x.velocity, track.y.velocity);
-    const float moving = std::clamp((speed / std::max(speedSigma, 1.0f) - 1.0f) / 1.5f, 0.0f, 1.0f);
-    const float acceleration = config_.restingAccelerationPerBox + (config_.accelerationPerBox - config_.restingAccelerationPerBox) * moving;
-    const float accelerationVariance = square(acceleration * boxHeight);
-    track.x.predict(dt, accelerationVariance, egoX, square(config_.egoUncertainty * egoX));
-    track.y.predict(dt, accelerationVariance, egoY, square(config_.egoUncertainty * egoY));
+    const float steadyVariance = square(config_.steadyAccelerationPerBox * boxHeight);
+    const float agileVariance = square(config_.agileAccelerationPerBox * boxHeight);
+    track.x.predict(dt, steadyVariance, agileVariance, config_.steadyHoldS, config_.agileHoldS, egoX,
+                    square(config_.egoUncertainty * egoX));
+    track.y.predict(dt, steadyVariance, agileVariance, config_.steadyHoldS, config_.agileHoldS, egoY,
+                    square(config_.egoUncertainty * egoY));
     track.width.predict(dt, square(config_.sizeDriftPerSecond * track.width.value));
     track.height.predict(dt, square(config_.sizeDriftPerSecond * track.height.value));
     track.stateNs = toNs;
@@ -208,8 +207,8 @@ void Tracker::correctTrack(Track& track, const Detection& detection) const {
 
     // A speed no person can reach is a matching mistake; keep it from flinging the box.
     const float maxSpeed = config_.maxSpeedPerBox * track.height.value;
-    track.x.velocity = std::max(-maxSpeed, std::min(track.x.velocity, maxSpeed));
-    track.y.velocity = std::max(-maxSpeed, std::min(track.y.velocity, maxSpeed));
+    track.x.clampVelocity(maxSpeed);
+    track.y.clampVelocity(maxSpeed);
 
     track.score = track.hits == 0 ? detection.score : 0.6f * track.score + 0.4f * detection.score;
     track.hits += 1;
