@@ -461,6 +461,25 @@ TEST(mux_gives_the_extra_finger_a_new_id_each_time) {
     CHECK(rig.reader.lastFrame().idIn(kAimSlot) != first);
 }
 
+TEST(mux_touches_down_afresh_when_a_down_comes_while_the_extra_finger_is_down) {
+    // The lift was lost on the way from the app. The next touch-down must not slide the finger that is still down
+    // across the screen, which turns the camera as far: it lifts it and touches down where it was asked to.
+    Rig rig;
+    rig.mux.aimDown(500, 500);
+    const int first = rig.reader.lastFrame().idIn(kAimSlot);
+    const size_t before = rig.reader.frames().size();
+    rig.mux.aimDown(3000, 4000);
+    const auto& frames = rig.reader.frames();
+    CHECK(frames.size() == before + 2);
+    if (frames.size() != before + 2) {
+        return;
+    }
+    CHECK(!frames[before].has(kAimSlot));
+    CHECK(frames[before + 1].xIn(kAimSlot) == 3000 && frames[before + 1].yIn(kAimSlot) == 4000);
+    CHECK(frames[before + 1].idIn(kAimSlot) != first);
+    CHECK(rig.reader.problems().empty());
+}
+
 TEST(mux_gives_the_extra_finger_the_size_of_a_real_one) {
     Rig rig;
     rig.screen.down(0, 3, 100, 100, 42);

@@ -327,8 +327,10 @@ void TouchMux::applyAim(const AimCommand& command) {
 
 void TouchMux::applyAimDown(int32_t x, int32_t y) {
     if (isAimDown()) {
-        applyAimMove(x, y);
-        return;
+        // The app only puts the finger down when it holds it up, so its lift was lost on the way (the link drops what
+        // it cannot send at once). Sliding the finger to the new place would swing the camera across: it touches down
+        // afresh, the lift in a group of its own so the two are not taken for one finger moving.
+        applyAimUp();
     }
     const int slot = aimSlot();
     startContact(slot, 0);
